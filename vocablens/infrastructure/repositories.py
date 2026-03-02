@@ -150,3 +150,23 @@ class SQLiteVocabularyRepository:
                 else None
             ),
         )
+    
+    def list_due(self) -> list[VocabularyItem]:
+        try:
+            with self._connect() as conn:
+                now = datetime.utcnow().isoformat()
+
+                rows = conn.execute(
+                    """
+                    SELECT * FROM vocabulary
+                    WHERE next_review_due IS NOT NULL
+                    AND next_review_due <= ?
+                    ORDER BY next_review_due ASC
+                    """,
+                    (now,),
+                ).fetchall()
+
+                return [self._row_to_domain(r) for r in rows]
+
+        except sqlite3.Error as exc:
+            raise PersistenceError(str(exc)) from exc

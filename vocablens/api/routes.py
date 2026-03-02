@@ -51,4 +51,9 @@ def create_routes(
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    @router.get("/vocabulary/due", response_model=list[VocabularyResponse])
+    def due_items():
+        items = service.list_due_items()
+        return [VocabularyResponse.from_domain(i) for i in items]
+    
     return router

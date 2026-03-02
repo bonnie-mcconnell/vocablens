@@ -43,3 +43,6 @@ class VocabularyService:
             return self._repository.increment_review(item_id)
         except ValueError:
             raise NotFoundError(f"Vocabulary item {item_id} not found")
+        
+    def list_due_items(self) -> list[VocabularyItem]:
+        return self._repository.list_due()
