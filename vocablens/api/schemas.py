@@ -1,6 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from vocablens.domain.models import VocabularyItem
+
+
+class TranslationRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    source_lang: str = Field(..., min_length=2, max_length=10)
+    target_lang: str = Field(..., min_length=2, max_length=10)
 
 
 class VocabularyResponse(BaseModel):

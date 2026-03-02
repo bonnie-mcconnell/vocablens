@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 import logging
 
 from vocablens.services.vocabulary_service import VocabularyService
-from vocablens.api.schemas import VocabularyResponse
+from vocablens.api.schemas import VocabularyResponse, TranslationRequest
 from vocablens.services.ocr_service import OCRService
 from vocablens.domain.errors import NotFoundError
 
@@ -17,14 +17,14 @@ def create_routes(
     router = APIRouter()
 
     @router.post("/translate", response_model=VocabularyResponse)
-    async def translate_text(
-        text: str,
-        source_lang: str,
-        target_lang: str,
-    ):
-        item = service.process_text(text, source_lang, target_lang)
+    def translate_text(payload: TranslationRequest):
+        item = service.process_text(
+            payload.text,
+            payload.source_lang,
+            payload.target_lang,
+        )
         return VocabularyResponse.from_domain(item)
-
+    
     @router.post("/translate/image", response_model=VocabularyResponse)
     async def translate_image(
         file: UploadFile = File(...),
