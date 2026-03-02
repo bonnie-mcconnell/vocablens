@@ -4,7 +4,7 @@ from vocablens.domain.models import VocabularyItem
 
 
 class VocabularyResponse(BaseModel):
-    id: int
+    id: int | None
     source_text: str
     translated_text: str
     source_lang: str

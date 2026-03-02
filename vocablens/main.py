@@ -23,4 +23,4 @@ service = VocabularyService(translator, repository)
 
 app = FastAPI(title="VocabLens")
 
-app.include_router(create_routes(service))
+app.include_router(create_routes(service, ocr_service))
