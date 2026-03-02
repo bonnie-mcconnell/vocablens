@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from vocablens.infrastructure.database import init_db
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
-from vocablens.providers.translation.google_provider import GoogleTranslateProvider
+from vocablens.providers.translation.http_provider import HTTPTranslationProvider
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.api.routes import create_routes
 from vocablens.providers.ocr.pytesseract_provider import PyTesseractProvider
@@ -17,7 +17,7 @@ DB_PATH = Path("vocablens.db")
 
 init_db(DB_PATH)
 
-translator = GoogleTranslateProvider()
+translator = HTTPTranslationProvider()
 repository = SQLiteVocabularyRepository(DB_PATH)
 service = VocabularyService(translator, repository)
 
