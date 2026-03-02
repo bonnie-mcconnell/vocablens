@@ -15,7 +15,9 @@ def init_db(db_path: Path) -> None:
                 target_lang TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 last_reviewed_at TEXT,
-                review_count INTEGER NOT NULL DEFAULT 0
+                review_count INTEGER NOT NULL DEFAULT 0,
+                retention_score REAL NOT NULL DEFAULT 2.5,
+                next_review_due TEXT
             )
             """
         )

@@ -13,3 +13,5 @@ class VocabularyItem:
     created_at: datetime
     last_reviewed_at: Optional[datetime] = None
     review_count: int = 0
+    retention_score: float = 2.5  # SM-2 starting ease factor
+    next_review_due: Optional[datetime] = None

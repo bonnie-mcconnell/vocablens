@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import sqlite3
 
@@ -27,7 +27,9 @@ class SQLiteVocabularyRepository:
                         target_lang,
                         created_at,
                         last_reviewed_at,
-                        review_count
+                        review_count,
+                        retention_score,
+                        next_review_due
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -40,6 +42,8 @@ class SQLiteVocabularyRepository:
                         if item.last_reviewed_at
                         else None,
                         item.review_count,
+                        item.retention_score,
+                        item.next_review_due.isoformat() if item.next_review_due else None,
                     ),
                 )
 
@@ -71,30 +75,59 @@ class SQLiteVocabularyRepository:
     def increment_review(self, item_id: int) -> VocabularyItem:
         try:
             with self._connect() as conn:
-                now = datetime.utcnow().isoformat()
-
-                cursor = conn.execute(
-                    """
-                    UPDATE vocabulary
-                    SET review_count = review_count + 1,
-                        last_reviewed_at = ?
-                    WHERE id = ?
-                    """,
-                    (now, item_id),
-                )
-
-                if cursor.rowcount == 0:
-                    raise ValueError("Vocabulary item not found")
-
                 row = conn.execute(
                     "SELECT * FROM vocabulary WHERE id = ?",
                     (item_id,),
                 ).fetchone()
 
-                return self._row_to_domain(row)
+                if not row:
+                    raise ValueError("Vocabulary item not found")
+
+                review_count = row["review_count"] + 1
+                retention_score = row["retention_score"]
+                now = datetime.utcnow()
+
+                # Basic SM-2 inspired update
+                retention_score = max(1.3, retention_score + 0.1)
+
+                if review_count == 1:
+                    interval_days = 1
+                elif review_count == 2:
+                    interval_days = 3
+                else:
+                    interval_days = int(review_count * retention_score)
+
+                next_review_due = now.replace(microsecond=0) + \
+                    timedelta(days=interval_days)
+
+                conn.execute(
+                    """
+                    UPDATE vocabulary
+                    SET review_count = ?,
+                        last_reviewed_at = ?,
+                        retention_score = ?,
+                        next_review_due = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        review_count,
+                        now.isoformat(),
+                        retention_score,
+                        next_review_due.isoformat(),
+                        item_id,
+                    ),
+                )
+
+                updated = conn.execute(
+                    "SELECT * FROM vocabulary WHERE id = ?",
+                    (item_id,),
+                ).fetchone()
+
+                return self._row_to_domain(updated)
 
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
+
 
     def _row_to_domain(self, row: sqlite3.Row) -> VocabularyItem:
         return VocabularyItem(
@@ -110,4 +143,10 @@ class SQLiteVocabularyRepository:
                 else None
             ),
             review_count=row["review_count"],
+            retention_score=row["retention_score"],
+            next_review_due=(
+                datetime.fromisoformat(row["next_review_due"])
+                if row["next_review_due"]
+                else None
+            ),
         )
