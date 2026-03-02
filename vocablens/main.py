@@ -6,6 +6,12 @@ from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 from vocablens.providers.translation.google_provider import GoogleTranslateProvider
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.api.routes import create_routes
+from vocablens.providers.ocr.pytesseract_provider import PyTesseractProvider
+from vocablens.services.ocr_service import OCRService
+
+
+ocr_provider = PyTesseractProvider()
+ocr_service = OCRService(ocr_provider)
 
 DB_PATH = Path("vocablens.db")
 
