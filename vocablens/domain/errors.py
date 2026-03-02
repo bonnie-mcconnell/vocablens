@@ -12,3 +12,7 @@ class OCRProcessingError(VocabLensError):
 
 class PersistenceError(VocabLensError):
     pass
+
+
+class NotFoundError(Exception):
+    pass
