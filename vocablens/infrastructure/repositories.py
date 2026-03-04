@@ -15,12 +15,13 @@ class SQLiteVocabularyRepository:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def add(self, item: VocabularyItem) -> VocabularyItem:
+    def add(self, user_id: int, item: VocabularyItem) -> VocabularyItem:
         try:
             with self._connect() as conn:
                 cursor = conn.execute(
                     """
                     INSERT INTO vocabulary (
+                        user_id,
                         source_text,
                         translated_text,
                         source_lang,
@@ -30,7 +31,7 @@ class SQLiteVocabularyRepository:
                         review_count,
                         retention_score,
                         next_review_due
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, 
                     (
                         item.source_text,
