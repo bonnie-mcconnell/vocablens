@@ -34,6 +34,7 @@ class SQLiteVocabularyRepository:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, 
                     (
+                        item.user_id,
                         item.source_text,
                         item.translated_text,
                         item.source_lang,
@@ -55,12 +56,13 @@ class SQLiteVocabularyRepository:
             raise PersistenceError(str(exc)) from exc
 
 
-    def list_all(self, limit: int, offset: int) -> list[VocabularyItem]:
+    def list_all(self, user_id: int, limit: int, offset: int) -> list[VocabularyItem]:
         try:
             with self._connect() as conn:
                 rows = conn.execute(
                     """
                     SELECT * FROM vocabulary
+                    WHERE user_id = ?
                     ORDER BY created_at DESC
                     LIMIT ? OFFSET ?
                     """,
@@ -73,11 +75,11 @@ class SQLiteVocabularyRepository:
             raise PersistenceError(str(exc)) from exc
         
 
-    def increment_review(self, item_id: int) -> VocabularyItem:
+    def increment_review(self, user_id: int, item_id: int):
         try:
             with self._connect() as conn:
                 row = conn.execute(
-                    "SELECT * FROM vocabulary WHERE id = ?",
+                    "SELECT * FROM vocabulary WHERE id = ? AND user_id = ?",
                     (item_id,),
                 ).fetchone()
 
@@ -152,7 +154,7 @@ class SQLiteVocabularyRepository:
             ),
         )
     
-    def list_due(self) -> list[VocabularyItem]:
+    def list_due(self, user_id: int) -> list[VocabularyItem]:
         try:
             with self._connect() as conn:
                 now = datetime.utcnow().isoformat()
@@ -160,7 +162,8 @@ class SQLiteVocabularyRepository:
                 rows = conn.execute(
                     """
                     SELECT * FROM vocabulary
-                    WHERE next_review_due IS NOT NULL
+                    WHERE user_id = ?
+                    AND next_review_due IS NOT NULL
                     AND next_review_due <= ?
                     ORDER BY next_review_due ASC
                     """,
