@@ -51,3 +51,8 @@ class VocabularyResponse(BaseModel):
             retention_score=item.retention_score,
             next_review_due=item.next_review_due,
         )
+    
+
+
+class ReviewRequest(BaseModel):
+    rating: str

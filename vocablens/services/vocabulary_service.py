@@ -5,7 +5,7 @@ from vocablens.domain.models import VocabularyItem
 from vocablens.domain.errors import NotFoundError
 from vocablens.providers.translation.base import Translator
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
-
+from vocablens.domain.spaced_repetition import SpacedRepetitionEngine
 
 class VocabularyService:
     def __init__(
@@ -15,6 +15,7 @@ class VocabularyService:
     ) -> None:
         self._translator = translator
         self._repository = repository
+        self._srs = SpacedRepetitionEngine()
 
     def process_text(
         self,
@@ -45,11 +46,22 @@ class VocabularyService:
     ) -> List[VocabularyItem]:
         return self._repository.list_all(user_id, limit, offset)
 
-    def review_item(self, user_id: int, item_id: int) -> VocabularyItem:
-        try:
-            return self._repository.increment_review(user_id, item_id)
-        except ValueError:
+    def review_item(
+        self,
+        user_id: int,
+        item_id: int,
+        rating: str,
+    ) -> VocabularyItem:
+
+        item = self._repository.get(user_id, item_id)
+
+        if not item:
             raise NotFoundError(f"Vocabulary item {item_id} not found")
 
+        updated = self._srs.review(item, rating)
+
+        return self._repository.update(updated)
+    
+    
     def list_due_items(self, user_id: int) -> List[VocabularyItem]:
         return self._repository.list_due(user_id)

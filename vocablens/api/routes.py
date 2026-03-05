@@ -16,6 +16,7 @@ from vocablens.api.schemas import (
     RegisterRequest,
     LoginRequest,
     TokenResponse,
+    ReviewRequest,
 )
 from vocablens.domain.errors import NotFoundError
 from vocablens.api.dependencies import get_current_user
@@ -111,13 +112,27 @@ def create_routes(
         target_lang: str = Query("en"),
         user: User = Depends(get_current_user),
     ):
+
         image_bytes = await file.read()
+
+        if len(image_bytes) > 5_000_000:
+            raise HTTPException(
+                status_code=400,
+                detail="File too large (max 5MB)",
+            )
+
         extracted_text = ocr_service.extract(image_bytes)
 
         if not extracted_text.strip():
             raise HTTPException(
                 status_code=400,
                 detail="No text detected in image",
+            )
+
+        if len(extracted_text) > 5000:
+            raise HTTPException(
+                status_code=400,
+                detail="Text too long",
             )
 
         item = service.process_text(
@@ -128,7 +143,7 @@ def create_routes(
         )
 
         return VocabularyResponse.from_domain(item)
-
+    
     router.include_router(translate_router)
 
     # ==========================================================
@@ -149,11 +164,18 @@ def create_routes(
     @vocab_router.post("/{item_id}/review", response_model=VocabularyResponse)
     def review_item(
         item_id: int,
+        payload: ReviewRequest,
         user: User = Depends(get_current_user),
     ):
         try:
-            updated = service.review_item(user.id, item_id)
+            updated = service.review_item(
+                user.id,
+                item_id,
+                payload.rating,
+            )
+
             return VocabularyResponse.from_domain(updated)
+
         except NotFoundError:
             raise HTTPException(
                 status_code=404,

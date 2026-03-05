@@ -6,9 +6,14 @@ from vocablens.domain.errors import OCRProcessingError
 
 
 class PyTesseractProvider:
+
     def extract_text(self, image_bytes: bytes) -> str:
         try:
             image = Image.open(io.BytesIO(image_bytes))
-            return pytesseract.image_to_string(image).strip()
+            text = pytesseract.image_to_string(image)
+            return text.strip()
+
         except Exception as exc:
-            raise OCRProcessingError(str(exc)) from exc
+            raise OCRProcessingError(
+                f"OCR extraction failed: {exc}"
+            ) from exc
