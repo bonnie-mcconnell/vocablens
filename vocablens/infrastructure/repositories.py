@@ -182,3 +182,42 @@ class SQLiteVocabularyRepository:
                 if row["next_review_due"] else None
             ),
         )
+
+    def get(self, user_id: int, item_id: int) -> VocabularyItem | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM vocabulary
+                WHERE id = ? AND user_id = ?
+                """,
+                (item_id, user_id),
+            ).fetchone()
+
+            if not row:
+                return None
+
+            return self._row_to_domain(row)
+        
+    
+    def update(self, item: VocabularyItem) -> VocabularyItem:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE vocabulary
+                SET
+                    last_reviewed_at = ?,
+                    review_count = ?,
+                    retention_score = ?,
+                    next_review_due = ?
+                WHERE id = ?
+                """,
+                (
+                    item.last_reviewed_at.isoformat(),
+                    item.review_count,
+                    item.retention_score,
+                    item.next_review_due.isoformat(),
+                    item.id,
+                ),
+            )
+
+        return item
