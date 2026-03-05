@@ -1,6 +1,4 @@
 import httpx
-from typing import Optional
-
 from vocablens.providers.translation.base import Translator
 from vocablens.domain.errors import TranslationError
 
@@ -36,13 +34,12 @@ class LibreTranslateProvider(Translator):
             return data["translatedText"]
 
         except httpx.RequestError as exc:
-            raise TranslationError(f"Translation request failed: {exc}") from exc
+            raise TranslationError("Translation request failed") from exc
+
         except httpx.HTTPStatusError as exc:
             raise TranslationError(
                 f"Translation service error: {exc.response.status_code}"
             ) from exc
-        except Exception as exc:
-            raise TranslationError(str(exc)) from exc
 
     def close(self):
         self._client.close()
