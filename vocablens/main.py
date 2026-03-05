@@ -12,53 +12,62 @@ from vocablens.providers.ocr.pytesseract_provider import PyTesseractProvider
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.api.routes import create_routes
-from vocablens.domain.errors import (
-    TranslationError,
-    PersistenceError,
-)
+from vocablens.domain.errors import TranslationError, PersistenceError
 
-# -------------------------
+# ------------------------------------------------------------------
 # Logging
-# -------------------------
+# ------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("vocablens")
 
-# -------------------------
-# Configuration
-# -------------------------
 
-DB_PATH = Path("vocablens.db")
-
-# -------------------------
+# ------------------------------------------------------------------
 # App Factory
-# -------------------------
+# ------------------------------------------------------------------
 
 def create_app() -> FastAPI:
+    app = FastAPI(title="VocabLens API")
 
-    init_db(DB_PATH)
+    db_path = Path("vocablens.db")
 
+    # Infrastructure
     translator = LibreTranslateProvider()
-    vocab_repo = SQLiteVocabularyRepository(DB_PATH)
-    user_repo = SQLiteUserRepository(DB_PATH)
+    vocab_repo = SQLiteVocabularyRepository(db_path)
+    user_repo = SQLiteUserRepository(db_path)
 
+    # Services
+    vocab_service = VocabularyService(translator, vocab_repo)
     ocr_provider = PyTesseractProvider()
     ocr_service = OCRService(ocr_provider)
 
-    vocab_service = VocabularyService(translator, vocab_repo)
+    # -------------------------
+    # Startup / Shutdown
+    # -------------------------
 
-    app = FastAPI(title="VocabLens API")
+    @app.on_event("startup")
+    async def startup():
+        init_db(db_path)
+        logger.info("Database initialized")
 
+    @app.on_event("shutdown")
+    async def shutdown():
+        translator.close()
+        logger.info("Application shutdown complete")
+
+    # -------------------------
     # Routers
+    # -------------------------
+
     app.include_router(
         create_routes(
-            vocab_service,
-            ocr_service,
-            user_repo,
+            service=vocab_service,          # MUST match signature
+            ocr_service=ocr_service,
+            user_repo=user_repo,
         )
     )
 
@@ -68,7 +77,7 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
-        logger.info("Request: %s %s", request.method, request.url)
+        logger.info("Request: %s %s", request.method, request.url.path)
         response = await call_next(request)
         logger.info("Response: %s", response.status_code)
         return response
@@ -90,11 +99,6 @@ def create_app() -> FastAPI:
             status_code=500,
             content={"detail": "Database error"},
         )
-
-    # Graceful shutdown
-    @app.on_event("shutdown")
-    def shutdown_event():
-        translator.close()
 
     return app
 
