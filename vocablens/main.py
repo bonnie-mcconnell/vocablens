@@ -15,9 +15,10 @@ from vocablens.services.ocr_service import OCRService
 from vocablens.api.routes import create_routes
 from vocablens.domain.errors import TranslationError, PersistenceError
 
-# ------------------------------------------------------------------
+
+# ------------------------------------------------
 # Logging
-# ------------------------------------------------------------------
+# ------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,24 +28,38 @@ logging.basicConfig(
 logger = logging.getLogger("vocablens")
 
 
-# ------------------------------------------------------------------
+# ------------------------------------------------
 # App Factory
-# ------------------------------------------------------------------
+# ------------------------------------------------
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="VocabLens API")
+    app = FastAPI(
+        title="VocabLens API",
+        version="1.0.0",
+    )
 
     db_path = Path("vocablens.db")
 
+    # ------------------------------------------------
     # Infrastructure
+    # ------------------------------------------------
+
     translator = LibreTranslateProvider()
     vocab_repo = SQLiteVocabularyRepository(db_path)
     user_repo = SQLiteUserRepository(db_path)
 
+    # ------------------------------------------------
     # Services
+    # ------------------------------------------------
+
     vocab_service = VocabularyService(translator, vocab_repo)
+
     ocr_provider = PyTesseractProvider()
     ocr_service = OCRService(ocr_provider)
+
+    # ------------------------------------------------
+    # Middleware
+    # ------------------------------------------------
 
     app.add_middleware(
         CORSMiddleware,
@@ -54,13 +69,24 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        logger.info("Request: %s %s", request.method, request.url.path)
+        response = await call_next(request)
+        logger.info("Response: %s", response.status_code)
+        return response
+
+    # ------------------------------------------------
+    # Health Endpoint
+    # ------------------------------------------------
+
     @app.get("/health", tags=["System"])
     def health():
         return {"status": "ok"}
 
-    # -------------------------
+    # ------------------------------------------------
     # Startup / Shutdown
-    # -------------------------
+    # ------------------------------------------------
 
     @app.on_event("startup")
     async def startup():
@@ -69,35 +95,27 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown():
-        translator.close()
+        try:
+            translator.close()
+        except Exception:
+            pass
         logger.info("Application shutdown complete")
 
-    # -------------------------
-    # Routers
-    # -------------------------
+    # ------------------------------------------------
+    # Routes
+    # ------------------------------------------------
 
     app.include_router(
         create_routes(
-            service=vocab_service,          # MUST match signature
+            service=vocab_service,
             ocr_service=ocr_service,
             user_repo=user_repo,
         )
     )
 
-    # -------------------------
-    # Middleware
-    # -------------------------
-
-    @app.middleware("http")
-    async def log_requests(request: Request, call_next):
-        logger.info("Request: %s %s", request.method, request.url.path)
-        response = await call_next(request)
-        logger.info("Response: %s", response.status_code)
-        return response
-
-    # -------------------------
+    # ------------------------------------------------
     # Exception Handlers
-    # -------------------------
+    # ------------------------------------------------
 
     @app.exception_handler(TranslationError)
     async def translation_handler(request: Request, exc: TranslationError):

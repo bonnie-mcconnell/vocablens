@@ -3,17 +3,12 @@ from pathlib import Path
 
 
 def init_db(db_path: Path) -> None:
-    conn = sqlite3.connect(db_path)
-    try:
+    with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
-
-        # Drop existing tables (clean reset for V1 transition)
-        conn.execute("DROP TABLE IF EXISTS vocabulary;")
-        conn.execute("DROP TABLE IF EXISTS users;")
 
         conn.execute(
             """
-            CREATE TABLE users (
+            CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
@@ -24,7 +19,7 @@ def init_db(db_path: Path) -> None:
 
         conn.execute(
             """
-            CREATE TABLE vocabulary (
+            CREATE TABLE IF NOT EXISTS vocabulary (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 source_text TEXT NOT NULL,
@@ -41,6 +36,11 @@ def init_db(db_path: Path) -> None:
             """
         )
 
-        conn.commit()
-    finally:
-        conn.close()
+        # Performance indexes
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_vocab_user_id ON vocabulary(user_id)"
+        )
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_vocab_next_due ON vocabulary(next_review_due)"
+        )

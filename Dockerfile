@@ -12,6 +12,8 @@ COPY vocablens ./vocablens
 RUN pip install --upgrade pip && \
     pip install .
 
+ENV VOCABLENS_SECRET=change-this-in-production
+
 EXPOSE 8000
 
 CMD ["uvicorn", "vocablens.main:app", "--host", "0.0.0.0", "--port", "8000"]
