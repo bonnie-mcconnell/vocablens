@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
+from vocablens.config import settings
 
-SECRET_KEY = "dev-secret-change-me"
+SECRET_KEY = settings.SECRET_KEY
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
