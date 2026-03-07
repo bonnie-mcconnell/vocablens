@@ -36,6 +36,17 @@ def init_db(db_path: Path) -> None:
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS translation_cache (
+                text TEXT NOT NULL,
+                target_lang TEXT NOT NULL,
+                translation TEXT NOT NULL,
+                PRIMARY KEY (text, target_lang)
+            )
+            """
+        )
+
         # Performance indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_vocab_user_id ON vocabulary(user_id)"
