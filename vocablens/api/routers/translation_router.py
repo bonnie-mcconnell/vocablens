@@ -1,49 +1,63 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
 
-from vocablens.infrastructure.repositories_users import SQLiteUserRepository
-from vocablens.api.schemas import RegisterRequest, LoginRequest, TokenResponse
-from vocablens.auth.security import hash_password, verify_password
-from vocablens.auth.jwt import create_access_token
+from vocablens.services.vocabulary_service import VocabularyService
+from vocablens.services.ocr_service import OCRService
+from vocablens.api.schemas import VocabularyResponse, TranslationRequest
+from vocablens.api.dependencies import get_current_user
+from vocablens.domain.user import User
+from vocablens.core.constants import MAX_IMAGE_SIZE, MAX_TEXT_LENGTH
 
 
-DUMMY_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEeO6cWwWlR9E9QnUnxE27XGr0CcsMEY0p6"
+def create_translation_router(
+    service: VocabularyService,
+    ocr_service: OCRService,
+) -> APIRouter:
 
+    router = APIRouter(prefix="/translate", tags=["Translation"])
 
-def create_auth_router(user_repo: SQLiteUserRepository) -> APIRouter:
+    @router.post("/", response_model=VocabularyResponse)
+    def translate_text(
+        payload: TranslationRequest,
+        user: User = Depends(get_current_user),
+    ):
 
-    router = APIRouter(prefix="/auth", tags=["Authentication"])
+        item = service.process_text(
+            user.id,
+            payload.text,
+            payload.source_lang,
+            payload.target_lang,
+        )
 
-    @router.post("/register", response_model=TokenResponse)
-    def register(payload: RegisterRequest):
+        return VocabularyResponse.from_domain(item)
 
-        hashed = hash_password(payload.password)
+    @router.post("/image", response_model=VocabularyResponse)
+    async def translate_image(
+        file: UploadFile = File(...),
+        source_lang: str = Query("auto"),
+        target_lang: str = Query("en"),
+        user: User = Depends(get_current_user),
+    ):
 
-        try:
-            user = user_repo.create(
-                email=payload.email,
-                password_hash=hashed,
-            )
-        except ValueError:
-            raise HTTPException(400, "Email already registered")
+        image_bytes = await file.read()
 
-        token = create_access_token(user.id)
+        if len(image_bytes) > MAX_IMAGE_SIZE:
+            raise HTTPException(400, "File too large")
 
-        return TokenResponse(access_token=token)
+        text = ocr_service.extract(image_bytes)
 
-    @router.post("/login", response_model=TokenResponse)
-    def login(payload: LoginRequest):
+        if not text.strip():
+            raise HTTPException(400, "No text detected")
 
-        user = user_repo.get_by_email(payload.email)
+        if len(text) > MAX_TEXT_LENGTH:
+            raise HTTPException(400, "Text too long")
 
-        if not user:
-            verify_password(payload.password, DUMMY_HASH)
-            raise HTTPException(401, "Invalid credentials")
+        item = service.process_text(
+            user.id,
+            text,
+            source_lang,
+            target_lang,
+        )
 
-        if not verify_password(payload.password, user.password_hash):
-            raise HTTPException(401, "Invalid credentials")
-
-        token = create_access_token(user.id)
-
-        return TokenResponse(access_token=token)
+        return VocabularyResponse.from_domain(item)
 
     return router

@@ -1,63 +1,64 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from vocablens.services.vocabulary_service import VocabularyService
-from vocablens.services.ocr_service import OCRService
-from vocablens.api.schemas import VocabularyResponse, TranslationRequest
+from vocablens.api.schemas import VocabularyResponse, ReviewRequest
 from vocablens.api.dependencies import get_current_user
+from vocablens.domain.errors import NotFoundError
 from vocablens.domain.user import User
-from vocablens.core.constants import MAX_IMAGE_SIZE, MAX_TEXT_LENGTH
+from vocablens.core.constants import REVIEW_RATINGS
 
 
-def create_translation_router(
-    service: VocabularyService,
-    ocr_service: OCRService,
-) -> APIRouter:
+def create_vocabulary_router(service: VocabularyService) -> APIRouter:
 
-    router = APIRouter(prefix="/translate", tags=["Translation"])
+    router = APIRouter(prefix="/vocab", tags=["Vocabulary"])
 
-    @router.post("/", response_model=VocabularyResponse)
-    def translate_text(
-        payload: TranslationRequest,
+    @router.get("/", response_model=list[VocabularyResponse])
+    def list_vocabulary(
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0),
         user: User = Depends(get_current_user),
     ):
 
-        item = service.process_text(
-            user.id,
-            payload.text,
-            payload.source_lang,
-            payload.target_lang,
-        )
+        items = service.list_vocabulary(user.id, limit, offset)
 
-        return VocabularyResponse.from_domain(item)
+        return [VocabularyResponse.from_domain(i) for i in items]
 
-    @router.post("/image", response_model=VocabularyResponse)
-    async def translate_image(
-        file: UploadFile = File(...),
-        source_lang: str = Query("auto"),
-        target_lang: str = Query("en"),
+    @router.post("/{item_id}/review", response_model=VocabularyResponse)
+    def review_item(
+        item_id: int,
+        payload: ReviewRequest,
         user: User = Depends(get_current_user),
     ):
 
-        image_bytes = await file.read()
+        if payload.rating not in REVIEW_RATINGS:
+            raise HTTPException(400, "Invalid rating")
 
-        if len(image_bytes) > MAX_IMAGE_SIZE:
-            raise HTTPException(400, "File too large")
+        try:
 
-        text = ocr_service.extract(image_bytes)
+            updated = service.review_item(
+                user.id,
+                item_id,
+                payload.rating,
+            )
 
-        if not text.strip():
-            raise HTTPException(400, "No text detected")
+            return VocabularyResponse.from_domain(updated)
 
-        if len(text) > MAX_TEXT_LENGTH:
-            raise HTTPException(400, "Text too long")
+        except NotFoundError:
 
-        item = service.process_text(
-            user.id,
-            text,
-            source_lang,
-            target_lang,
-        )
+            raise HTTPException(404, "Vocabulary item not found")
 
-        return VocabularyResponse.from_domain(item)
+    @router.get("/due", response_model=list[VocabularyResponse])
+    def due_items(user: User = Depends(get_current_user)):
+
+        items = service.list_due_items(user.id)
+
+        return [VocabularyResponse.from_domain(i) for i in items]
+
+    @router.get("/review-session", response_model=list[VocabularyResponse])
+    def review_session(user: User = Depends(get_current_user)):
+
+        items = service.review_session(user.id)
+
+        return [VocabularyResponse.from_domain(i) for i in items]
 
     return router
