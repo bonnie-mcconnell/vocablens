@@ -1,9 +1,14 @@
 import httpx
+import logging
+
 from vocablens.providers.translation.base import Translator
 from vocablens.domain.errors import TranslationError
 
+logger = logging.getLogger(__name__)
+
 
 class LibreTranslateProvider(Translator):
+
     def __init__(
         self,
         base_url: str = "https://libretranslate.com",
@@ -13,7 +18,10 @@ class LibreTranslateProvider(Translator):
         self._client = httpx.Client(timeout=timeout)
 
     def translate(self, text: str, target_lang: str) -> str:
+
         try:
+            logger.info("Requesting translation")
+
             response = self._client.post(
                 f"{self._base_url}/translate",
                 json={
@@ -28,15 +36,19 @@ class LibreTranslateProvider(Translator):
 
             data = response.json()
 
-            if "translatedText" not in data:
+            translated = data.get("translatedText")
+
+            if not translated:
                 raise TranslationError("Malformed translation response")
 
-            return data["translatedText"]
+            return translated
 
         except httpx.RequestError as exc:
+            logger.error("Translation request failed")
             raise TranslationError("Translation request failed") from exc
 
         except httpx.HTTPStatusError as exc:
+            logger.error("Translation service returned error")
             raise TranslationError(
                 f"Translation service error: {exc.response.status_code}"
             ) from exc
