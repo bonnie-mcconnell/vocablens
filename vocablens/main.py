@@ -14,7 +14,10 @@ from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.api.routes import create_routes
 from vocablens.domain.errors import TranslationError, PersistenceError
-
+from vocablens.services.cached_translator import CachedTranslator
+from vocablens.infrastructure.repositories_translation_cache import (
+    SQLiteTranslationCacheRepository,
+)
 
 # ------------------------------------------------
 # Logging
@@ -40,14 +43,27 @@ def create_app() -> FastAPI:
 
     db_path = Path("vocablens.db")
 
+    init_db(db_path)
+
+    # repositories
+    vocab_repo = SQLiteVocabularyRepository(db_path)
+    user_repo = SQLiteUserRepository(db_path)
+    cache_repo = SQLiteTranslationCacheRepository(str(db_path))
+
+    # providers
+    translator_provider = LibreTranslateProvider()
+
     # ------------------------------------------------
     # Infrastructure
     # ------------------------------------------------
 
-    translator = LibreTranslateProvider()
-    vocab_repo = SQLiteVocabularyRepository(db_path)
-    user_repo = SQLiteUserRepository(db_path)
+    cache_repo = SQLiteTranslationCacheRepository("vocablens.db")
 
+    translator = CachedTranslator(
+        provider=translator_provider,
+        cache_repo=cache_repo,
+    )
+    
     # ------------------------------------------------
     # Services
     # ------------------------------------------------
