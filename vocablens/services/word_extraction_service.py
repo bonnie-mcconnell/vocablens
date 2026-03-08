@@ -1,36 +1,42 @@
-from fastapi import APIRouter
+import re
 
-from vocablens.api.routers.auth_router import create_auth_router
-from vocablens.api.routers.translation_router import create_translation_router
-from vocablens.api.routers.vocabulary_router import create_vocabulary_router
-
-from vocablens.services.vocabulary_service import VocabularyService
-from vocablens.services.ocr_service import OCRService
-from vocablens.infrastructure.repositories_users import SQLiteUserRepository
+STOPWORDS = {
+    "the","a","an","and","or","but",
+    "is","are","was","were","be","been",
+    "to","of","in","on","for","with"
+}
 
 
-def create_routes(
-    service: VocabularyService,
-    ocr_service: OCRService,
-    user_repo: SQLiteUserRepository,
-) -> APIRouter:
+class WordExtractionService:
 
-    router = APIRouter()
+    def extract_words(self, text: str) -> list[str]:
 
-    # authentication routes
-    router.include_router(create_auth_router(user_repo))
+        text = text.lower()
 
-    # OCR + translation
-    router.include_router(
-        create_translation_router(
-            service=service,
-            ocr_service=ocr_service,
-        )
-    )
+        # remove punctuation
+        text = re.sub(r"[^\w\s]", "", text)
 
-    # vocabulary management
-    router.include_router(
-        create_vocabulary_router(service)
-    )
+        words = text.split()
 
-    return router
+        cleaned = []
+
+        for word in words:
+
+            if len(word) < 2:
+                continue
+
+            if word in STOPWORDS:
+                continue
+
+            cleaned.append(word)
+
+        # remove duplicates but keep order
+        seen = set()
+        unique = []
+
+        for w in cleaned:
+            if w not in seen:
+                seen.add(w)
+                unique.append(w)
+
+        return unique
