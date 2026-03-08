@@ -18,7 +18,7 @@ def create_routes(
     router = APIRouter()
 
     # authentication routes
-    router.include_router(create_auth_router(user_repo))
+    router.include_router(create_auth_router(user_repo=user_repo))
 
     # OCR + translation
     router.include_router(

@@ -19,6 +19,7 @@ from vocablens.providers.ocr.pytesseract_provider import PyTesseractProvider
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.cached_translator import CachedTranslator
+from vocablens.services.word_extraction_service import WordExtractionService
 
 from vocablens.api.routes import create_routes
 from vocablens.api.routers.auth_router import create_auth_router
@@ -75,7 +76,14 @@ def create_app() -> FastAPI:
         cache_repo=cache_repo,
     )
 
-    vocab_service = VocabularyService(translator, vocab_repo)
+    extractor = WordExtractionService()
+
+    vocab_service = VocabularyService(
+        translator,
+        vocab_repo,
+        extractor,
+    )
+    
     ocr_service = OCRService(ocr_provider)
 
     # ------------------------------------------------

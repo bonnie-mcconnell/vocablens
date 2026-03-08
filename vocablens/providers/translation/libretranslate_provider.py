@@ -1,5 +1,6 @@
 import httpx
 import logging
+from typing import List
 
 from vocablens.providers.translation.base import Translator
 from vocablens.domain.errors import TranslationError
@@ -12,21 +13,29 @@ class LibreTranslateProvider(Translator):
     def __init__(
         self,
         base_url: str = "https://libretranslate.com",
-        timeout: float = 5.0,
+        timeout: float = 10.0,
     ):
         self._base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout)
 
-    def translate(self, text: str, target_lang: str) -> str:
+    # ------------------------------------------------
+    # Single translation
+    # ------------------------------------------------
+
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+    ) -> str:
 
         try:
-            logger.info("Requesting translation")
 
             response = self._client.post(
                 f"{self._base_url}/translate",
                 json={
                     "q": text,
-                    "source": "auto",
+                    "source": source_lang,
                     "target": target_lang,
                     "format": "text",
                 },
@@ -44,14 +53,35 @@ class LibreTranslateProvider(Translator):
             return translated
 
         except httpx.RequestError as exc:
-            logger.error("Translation request failed")
             raise TranslationError("Translation request failed") from exc
 
         except httpx.HTTPStatusError as exc:
-            logger.error("Translation service returned error")
             raise TranslationError(
                 f"Translation service error: {exc.response.status_code}"
             ) from exc
+
+    # ------------------------------------------------
+    # Batch translation
+    # ------------------------------------------------
+
+    def translate_batch(
+        self,
+        texts: List[str],
+        source_lang: str,
+        target_lang: str,
+    ) -> List[str]:
+
+        translations = []
+
+        for text in texts:
+            translated = self.translate(
+                text,
+                source_lang,
+                target_lang,
+            )
+            translations.append(translated)
+
+        return translations
 
     def close(self):
         self._client.close()
