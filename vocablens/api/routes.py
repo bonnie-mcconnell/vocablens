@@ -17,8 +17,23 @@ def create_routes(
 
     router = APIRouter()
 
+    # Authentication
     router.include_router(create_auth_router(user_repo))
-    router.include_router(create_translation_router(service, ocr_service))
-    router.include_router(create_vocabulary_router(service))
+
+    # OCR + Translation pipeline
+    router.include_router(
+        create_translation_router(
+            service=service,
+            ocr_service=ocr_service,
+        )
+    )
+
+    # Vocabulary management
+    router.include_router(
+        create_vocabulary_router(
+            service=service,
+            user_repo=user_repo,
+        )
+    )
 
     return router

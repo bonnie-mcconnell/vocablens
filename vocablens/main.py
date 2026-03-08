@@ -138,8 +138,6 @@ def create_app() -> FastAPI:
     # ------------------------------------------------
     # Routes
     # ------------------------------------------------
-
-    app.include_router(create_auth_router(user_repo))
     
     app.include_router(
         create_routes(
