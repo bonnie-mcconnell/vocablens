@@ -23,6 +23,7 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
 
         return [VocabularyResponse.from_domain(i) for i in items]
 
+
     @router.post("/{item_id}/review", response_model=VocabularyResponse)
     def review_item(
         item_id: int,
@@ -47,6 +48,7 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
 
             raise HTTPException(404, "Vocabulary item not found")
 
+
     @router.get("/due", response_model=list[VocabularyResponse])
     def due_items(user: User = Depends(get_current_user)):
 
@@ -54,10 +56,33 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
 
         return [VocabularyResponse.from_domain(i) for i in items]
 
+
     @router.get("/review-session", response_model=list[VocabularyResponse])
     def review_session(user: User = Depends(get_current_user)):
 
         items = service.review_session(user.id)
+
+        return [VocabularyResponse.from_domain(i) for i in items]
+
+
+    # ----------------------------------------
+    # NEW: extract vocabulary from text
+    # ----------------------------------------
+
+    @router.post("/extract", response_model=list[VocabularyResponse])
+    def extract_vocabulary(
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        user: User = Depends(get_current_user),
+    ):
+
+        items = service.process_ocr_text(
+            user.id,
+            text,
+            source_lang,
+            target_lang,
+        )
 
         return [VocabularyResponse.from_domain(i) for i in items]
 
