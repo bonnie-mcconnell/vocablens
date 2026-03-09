@@ -3,7 +3,7 @@ class LearningGraphService:
     def __init__(self, repository):
         self.repo = repository
 
-    def build_graph(self, user_id):
+    def build_user_graph(self, user_id):
 
         items = self.repo.list_all(user_id)
 
@@ -22,7 +22,7 @@ class LearningGraphService:
 
     def recommend_next_cluster(self, user_id):
 
-        graph = self.build_graph(user_id)
+        graph = self.build_user_graph(user_id)
 
         smallest_cluster = None
         smallest_size = 9999
