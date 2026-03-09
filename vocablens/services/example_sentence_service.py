@@ -1,7 +1,7 @@
 from vocablens.providers.llm.base import LLMProvider
 
 
-class SentenceService:
+class ExampleSentenceService:
 
     def __init__(self, llm: LLMProvider):
         self._llm = llm
@@ -11,12 +11,12 @@ class SentenceService:
         word: str,
         source_lang: str,
         target_lang: str,
-    ):
+    ) -> dict:
 
         prompt = f"""
 Create a simple example sentence using the word "{word}".
 
-Return JSON:
+Return JSON only.
 
 {{
  "source_sentence": "...",
