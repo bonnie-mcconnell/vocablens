@@ -15,21 +15,23 @@ from vocablens.infrastructure.repositories_translation_cache import (
 
 from vocablens.providers.translation.libretranslate_provider import LibreTranslateProvider
 from vocablens.providers.ocr.pytesseract_provider import PyTesseractProvider
+from vocablens.providers.llm.openai_provider import OpenAIProvider
 
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.cached_translator import CachedTranslator
 from vocablens.services.word_extraction_service import WordExtractionService
 
+from vocablens.services.example_sentence_service import ExampleSentenceService
+from vocablens.services.grammar_service import GrammarExplanationService
+from vocablens.services.semantic_cluster_service import SemanticClusterService
+from vocablens.services.conversation_service import ConversationService
+
 from vocablens.api.routes import create_routes
-from vocablens.api.routers.auth_router import create_auth_router
+from vocablens.api.routers.conversation_router import create_conversation_router
 
 from vocablens.domain.errors import TranslationError, PersistenceError
 
-
-# ------------------------------------------------
-# Logging
-# ------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,10 +40,6 @@ logging.basicConfig(
 
 logger = logging.getLogger("vocablens")
 
-
-# ------------------------------------------------
-# App Factory
-# ------------------------------------------------
 
 def create_app() -> FastAPI:
 
@@ -66,6 +64,7 @@ def create_app() -> FastAPI:
 
     translator_provider = LibreTranslateProvider()
     ocr_provider = PyTesseractProvider()
+    llm_provider = OpenAIProvider()
 
     # ------------------------------------------------
     # Services
@@ -78,12 +77,24 @@ def create_app() -> FastAPI:
 
     extractor = WordExtractionService()
 
+    sentence_service = ExampleSentenceService(llm_provider)
+    grammar_service = GrammarExplanationService(llm_provider)
+    cluster_service = SemanticClusterService(llm_provider)
+
     vocab_service = VocabularyService(
         translator,
         vocab_repo,
         extractor,
+        sentence_service,
+        grammar_service,
+        cluster_service,
     )
-    
+
+    conversation_service = ConversationService(
+        llm_provider,
+        vocab_repo,
+    )
+
     ocr_service = OCRService(ocr_provider)
 
     # ------------------------------------------------
@@ -92,7 +103,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # restrict in production
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -126,7 +137,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     # ------------------------------------------------
-    # Startup / Shutdown
+    # Startup
     # ------------------------------------------------
 
     @app.on_event("startup")
@@ -134,19 +145,10 @@ def create_app() -> FastAPI:
         init_db(db_path)
         logger.info("Database initialized")
 
-    @app.on_event("shutdown")
-    async def shutdown():
-        try:
-            translator.close()
-        except Exception:
-            pass
-
-        logger.info("Application shutdown complete")
-
     # ------------------------------------------------
     # Routes
     # ------------------------------------------------
-    
+
     app.include_router(
         create_routes(
             service=vocab_service,
@@ -155,8 +157,12 @@ def create_app() -> FastAPI:
         )
     )
 
+    app.include_router(
+        create_conversation_router(conversation_service)
+    )
+
     # ------------------------------------------------
-    # Exception Handlers
+    # Error Handlers
     # ------------------------------------------------
 
     @app.exception_handler(TranslationError)
