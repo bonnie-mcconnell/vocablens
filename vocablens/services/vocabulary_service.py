@@ -8,6 +8,8 @@ from vocablens.providers.translation.base import Translator
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 from vocablens.services.word_extraction_service import WordExtractionService
 from vocablens.services.language_detection_service import LanguageDetectionService
+from vocablens.services.difficulty_service import DifficultyService
+
 
 class VocabularyService:
 
@@ -23,6 +25,42 @@ class VocabularyService:
         self._extractor = extractor
         self._srs = SpacedRepetitionEngine()
         self._lang_detector = LanguageDetectionService()
+        self._difficulty = DifficultyService()
+
+    # ------------------------------------------------
+    # SINGLE TEXT TRANSLATION
+    # ------------------------------------------------
+
+    def process_text(
+        self,
+        user_id: int,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+    ) -> VocabularyItem:
+
+        if source_lang == "auto":
+            source_lang = self._lang_detector.detect(text)
+
+        translated = self._translator.translate(
+            text,
+            source_lang,
+            target_lang,
+        )
+
+        difficulty = self._difficulty.score(text)
+
+        item = VocabularyItem(
+            id=None,
+            source_text=text,
+            translated_text=translated,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            created_at=datetime.utcnow(),
+            retention_score=difficulty,
+        )
+
+        return self._repository.add(user_id, item)
 
     # ------------------------------------------------
     # OCR → vocabulary pipeline
@@ -60,17 +98,26 @@ class VocabularyService:
         target_lang: str,
     ) -> List[VocabularyItem]:
 
-        words = list(set(words))
+        # preserve order unique
+        seen = set()
+        unique_words = []
+
+        for w in words:
+            if w not in seen:
+                seen.add(w)
+                unique_words.append(w)
 
         translations = self._translator.translate_batch(
-            words,
+            unique_words,
             source_lang,
             target_lang,
         )
 
         items = []
 
-        for word, translated in zip(words, translations):
+        for i, word in enumerate(unique_words):
+
+            translated = translations[i]
 
             if self._repository.exists(
                 user_id,
@@ -80,6 +127,8 @@ class VocabularyService:
             ):
                 continue
 
+            difficulty = self._difficulty.score(word)
+
             item = VocabularyItem(
                 id=None,
                 source_text=word,
@@ -87,6 +136,7 @@ class VocabularyService:
                 source_lang=source_lang,
                 target_lang=target_lang,
                 created_at=datetime.utcnow(),
+                retention_score=difficulty,
             )
 
             saved = self._repository.add(user_id, item)

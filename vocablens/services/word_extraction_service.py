@@ -1,5 +1,8 @@
 import re
 
+from vocablens.core.frequency_list import COMMON_WORDS
+
+
 STOPWORDS = {
     "the","a","an","and","or","but",
     "is","are","was","were","be","been",
@@ -13,7 +16,6 @@ class WordExtractionService:
 
         text = text.lower()
 
-        # remove punctuation
         text = re.sub(r"[^\w\s]", "", text)
 
         words = text.split()
@@ -28,9 +30,11 @@ class WordExtractionService:
             if word in STOPWORDS:
                 continue
 
+            if word in COMMON_WORDS:
+                continue
+
             cleaned.append(word)
 
-        # remove duplicates but keep order
         seen = set()
         unique = []
 
