@@ -1,13 +1,13 @@
 from typing import List
 
-from vocablens.domain.models import VocabularyItem
 from vocablens.providers.llm.base import LLMProvider
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 
 
 class ConversationService:
     """
-    AI tutor that chats with the learner using their known vocabulary.
+    AI language tutor that adapts to the learner's vocabulary
+    and conversation history.
     """
 
     def __init__(
@@ -18,13 +18,19 @@ class ConversationService:
         self._llm = llm
         self._repo = vocab_repo
 
+    # --------------------------------------------
+    # Vocabulary retrieval
+    # --------------------------------------------
+
     def _get_known_words(self, user_id: int) -> List[str]:
 
-        items = self._repo.list_all(user_id, limit=1000, offset=0)
+        items = self._repo.list_all(user_id, limit=500, offset=0)
 
-        words = [i.source_text for i in items]
+        return [i.source_text for i in items][:200]
 
-        return words[:200]
+    # --------------------------------------------
+    # Conversation reply
+    # --------------------------------------------
 
     def generate_reply(
         self,
@@ -39,20 +45,22 @@ class ConversationService:
         vocab_list = ", ".join(known_words)
 
         prompt = f"""
-You are a language tutor.
+You are an AI language tutor helping a student practice {source_lang}.
 
-Speak ONLY using words the learner already studied.
+Student message:
+{user_message}
 
 Known vocabulary:
 {vocab_list}
 
-User message:
-{user_message}
+Rules:
+- Use mostly known vocabulary
+- Introduce at most 1–2 new words
+- Keep sentences short
+- If the student makes a mistake, gently correct them
+- Encourage the learner
 
-Language:
-{source_lang}
-
-Respond naturally but keep sentences simple.
+Respond in {source_lang}.
 """
 
         return self._llm.generate(prompt)

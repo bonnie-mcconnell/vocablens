@@ -7,7 +7,10 @@ from vocablens.services.conversation_service import ConversationService
 
 def create_conversation_router(service: ConversationService) -> APIRouter:
 
-    router = APIRouter(prefix="/conversation", tags=["Conversation"])
+    router = APIRouter(
+        prefix="/conversation",
+        tags=["Conversation"],
+    )
 
     @router.post("/chat")
     def chat(
