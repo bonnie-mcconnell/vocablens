@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 
@@ -26,7 +26,7 @@ class LearningGraphService:
 
         return graph
 
-    def recommend_next_cluster(self, user_id: int) -> str:
+    def recommend_next_cluster(self, user_id: int) -> Optional[str]:
 
         graph = self.build_graph(user_id)
 
