@@ -73,6 +73,47 @@ def init_db(db_path: Path) -> None:
         )
 
         # ---------------------------------------------------
+        # Learning intelligence tables
+        # ---------------------------------------------------
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS skill_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                grammar REAL,
+                vocabulary REAL,
+                fluency REAL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                user_message TEXT,
+                ai_reply TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learning_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                event_type TEXT,
+                metadata TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+
+        # ---------------------------------------------------
         # Indexes
         # ---------------------------------------------------
 
