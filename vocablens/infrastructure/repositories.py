@@ -281,4 +281,4 @@ class SQLiteVocabularyRepository:
                 if row["next_review_due"]
                 else None
             ),
-        )
+        ) 
