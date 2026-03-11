@@ -1,22 +1,27 @@
 from vocablens.services.retention_engine import RetentionEngine
+from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 
 
 class ReviewService:
+    """
+    Determines which vocabulary items should be reviewed
+    based on the forgetting curve.
+    """
 
-    def __init__(self, retention_engine, vocab_repo):
-        self.retention = retention_engine
-        self.repo = vocab_repo
+    def __init__(
+        self,
+        vocab_repo: SQLiteVocabularyRepository,
+        retention_engine: RetentionEngine,
+    ):
+        self._repo = vocab_repo
+        self._engine = retention_engine
 
-    def get_review_items(self, user_id):
+    def due_reviews(self, user_id: int):
 
-        items = self.repo.list_all(user_id, limit=1000, offset=0)
+        items = self._repo.list_all(user_id, limit=1000, offset=0)
 
-        review_items = []
-
-        for item in items:
-
-            if self.retention.needs_review(item):
-
-                review_items.append(item)
-
-        return review_items
+        return [
+            item
+            for item in items
+            if self._engine.needs_review(item)
+        ]
