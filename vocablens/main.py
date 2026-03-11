@@ -20,7 +20,11 @@ from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.cached_translator import CachedTranslator
 from vocablens.services.word_extraction_service import WordExtractionService
+
 from vocablens.services.conversation_service import ConversationService
+from vocablens.services.conversation_memory_service import ConversationMemoryService
+from vocablens.services.conversation_vocab_service import ConversationVocabularyService
+
 from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.scenario_service import ScenarioService
@@ -28,7 +32,6 @@ from vocablens.services.scenario_service import ScenarioService
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.skill_tracking_service import SkillTrackingService
-from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.language_brain_service import LanguageBrainService
 
 from vocablens.api.routes import create_routes
@@ -48,25 +51,25 @@ def create_app() -> FastAPI:
 
     db_path = Path("vocablens.db")
 
-    # -------------------------------------------------
+    # -----------------------------------------
     # Repositories
-    # -------------------------------------------------
+    # -----------------------------------------
 
     vocab_repo = SQLiteVocabularyRepository(db_path)
     user_repo = SQLiteUserRepository(db_path)
     cache_repo = SQLiteTranslationCacheRepository(str(db_path))
 
-    # -------------------------------------------------
+    # -----------------------------------------
     # Providers
-    # -------------------------------------------------
+    # -----------------------------------------
 
     translator_provider = LibreTranslateProvider()
     ocr_provider = PyTesseractProvider()
     llm_provider = OpenAIProvider()
 
-    # -------------------------------------------------
-    # Core Services
-    # -------------------------------------------------
+    # -----------------------------------------
+    # Core services
+    # -----------------------------------------
 
     translator = CachedTranslator(
         provider=translator_provider,
@@ -83,9 +86,9 @@ def create_app() -> FastAPI:
 
     ocr_service = OCRService(ocr_provider)
 
-    # -------------------------------------------------
-    # AI Learning Engine
-    # -------------------------------------------------
+    # -----------------------------------------
+    # AI learning engine
+    # -----------------------------------------
 
     memory_service = ConversationMemoryService()
 
@@ -101,16 +104,24 @@ def create_app() -> FastAPI:
         skill_tracker,
     )
 
+    conversation_vocab_service = ConversationVocabularyService(
+        extractor,
+        vocab_service,
+        vocab_repo,
+    )
+
     conversation_service = ConversationService(
         llm_provider,
         vocab_repo,
         brain_service,
         memory_service,
+        conversation_vocab_service,
+        skill_tracker,
     )
 
-    # -------------------------------------------------
-    # Learning Tools
-    # -------------------------------------------------
+    # -----------------------------------------
+    # Learning tools
+    # -----------------------------------------
 
     graph_service = LearningGraphService(vocab_repo)
 
@@ -121,9 +132,9 @@ def create_app() -> FastAPI:
 
     scenario_service = ScenarioService(llm_provider)
 
-    # -------------------------------------------------
+    # -----------------------------------------
     # Middleware
-    # -------------------------------------------------
+    # -----------------------------------------
 
     app.add_middleware(
         CORSMiddleware,
@@ -137,7 +148,9 @@ def create_app() -> FastAPI:
     async def log_requests(request: Request, call_next):
 
         start = time.time()
+
         response = await call_next(request)
+
         duration = time.time() - start
 
         logger.info(
@@ -150,17 +163,17 @@ def create_app() -> FastAPI:
 
         return response
 
-    # -------------------------------------------------
-    # Health
-    # -------------------------------------------------
+    # -----------------------------------------
+    # Health endpoint
+    # -----------------------------------------
 
-    @app.get("/health", tags=["System"])
+    @app.get("/health")
     def health():
         return {"status": "ok"}
 
-    # -------------------------------------------------
+    # -----------------------------------------
     # Startup
-    # -------------------------------------------------
+    # -----------------------------------------
 
     @app.on_event("startup")
     async def startup():
@@ -169,9 +182,9 @@ def create_app() -> FastAPI:
 
         logger.info("Database initialized")
 
-    # -------------------------------------------------
+    # -----------------------------------------
     # Routes
-    # -------------------------------------------------
+    # -----------------------------------------
 
     app.include_router(
         create_routes(
