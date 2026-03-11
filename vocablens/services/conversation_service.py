@@ -9,7 +9,7 @@ from vocablens.services.conversation_memory_service import ConversationMemorySer
 class ConversationService:
     """
     AI language tutor that adapts to the learner's vocabulary,
-    conversation context, and mistake analysis.
+    skill level, and conversation history.
     """
 
     def __init__(
@@ -24,19 +24,11 @@ class ConversationService:
         self._brain = brain
         self._memory = memory
 
-    # ------------------------------------------------
-    # Vocabulary retrieval
-    # ------------------------------------------------
-
     def _get_known_words(self, user_id: int) -> List[str]:
 
         items = self._repo.list_all(user_id, limit=500, offset=0)
 
         return [i.source_text for i in items][:200]
-
-    # ------------------------------------------------
-    # Conversation reply
-    # ------------------------------------------------
 
     def generate_reply(
         self,
@@ -46,27 +38,31 @@ class ConversationService:
         target_lang: str,
     ) -> dict:
 
-        # analyze message using language brain
+        # -----------------------------------
+        # Process message through AI brain
+        # -----------------------------------
+
         brain_output = self._brain.process_message(
-            user_id,
-            user_message,
-            source_lang,
+            user_id=user_id,
+            message=user_message,
+            language=source_lang,
         )
 
-        # retrieve conversation context
-        context = self._memory.get_context(user_id)
+        # -----------------------------------
+        # Retrieve context
+        # -----------------------------------
+
+        history = self._memory.get_recent_context(user_id)
 
         known_words = self._get_known_words(user_id)
 
         vocab_list = ", ".join(known_words)
 
-        context_text = "\n".join(context[-5:])
-
         prompt = f"""
-You are an AI language tutor helping a student practice {source_lang}.
+You are an expert language tutor helping a student learn {source_lang}.
 
 Conversation history:
-{context_text}
+{history}
 
 Student message:
 {user_message}
@@ -74,21 +70,31 @@ Student message:
 Known vocabulary:
 {vocab_list}
 
+Detected mistakes:
+{brain_output["analysis"]["grammar_mistakes"]}
+
 Rules:
 - Use mostly known vocabulary
 - Introduce at most 1–2 new words
 - Keep sentences short
-- Correct mistakes politely
+- Correct mistakes gently
 - Encourage the learner
+- Respond ONLY in {source_lang}
 
-Respond in {source_lang}.
+Reply naturally as a tutor.
 """
 
         reply = self._llm.generate(prompt)
 
-        # store conversation
-        self._memory.add_message(user_id, user_message)
-        self._memory.add_message(user_id, reply)
+        # -----------------------------------
+        # Store memory
+        # -----------------------------------
+
+        self._memory.store_turn(
+            user_id,
+            user_message,
+            reply,
+        )
 
         return {
             "reply": reply,
