@@ -5,9 +5,9 @@ from vocablens.services.conversation_service import ConversationService
 
 class SpeechConversationService:
     """
-    Handles full speech conversation loop.
+    Handles speech conversation loop.
 
-    audio → text → AI conversation → speech response
+    audio → text → conversation → speech
     """
 
     def __init__(
@@ -24,21 +24,23 @@ class SpeechConversationService:
         self,
         user_id: int,
         audio_path: str,
-        language: str,
+        source_lang: str,
+        target_lang: str,
     ):
 
-        text = self.stt.transcribe(audio_path)
+        transcript = self.stt.transcribe(audio_path)
 
-        reply = self.conversation.generate_reply(
-            user_id,
-            text,
-            language,
+        response = self.conversation.generate_reply(
+            user_id=user_id,
+            user_message=transcript,
+            source_lang=source_lang,
+            target_lang=target_lang,
         )
 
-        speech = self.tts.synthesize(reply["reply"])
+        speech = self.tts.synthesize(response["reply"])
 
         return {
-            "transcript": text,
-            "reply": reply,
+            "transcript": transcript,
+            "reply": response,
             "speech": speech,
         }
