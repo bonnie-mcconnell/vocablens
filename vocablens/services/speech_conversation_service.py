@@ -29,7 +29,7 @@ class SpeechConversationService:
 
         text = self.stt.transcribe(audio_path)
 
-        reply = self.conversation.reply(
+        reply = self.conversation.generate_reply(
             user_id,
             text,
             language,
