@@ -1,13 +1,12 @@
 from collections import defaultdict
+import sqlite3
 
 
 class SkillTrackingService:
-    """
-    Tracks language skill levels for each user.
-    Values range 0–1 and adjust over time.
-    """
 
-    def __init__(self):
+    def __init__(self, db_path="vocablens.db"):
+
+        self.db_path = db_path
 
         self.skills = defaultdict(
             lambda: {
@@ -35,6 +34,27 @@ class SkillTrackingService:
         profile["vocabulary"] = min(max(profile["vocabulary"], 0), 1)
         profile["fluency"] = min(max(profile["fluency"], 0), 1)
 
+        self._save_snapshot(user_id)
+
     def get_skill_profile(self, user_id: int):
 
         return self.skills[user_id]
+
+    def _save_snapshot(self, user_id):
+
+        skill = self.skills[user_id]
+
+        with sqlite3.connect(self.db_path) as conn:
+
+            conn.execute(
+                """
+                INSERT INTO skill_history (user_id, grammar, vocabulary, fluency)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    skill["grammar"],
+                    skill["vocabulary"],
+                    skill["fluency"],
+                ),
+            )
