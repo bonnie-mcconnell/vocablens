@@ -4,6 +4,8 @@ Student skill profile:
 Grammar: {grammar}
 Vocabulary: {vocabulary}
 Fluency: {fluency}
+CEFR level: {cefr}
+Grammar stage: {grammar_stage}
 
 Conversation history:
 {history}
@@ -24,3 +26,4 @@ Rules:
 - Correct mistakes gently
 - Encourage the learner
 - Respond ONLY in {source_lang}
+- Match difficulty to CEFR level above

@@ -43,6 +43,28 @@ class ConversationService:
         items = self._repo.list_all(user_id, limit=500, offset=0)
         return [i.source_text for i in items][:200]
 
+    def _cefr_level(self, skill_profile: dict) -> str:
+        avg = (skill_profile.get("grammar", 0.5) + skill_profile.get("vocabulary", 0.5) + skill_profile.get("fluency", 0.5)) / 3
+        if avg < 0.25:
+            return "A1"
+        if avg < 0.45:
+            return "A2"
+        if avg < 0.65:
+            return "B1"
+        if avg < 0.8:
+            return "B2"
+        if avg < 0.9:
+            return "C1"
+        return "C2"
+
+    def _grammar_stage(self, skill_profile: dict) -> str:
+        g = skill_profile.get("grammar", 0.5)
+        if g < 0.4:
+            return "basic"
+        if g < 0.7:
+            return "intermediate"
+        return "advanced"
+
     def generate_reply(
         self,
         user_id: int,
@@ -69,6 +91,8 @@ class ConversationService:
         self._skills.update_from_analysis(user_id, analysis)
 
         skill_profile = self._skills.get_skill_profile(user_id)
+        cefr = self._cefr_level(skill_profile)
+        grammar_stage = self._grammar_stage(skill_profile)
 
         history = self._memory.get_recent_context(user_id)
 
@@ -81,6 +105,8 @@ class ConversationService:
             grammar=skill_profile["grammar"],
             vocabulary=skill_profile["vocabulary"],
             fluency=skill_profile["fluency"],
+            cefr=cefr,
+            grammar_stage=grammar_stage,
             history=history,
             user_message=user_message,
             vocab_list=vocab_list,

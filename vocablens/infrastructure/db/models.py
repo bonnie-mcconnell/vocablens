@@ -110,3 +110,17 @@ class LearningEventORM(Base):
 
 
 Index("idx_learning_events_user", LearningEventORM.user_id, LearningEventORM.created_at)
+
+
+class KnowledgeGraphEdgeORM(Base):
+    __tablename__ = "knowledge_graph_edges"
+
+    id = Column(Integer, primary_key=True)
+    source_node = Column(Text, nullable=False)
+    target_node = Column(Text, nullable=False)
+    relation_type = Column(String, nullable=False)
+    weight = Column(Float, default=1.0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_kge_source", KnowledgeGraphEdgeORM.source_node, KnowledgeGraphEdgeORM.relation_type)

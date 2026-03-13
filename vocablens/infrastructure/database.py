@@ -118,6 +118,19 @@ def init_db(db_path: Path) -> None:
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_graph_edges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_node TEXT NOT NULL,
+                target_node TEXT NOT NULL,
+                relation_type TEXT NOT NULL,
+                weight REAL DEFAULT 1.0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+
         # ---------------------------------------------------
         # Indexes
         # ---------------------------------------------------
@@ -148,6 +161,19 @@ def init_db(db_path: Path) -> None:
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_learning_events_user ON learning_events(user_id, created_at)"
+        )
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kge_source ON knowledge_graph_edges(source_node, relation_type)"
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vocabulary_embeddings (
+                word TEXT PRIMARY KEY,
+                embedding TEXT
+            )
+            """
         )
 
         # ---------------------------------------------------

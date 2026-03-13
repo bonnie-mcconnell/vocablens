@@ -2,6 +2,8 @@ import json
 import sqlite3
 from typing import Dict, List, Protocol, Any
 
+from vocablens.services.learning_events import LearningEvent, ConversationTurnEvent
+
 
 class LearningEventProcessor(Protocol):
     """
@@ -31,8 +33,27 @@ class LearningEventService:
 
     def record(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
-        self._persist(event_type, user_id, payload)
-        self._dispatch(event_type, user_id, payload)
+        model = self._validate(event_type, payload)
+        self._persist(event_type, user_id, model.model_dump())
+        self._dispatch(event_type, user_id, model.model_dump())
+
+    def _validate(self, event_type: str, payload: Dict[str, Any]) -> LearningEvent:
+        if event_type == "conversation_turn":
+            return ConversationTurnEvent(**payload)
+        if event_type == "word_learned":
+            from vocablens.services.learning_events import WordLearnedEvent
+            return WordLearnedEvent(**payload)
+        if event_type == "word_reviewed":
+            from vocablens.services.learning_events import WordReviewedEvent
+            return WordReviewedEvent(**payload)
+        if event_type == "mistake_detected":
+            from vocablens.services.learning_events import MistakeDetectedEvent
+            return MistakeDetectedEvent(**payload)
+        if event_type == "skill_update":
+            from vocablens.services.learning_events import SkillUpdateEvent
+            return SkillUpdateEvent(**payload)
+        # fallback to conversation event structure
+        return ConversationTurnEvent(**payload)
 
     # -----------------------------------------------------
     # Internal helpers
