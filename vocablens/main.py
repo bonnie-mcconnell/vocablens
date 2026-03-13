@@ -12,28 +12,44 @@ from vocablens.infrastructure.repositories_translation_cache import (
     SQLiteTranslationCacheRepository,
 )
 
+# Providers
 from vocablens.providers.translation.libretranslate_provider import LibreTranslateProvider
 from vocablens.providers.ocr.pytesseract_provider import PyTesseractProvider
 from vocablens.providers.llm.openai_provider import OpenAIProvider
+from vocablens.providers.speech.whisper_provider import WhisperProvider
+from vocablens.providers.speech.tts_provider import TextToSpeechProvider
 
+# Core services
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.cached_translator import CachedTranslator
 from vocablens.services.word_extraction_service import WordExtractionService
 
+# Conversation services
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
 
-from vocablens.services.learning_graph_service import LearningGraphService
-from vocablens.services.lesson_generation_service import LessonGenerationService
-from vocablens.services.scenario_service import ScenarioService
-
+# AI brain
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.language_brain_service import LanguageBrainService
 
+# Learning
+from vocablens.services.learning_graph_service import LearningGraphService
+from vocablens.services.lesson_generation_service import LessonGenerationService
+from vocablens.services.scenario_service import ScenarioService
+
+# Intelligence
+from vocablens.services.knowledge_graph_service import KnowledgeGraphService
+from vocablens.services.learning_roadmap_service import LearningRoadmapService
+from vocablens.services.retention_engine import RetentionEngine
+
+# Speech
+from vocablens.services.speech_conversation_service import SpeechConversationService
+
+# Routes
 from vocablens.api.routes import create_routes
 
 
@@ -47,29 +63,35 @@ logger = logging.getLogger("vocablens")
 
 def create_app() -> FastAPI:
 
-    app = FastAPI(title="VocabLens API", version="1.0.0")
+    app = FastAPI(
+        title="VocabLens API",
+        version="1.0.0",
+    )
 
     db_path = Path("vocablens.db")
 
-    # -----------------------------------------
+    # ---------------------------------------------------
     # Repositories
-    # -----------------------------------------
+    # ---------------------------------------------------
 
     vocab_repo = SQLiteVocabularyRepository(db_path)
     user_repo = SQLiteUserRepository(db_path)
     cache_repo = SQLiteTranslationCacheRepository(str(db_path))
 
-    # -----------------------------------------
+    # ---------------------------------------------------
     # Providers
-    # -----------------------------------------
+    # ---------------------------------------------------
 
     translator_provider = LibreTranslateProvider()
     ocr_provider = PyTesseractProvider()
     llm_provider = OpenAIProvider()
 
-    # -----------------------------------------
+    speech_provider = WhisperProvider()
+    tts_provider = TextToSpeechProvider()
+
+    # ---------------------------------------------------
     # Core services
-    # -----------------------------------------
+    # ---------------------------------------------------
 
     translator = CachedTranslator(
         provider=translator_provider,
@@ -86,9 +108,9 @@ def create_app() -> FastAPI:
 
     ocr_service = OCRService(ocr_provider)
 
-    # -----------------------------------------
-    # AI learning engine
-    # -----------------------------------------
+    # ---------------------------------------------------
+    # AI Learning Engine
+    # ---------------------------------------------------
 
     memory_service = ConversationMemoryService()
 
@@ -119,9 +141,9 @@ def create_app() -> FastAPI:
         skill_tracker,
     )
 
-    # -----------------------------------------
-    # Learning tools
-    # -----------------------------------------
+    # ---------------------------------------------------
+    # Learning System
+    # ---------------------------------------------------
 
     graph_service = LearningGraphService(vocab_repo)
 
@@ -132,9 +154,34 @@ def create_app() -> FastAPI:
 
     scenario_service = ScenarioService(llm_provider)
 
-    # -----------------------------------------
+    # ---------------------------------------------------
+    # Intelligence Layer
+    # ---------------------------------------------------
+
+    knowledge_graph = KnowledgeGraphService(vocab_repo)
+
+    retention_engine = RetentionEngine()
+
+    roadmap_service = LearningRoadmapService(
+        graph_service,
+        skill_tracker,
+        retention_engine,
+        vocab_repo,
+    )
+
+    # ---------------------------------------------------
+    # Speech Conversation
+    # ---------------------------------------------------
+
+    speech_service = SpeechConversationService(
+        speech_provider,
+        tts_provider,
+        conversation_service,
+    )
+
+    # ---------------------------------------------------
     # Middleware
-    # -----------------------------------------
+    # ---------------------------------------------------
 
     app.add_middleware(
         CORSMiddleware,
@@ -163,17 +210,17 @@ def create_app() -> FastAPI:
 
         return response
 
-    # -----------------------------------------
-    # Health endpoint
-    # -----------------------------------------
+    # ---------------------------------------------------
+    # Health Check
+    # ---------------------------------------------------
 
     @app.get("/health")
     def health():
         return {"status": "ok"}
 
-    # -----------------------------------------
+    # ---------------------------------------------------
     # Startup
-    # -----------------------------------------
+    # ---------------------------------------------------
 
     @app.on_event("startup")
     async def startup():
@@ -182,9 +229,9 @@ def create_app() -> FastAPI:
 
         logger.info("Database initialized")
 
-    # -----------------------------------------
+    # ---------------------------------------------------
     # Routes
-    # -----------------------------------------
+    # ---------------------------------------------------
 
     app.include_router(
         create_routes(
@@ -192,8 +239,11 @@ def create_app() -> FastAPI:
             ocr_service,
             user_repo,
             conversation_service,
+            speech_service,
             lesson_service,
             scenario_service,
+            roadmap_service,
+            knowledge_graph,
         )
     )
 
