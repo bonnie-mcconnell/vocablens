@@ -2,6 +2,9 @@ import httpx
 import logging
 from typing import List
 import asyncio
+import time
+
+from vocablens.infrastructure.observability.metrics import CACHE_HITS, CACHE_MISSES, REQUEST_LATENCY
 
 from vocablens.providers.translation.base import Translator
 from vocablens.domain.errors import TranslationError
@@ -37,10 +40,12 @@ class LibreTranslateProvider(Translator):
         if self._cache:
             cached = asyncio.run(self._cache.get(cache_key))
             if cached:
+                CACHE_HITS.labels(cache="translation", op="get").inc()
                 return cached
+            CACHE_MISSES.labels(cache="translation", op="get").inc()
 
         try:
-
+            start = time.perf_counter()
             response = self._client.post(
                 f"{self._base_url}/translate",
                 json={
@@ -49,6 +54,9 @@ class LibreTranslateProvider(Translator):
                     "target": target_lang,
                     "format": "text",
                 },
+            )
+            REQUEST_LATENCY.labels(method="POST", endpoint="/translate", status=response.status_code).observe(
+                time.perf_counter() - start
             )
 
             response.raise_for_status()

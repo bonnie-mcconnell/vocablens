@@ -8,6 +8,11 @@ from vocablens.infrastructure.cache.redis_cache import (
     get_cache_backend,
     LRUCacheBackend,
 )
+from vocablens.infrastructure.observability.metrics import (
+    LLM_LATENCY,
+    LLM_TOKENS,
+    LLM_COST,
+)
 
 
 class LLMGuardrails:
@@ -106,12 +111,28 @@ class LLMGuardrails:
     # -----------------------------
 
     def _chat(self, prompt: str, model: str, timeout: Optional[float], **kwargs) -> str:
+        start = time.perf_counter()
         resp = self.client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             timeout=timeout or self.default_timeout,
             **kwargs,
         )
+        duration = time.perf_counter() - start
+        LLM_LATENCY.labels(provider="openai", model=model).observe(duration)
+
+        usage = getattr(resp, "usage", None)
+        if usage:
+            prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+            total_tokens = getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens)
+            LLM_TOKENS.labels(provider="openai", model=model, type="prompt").inc(prompt_tokens)
+            LLM_TOKENS.labels(provider="openai", model=model, type="completion").inc(completion_tokens)
+            LLM_TOKENS.labels(provider="openai", model=model, type="total").inc(total_tokens)
+            # rough cost estimate if model is known pricing; placeholder $0.000002 per token
+            estimated_cost = total_tokens * 0.000002
+            LLM_COST.labels(provider="openai", model=model).inc(estimated_cost)
+
         content = resp.choices[0].message.content
         return content.strip() if content else ""
 

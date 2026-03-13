@@ -1,9 +1,12 @@
 from pathlib import Path
-import logging
 import time
+import uuid
+from sqlalchemy import text
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from vocablens.infrastructure.database import init_db
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
@@ -50,6 +53,12 @@ from vocablens.services.retention_engine import RetentionEngine
 # Speech
 from vocablens.services.speech_conversation_service import SpeechConversationService
 
+# Logging / Observability
+from vocablens.infrastructure.logging.logger import setup_logging, get_logger
+from vocablens.infrastructure.observability.metrics import REQUEST_LATENCY
+from vocablens.infrastructure.rate_limit import RateLimiter
+from vocablens.config.settings import settings
+
 # Event processors
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
@@ -59,12 +68,8 @@ from vocablens.services.event_processors.knowledge_graph_processor import Knowle
 from vocablens.api.routes import create_routes
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-
-logger = logging.getLogger("vocablens")
+setup_logging()
+logger = get_logger("vocablens")
 
 
 def create_app() -> FastAPI:
@@ -138,6 +143,19 @@ def create_app() -> FastAPI:
         vocab_repo,
     )
 
+    knowledge_graph = KnowledgeGraphService(vocab_repo)
+
+    retention_engine = RetentionEngine()
+
+    learning_event_service = LearningEventService(
+        processors=[
+            SkillUpdateProcessor(skill_tracker),
+            RetentionProcessor(retention_engine, vocab_repo),
+            KnowledgeGraphProcessor(knowledge_graph),
+        ],
+        db_path=str(db_path),
+    )
+
     conversation_service = ConversationService(
         llm_provider,
         vocab_repo,
@@ -165,24 +183,11 @@ def create_app() -> FastAPI:
     # Intelligence Layer
     # ---------------------------------------------------
 
-    knowledge_graph = KnowledgeGraphService(vocab_repo)
-
-    retention_engine = RetentionEngine()
-
     roadmap_service = LearningRoadmapService(
         graph_service,
         skill_tracker,
         retention_engine,
         vocab_repo,
-    )
-
-    learning_event_service = LearningEventService(
-        processors=[
-            SkillUpdateProcessor(skill_tracker),
-            RetentionProcessor(retention_engine, vocab_repo),
-            KnowledgeGraphProcessor(knowledge_graph),
-        ],
-        db_path=str(db_path),
     )
 
     # ---------------------------------------------------
@@ -199,6 +204,12 @@ def create_app() -> FastAPI:
     # Middleware
     # ---------------------------------------------------
 
+    limiter = RateLimiter(
+        redis_url=settings.REDIS_URL if settings.ENABLE_REDIS_CACHE else None,
+        limit=60,
+        window_sec=60,
+    )
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -210,19 +221,43 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
 
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        user_id = getattr(getattr(request, "user", None), "id", None)
+        path = request.url.path
+
+        # rate limit selected heavy endpoints
+        if any(path.startswith(p) for p in ["/speech", "/conversation", "/translate"]):
+            allowed = await limiter.allow(f"{path}:{request.client.host}")
+            if not allowed:
+                return Response(status_code=429, content="Too Many Requests")
+
         start = time.time()
+        error = ""
 
-        response = await call_next(request)
-
-        duration = time.time() - start
-
-        logger.info(
-            "%s %s -> %s (%.3fs)",
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration,
-        )
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            error = str(exc)
+            response = Response(status_code=500, content="Internal Server Error")
+            raise
+        finally:
+            duration = time.time() - start
+            REQUEST_LATENCY.labels(
+                method=request.method,
+                endpoint=path,
+                status=getattr(response, "status_code", 0),
+            ).observe(duration)
+            logger.info(
+                "request_complete",
+                extra={
+                    "request_id": request_id,
+                    "user_id": user_id,
+                    "endpoint": path,
+                    "latency": duration,
+                    "error": error,
+                },
+            )
 
         return response
 
@@ -233,6 +268,40 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/ready")
+    async def ready():
+        checks = {"db": False, "redis": False, "celery": False}
+        try:
+            from vocablens.infrastructure.db.session import engine
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            checks["db"] = True
+        except Exception:
+            checks["db"] = False
+
+        try:
+            if settings.ENABLE_REDIS_CACHE:
+                import redis.asyncio as redis  # type: ignore
+                r = redis.from_url(settings.REDIS_URL)
+                await r.ping()
+                checks["redis"] = True
+        except Exception:
+            checks["redis"] = False
+
+        try:
+            from vocablens.tasks.celery_app import celery_app
+            pong = celery_app.control.ping(timeout=0.5)
+            checks["celery"] = bool(pong)
+        except Exception:
+            checks["celery"] = False
+
+        status = all(checks.values())
+        return {"status": "ok" if status else "degraded", **checks}
+
+    @app.get("/metrics")
+    def metrics():
+        return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # ---------------------------------------------------
     # Startup
