@@ -2,6 +2,9 @@ from datetime import datetime
 
 
 class RetentionEngine:
+    """
+    Simple forgetting curve model.
+    """
 
     def forgetting_probability(self, item):
 
@@ -10,7 +13,7 @@ class RetentionEngine:
 
         days = (datetime.utcnow() - item.last_reviewed_at).days
 
-        score = item.retention_score
+        score = getattr(item, "retention_score", 0.5)
 
         probability = min(1.0, (days / 7) * (1 - score))
 
@@ -19,3 +22,11 @@ class RetentionEngine:
     def needs_review(self, item):
 
         return self.forgetting_probability(item) > 0.6
+
+    def review_load(self, items):
+
+        review_items = [
+            item for item in items if self.needs_review(item)
+        ]
+
+        return min(len(review_items), 25)

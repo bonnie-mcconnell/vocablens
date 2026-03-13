@@ -5,19 +5,19 @@ from vocablens.services.conversation_service import ConversationService
 
 class SpeechConversationService:
     """
-    Handles speech conversation loop.
+    Voice conversation pipeline.
 
-    audio → text → conversation → speech
+    audio -> STT -> conversation -> TTS
     """
 
     def __init__(
         self,
-        speech_to_text: WhisperProvider,
-        text_to_speech: TextToSpeechProvider,
+        speech_provider: WhisperProvider,
+        tts_provider: TextToSpeechProvider,
         conversation_service: ConversationService,
     ):
-        self.stt = speech_to_text
-        self.tts = text_to_speech
+        self.speech = speech_provider
+        self.tts = tts_provider
         self.conversation = conversation_service
 
     def process_audio(
@@ -28,19 +28,22 @@ class SpeechConversationService:
         target_lang: str,
     ):
 
-        transcript = self.stt.transcribe(audio_path)
+        transcript = self.speech.transcribe(audio_path)
 
-        response = self.conversation.generate_reply(
+        reply = self.conversation.generate_reply(
             user_id=user_id,
             user_message=transcript,
             source_lang=source_lang,
             target_lang=target_lang,
         )
 
-        speech = self.tts.synthesize(response["reply"])
+        audio_reply = self.tts.speak(
+            reply["reply"],
+            source_lang,
+        )
 
         return {
             "transcript": transcript,
-            "reply": response,
-            "speech": speech,
+            "reply": reply,
+            "audio_reply": audio_reply,
         }
