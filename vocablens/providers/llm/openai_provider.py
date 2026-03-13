@@ -4,6 +4,7 @@ import os
 from openai import OpenAI
 
 from vocablens.providers.llm.base import LLMProvider
+from vocablens.providers.llm.llm_guardrails import LLMGuardrails
 
 
 class OpenAIProvider(LLMProvider):
@@ -16,28 +17,19 @@ class OpenAIProvider(LLMProvider):
             raise RuntimeError("OPENAI_API_KEY not set")
 
         self._client = OpenAI(api_key=api_key)
+        self._guardrails = LLMGuardrails(self._client)
 
     def generate(self, prompt: str) -> str:
 
-        response = self._client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+        return self._guardrails.generate_text(
+            prompt=prompt,
+            version="v1",
         )
-
-        content = response.choices[0].message.content
-
-        if not content:
-            return ""
-
-        return content.strip()
 
     def generate_json(self, prompt: str) -> dict:
 
-        response = self.generate(prompt)
-
-        try:
-            return json.loads(response)
-        except Exception:
-            return {}
+        return self._guardrails.generate_json(
+            prompt=prompt,
+            version="v1",
+            schema=None,
+        )

@@ -3,7 +3,7 @@ from typing import List
 
 from vocablens.domain.models import VocabularyItem
 from vocablens.domain.errors import NotFoundError
-from vocablens.domain.spaced_repetition import SpacedRepetitionEngine
+from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 from vocablens.providers.translation.base import Translator
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
@@ -27,7 +27,7 @@ class VocabularyService:
         self._repository = repository
         self._extractor = extractor
 
-        self._srs = SpacedRepetitionEngine()
+        self._srs = SpacedRepetitionService()
         self._lang_detector = LanguageDetectionService()
         self._difficulty = DifficultyService()
 
@@ -61,7 +61,9 @@ class VocabularyService:
             source_lang=source_lang,
             target_lang=target_lang,
             created_at=datetime.utcnow(),
-            retention_score=difficulty,
+            ease_factor=2.5,
+            interval=1,
+            repetitions=0,
         )
 
         saved = self._repository.add(user_id, item)
@@ -138,9 +140,11 @@ class VocabularyService:
                 translated_text=translations[i],
                 source_lang=source_lang,
                 target_lang=target_lang,
-                created_at=datetime.utcnow(),
-                retention_score=difficulty,
-            )
+            created_at=datetime.utcnow(),
+            ease_factor=2.5,
+            interval=1,
+            repetitions=0,
+        )
 
             saved = self._repository.add(user_id, item)
 
@@ -173,7 +177,16 @@ class VocabularyService:
                 f"Vocabulary item {item_id} not found"
             )
 
-        updated = self._srs.review(item, rating)
+        quality_map = {
+            "again": 2,
+            "hard": 3,
+            "good": 4,
+            "easy": 5,
+        }
+
+        quality = quality_map.get(rating, 3)
+
+        updated = self._srs.review(item, quality)
 
         return self._repository.update(updated)
 

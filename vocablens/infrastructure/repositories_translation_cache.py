@@ -11,29 +11,35 @@ class SQLiteTranslationCacheRepository:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def get(self, text: str, target_lang: str):
+    def get(self, text: str, source_lang: str, target_lang: str):
 
         with self._connect() as conn:
             cur = conn.execute(
                 """
                 SELECT translation
                 FROM translation_cache
-                WHERE text=? AND target_lang=?
+                WHERE text=? AND source_lang=? AND target_lang=?
                 """,
-                (text, target_lang),
+                (text, source_lang, target_lang),
             )
 
             row = cur.fetchone()
             return row["translation"] if row else None
 
-    def save(self, text: str, target_lang: str, translation: str):
+    def save(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        translation: str,
+    ):
 
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO translation_cache
-                (text, target_lang, translation)
-                VALUES (?, ?, ?)
+                (text, source_lang, target_lang, translation)
+                VALUES (?, ?, ?, ?)
                 """,
-                (text, target_lang, translation),
+                (text, source_lang, target_lang, translation),
             )

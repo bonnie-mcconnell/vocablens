@@ -2,6 +2,7 @@ from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 
 class LearningRoadmapService:
@@ -20,12 +21,18 @@ class LearningRoadmapService:
         self.skills = skill_tracker
         self.retention = retention_engine
         self.repo = vocab_repo
+        self.srs = SpacedRepetitionService()
 
     def generate_today_plan(self, user_id: int):
 
         items = self.repo.list_all(user_id, limit=1000, offset=0)
 
-        review_count = self.retention.review_load(items)
+        due = [
+            i for i in items
+            if i.next_review_due and i.next_review_due <= self._today_cutoff()
+        ]
+
+        review_count = min(len(due), 25)
 
         next_cluster = self.graph.recommend_next_cluster(user_id)
 
@@ -39,6 +46,11 @@ class LearningRoadmapService:
             "grammar_focus": grammar_focus,
             "next_cluster": next_cluster,
         }
+
+    def _today_cutoff(self):
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        return now + timedelta(days=1)
 
     def _select_grammar_focus(self, skill_profile):
 

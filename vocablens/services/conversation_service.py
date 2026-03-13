@@ -1,5 +1,6 @@
-from typing import List
+import json
 import sqlite3
+from typing import List
 
 from vocablens.providers.llm.base import LLMProvider
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
@@ -8,9 +9,14 @@ from vocablens.services.language_brain_service import LanguageBrainService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
 from vocablens.services.skill_tracking_service import SkillTrackingService
+from vocablens.services.learning_event_service import LearningEventService
+from vocablens.prompts import load_prompt
 
 
 class ConversationService:
+    """
+    Generates AI tutor replies and records learning signals.
+    """
 
     def __init__(
         self,
@@ -20,6 +26,7 @@ class ConversationService:
         memory: ConversationMemoryService,
         vocab_extractor: ConversationVocabularyService,
         skill_tracker: SkillTrackingService,
+        learning_events: LearningEventService,
         db_path: str = "vocablens.db",
     ):
         self._llm = llm
@@ -28,12 +35,12 @@ class ConversationService:
         self._memory = memory
         self._vocab_extractor = vocab_extractor
         self._skills = skill_tracker
+        self._events = learning_events
         self._db_path = db_path
+        self._template = load_prompt("conversation_prompt")
 
     def _get_known_words(self, user_id: int) -> List[str]:
-
         items = self._repo.list_all(user_id, limit=500, offset=0)
-
         return [i.source_text for i in items][:200]
 
     def generate_reply(
@@ -44,7 +51,7 @@ class ConversationService:
         target_lang: str,
     ) -> dict:
 
-        self._vocab_extractor.process_message(
+        new_words = self._vocab_extractor.process_message(
             user_id,
             user_message,
             source_lang,
@@ -69,44 +76,32 @@ class ConversationService:
 
         vocab_list = ", ".join(known_words)
 
-        prompt = f"""
-You are an expert language tutor helping a student learn {source_lang}.
-
-Student skill profile:
-Grammar: {skill_profile["grammar"]}
-Vocabulary: {skill_profile["vocabulary"]}
-Fluency: {skill_profile["fluency"]}
-
-Conversation history:
-{history}
-
-Student message:
-{user_message}
-
-Known vocabulary:
-{vocab_list}
-
-Detected mistakes:
-{analysis.get("grammar_mistakes", [])}
-
-Rules:
-- Use mostly known vocabulary
-- Introduce at most 1–2 new words
-- Keep sentences short
-- Correct mistakes gently
-- Encourage the learner
-- Respond ONLY in {source_lang}
-"""
+        prompt = self._template.format(
+            source_lang=source_lang,
+            grammar=skill_profile["grammar"],
+            vocabulary=skill_profile["vocabulary"],
+            fluency=skill_profile["fluency"],
+            history=history,
+            user_message=user_message,
+            vocab_list=vocab_list,
+            mistakes=json.dumps(analysis.get("grammar_mistakes", [])),
+        )
 
         reply = self._llm.generate(prompt)
 
-        self._memory.store_turn(
-            user_id,
-            user_message,
-            reply,
-        )
+        self._memory.store_turn(user_id, user_message, reply)
 
         self._save_conversation(user_id, user_message, reply)
+
+        self._events.record(
+            event_type="conversation_turn",
+            user_id=user_id,
+            payload={
+                "message": user_message,
+                "mistakes": analysis,
+                "new_words": new_words,
+            },
+        )
 
         return {
             "reply": reply,
@@ -120,8 +115,16 @@ Rules:
 
             conn.execute(
                 """
-                INSERT INTO conversation_history (user_id, user_message, ai_reply)
+                INSERT INTO conversation_history (user_id, role, message)
                 VALUES (?, ?, ?)
                 """,
-                (user_id, user_message, reply),
+                (user_id, "student", user_message),
+            )
+
+            conn.execute(
+                """
+                INSERT INTO conversation_history (user_id, role, message)
+                VALUES (?, ?, ?)
+                """,
+                (user_id, "tutor", reply),
             )

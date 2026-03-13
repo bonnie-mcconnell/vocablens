@@ -1,0 +1,15 @@
+Analyze the learner message.
+
+Message:
+{message}
+
+Language:
+{language}
+
+Return JSON:
+
+{{
+ "grammar_mistakes": [],
+ "vocab_misuse": [],
+ "suggestions": []
+}}

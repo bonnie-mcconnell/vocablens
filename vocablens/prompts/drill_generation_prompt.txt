@@ -1,0 +1,6 @@
+Create exercises to fix these mistakes.
+
+Mistakes:
+{mistakes}
+
+Return JSON exercises.

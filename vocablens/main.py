@@ -35,6 +35,7 @@ from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.language_brain_service import LanguageBrainService
+from vocablens.services.learning_event_service import LearningEventService
 
 # Learning
 from vocablens.services.learning_graph_service import LearningGraphService
@@ -48,6 +49,11 @@ from vocablens.services.retention_engine import RetentionEngine
 
 # Speech
 from vocablens.services.speech_conversation_service import SpeechConversationService
+
+# Event processors
+from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
+from vocablens.services.event_processors.retention_processor import RetentionProcessor
+from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 
 # Routes
 from vocablens.api.routes import create_routes
@@ -139,6 +145,7 @@ def create_app() -> FastAPI:
         memory_service,
         conversation_vocab_service,
         skill_tracker,
+        learning_event_service,
     )
 
     # ---------------------------------------------------
@@ -167,6 +174,15 @@ def create_app() -> FastAPI:
         skill_tracker,
         retention_engine,
         vocab_repo,
+    )
+
+    learning_event_service = LearningEventService(
+        processors=[
+            SkillUpdateProcessor(skill_tracker),
+            RetentionProcessor(retention_engine, vocab_repo),
+            KnowledgeGraphProcessor(knowledge_graph),
+        ],
+        db_path=str(db_path),
     )
 
     # ---------------------------------------------------

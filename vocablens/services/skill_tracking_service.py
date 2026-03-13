@@ -46,15 +46,16 @@ class SkillTrackingService:
 
         with sqlite3.connect(self.db_path) as conn:
 
-            conn.execute(
-                """
-                INSERT INTO skill_history (user_id, grammar, vocabulary, fluency)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    user_id,
-                    skill["grammar"],
-                    skill["vocabulary"],
-                    skill["fluency"],
-                ),
-            )
+            for name in ("grammar", "vocabulary", "fluency"):
+
+                conn.execute(
+                    """
+                    INSERT INTO skill_history (user_id, skill, score)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        name,
+                        skill[name],
+                    ),
+                )

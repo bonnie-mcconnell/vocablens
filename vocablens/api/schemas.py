@@ -34,7 +34,9 @@ class VocabularyResponse(BaseModel):
     created_at: datetime
     last_reviewed_at: datetime | None
     review_count: int
-    retention_score: float
+    ease_factor: float
+    interval: int
+    repetitions: int
     next_review_due: datetime | None
 
     @classmethod
@@ -48,7 +50,9 @@ class VocabularyResponse(BaseModel):
             created_at=item.created_at,
             last_reviewed_at=item.last_reviewed_at,
             review_count=item.review_count,
-            retention_score=item.retention_score,
+            ease_factor=item.ease_factor,
+            interval=item.interval,
+            repetitions=item.repetitions,
             next_review_due=item.next_review_due,
         )
     

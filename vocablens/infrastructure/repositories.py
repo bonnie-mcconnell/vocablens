@@ -39,7 +39,9 @@ class SQLiteVocabularyRepository:
                         created_at,
                         last_reviewed_at,
                         review_count,
-                        retention_score,
+                        ease_factor,
+                        interval,
+                        repetitions,
                         next_review_due
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -54,7 +56,9 @@ class SQLiteVocabularyRepository:
                         item.last_reviewed_at.isoformat()
                         if item.last_reviewed_at else None,
                         item.review_count,
-                        item.retention_score,
+                        item.ease_factor,
+                        item.interval,
+                        item.repetitions,
                         item.next_review_due.isoformat()
                         if item.next_review_due else None,
                     ),
@@ -208,7 +212,9 @@ class SQLiteVocabularyRepository:
                 SET
                     last_reviewed_at = ?,
                     review_count = ?,
-                    retention_score = ?,
+                    ease_factor = ?,
+                    interval = ?,
+                    repetitions = ?,
                     next_review_due = ?
                 WHERE id = ?
                 """,
@@ -216,7 +222,9 @@ class SQLiteVocabularyRepository:
                     item.last_reviewed_at.isoformat()
                     if item.last_reviewed_at else None,
                     item.review_count,
-                    item.retention_score,
+                    item.ease_factor,
+                    item.interval,
+                    item.repetitions,
                     item.next_review_due.isoformat()
                     if item.next_review_due else None,
                     item.id,
@@ -275,7 +283,9 @@ class SQLiteVocabularyRepository:
                 else None
             ),
             review_count=row["review_count"],
-            retention_score=row["retention_score"],
+            ease_factor=row["ease_factor"],
+            interval=row["interval"],
+            repetitions=row["repetitions"],
             next_review_due=(
                 datetime.fromisoformat(row["next_review_due"])
                 if row["next_review_due"]
