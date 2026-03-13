@@ -1,0 +1,112 @@
+from datetime import datetime
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Text,
+    Float,
+    DateTime,
+    ForeignKey,
+    Index,
+)
+from sqlalchemy.orm import declarative_base, relationship
+
+Base = declarative_base()
+
+
+class UserORM(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    vocabulary = relationship("VocabularyORM", back_populates="user")
+
+
+class VocabularyORM(Base):
+    __tablename__ = "vocabulary"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    source_text = Column(Text, nullable=False)
+    translated_text = Column(Text, nullable=False)
+    source_lang = Column(String, nullable=False)
+    target_lang = Column(String, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_reviewed_at = Column(DateTime)
+    review_count = Column(Integer, default=0, nullable=False)
+    ease_factor = Column(Float, default=2.5, nullable=False)
+    interval = Column(Integer, default=1, nullable=False)
+    repetitions = Column(Integer, default=0, nullable=False)
+    next_review_due = Column(DateTime)
+
+    example_source_sentence = Column(Text)
+    example_translated_sentence = Column(Text)
+    grammar_note = Column(Text)
+    semantic_cluster = Column(Text)
+
+    user = relationship("UserORM", back_populates="vocabulary")
+
+
+Index("idx_vocab_user_id", VocabularyORM.user_id)
+Index("idx_vocab_next_due", VocabularyORM.next_review_due)
+Index("idx_vocab_cluster", VocabularyORM.semantic_cluster)
+
+
+class TranslationCacheORM(Base):
+    __tablename__ = "translation_cache"
+
+    text = Column(Text, primary_key=True)
+    source_lang = Column(String, primary_key=True)
+    target_lang = Column(String, primary_key=True)
+    translation = Column(Text, nullable=False)
+
+
+Index(
+    "idx_translation_cache_langs",
+    TranslationCacheORM.source_lang,
+    TranslationCacheORM.target_lang,
+)
+
+
+class ConversationHistoryORM(Base):
+    __tablename__ = "conversation_history"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_conversation_history_user", ConversationHistoryORM.user_id, ConversationHistoryORM.created_at)
+
+
+class SkillHistoryORM(Base):
+    __tablename__ = "skill_history"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    skill = Column(String, nullable=False)
+    score = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_skill_history_user", SkillHistoryORM.user_id, SkillHistoryORM.created_at)
+
+
+class LearningEventORM(Base):
+    __tablename__ = "learning_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String, nullable=False)
+    payload_json = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_learning_events_user", LearningEventORM.user_id, LearningEventORM.created_at)

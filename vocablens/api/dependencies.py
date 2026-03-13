@@ -1,4 +1,3 @@
-from pathlib import Path
 from functools import lru_cache
 
 from fastapi import Depends, HTTPException, status
@@ -6,23 +5,25 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from vocablens.auth.jwt import decode_token
 from vocablens.domain.user import User
+from vocablens.infrastructure.db.session import get_session
+from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
 from vocablens.infrastructure.repositories_users import SQLiteUserRepository
 
 security = HTTPBearer()
 
 
-@lru_cache
-def get_user_repo() -> SQLiteUserRepository:
-    """
-    Provide a singleton user repository instance for DI.
-    """
-    db_path = Path("vocablens.db")
-    return SQLiteUserRepository(db_path)
+async def get_user_repo(
+    session=Depends(get_session),
+):
+    # prefer Postgres; fallback to SQLite if session not available
+    if session:
+        return PostgresUserRepository(session)
+    return SQLiteUserRepository("vocablens.db")
 
 
-def get_current_user(
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_repo: SQLiteUserRepository = Depends(get_user_repo),
+    user_repo=Depends(get_user_repo),
 ) -> User:
 
     try:
