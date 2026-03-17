@@ -1,7 +1,7 @@
 import json
 import os
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from vocablens.providers.llm.base import LLMProvider
 from vocablens.providers.llm.llm_guardrails import LLMGuardrails
@@ -16,7 +16,7 @@ class OpenAIProvider(LLMProvider):
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY not set")
 
-        self._client = OpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(api_key=api_key)
         self._guardrails = LLMGuardrails(self._client)
 
     def generate(self, prompt: str) -> str:

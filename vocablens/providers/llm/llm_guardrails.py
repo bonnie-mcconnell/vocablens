@@ -3,6 +3,8 @@ import time
 import asyncio
 from typing import Any, Dict, Optional
 
+import anyio
+
 from vocablens.config.settings import settings
 from vocablens.infrastructure.cache.redis_cache import (
     get_cache_backend,
@@ -55,17 +57,16 @@ class LLMGuardrails:
         **kwargs,
     ) -> str:
 
-        key = cache_key or f"{model or self.default_model}:{version}:{prompt}"
-        cached = self._maybe_await(self.cache.get(key))
-        if cached:
-            return cached
-
-        response_text = self._with_retries(
-            lambda: self._chat(prompt, model or self.default_model, timeout, **kwargs)
+        return self._run_async(
+            self._generate_text_async(
+                prompt=prompt,
+                version=version,
+                model=model,
+                timeout=timeout,
+                cache_key=cache_key,
+                **kwargs,
+            )
         )
-
-        self._maybe_await(self.cache.set(key, response_text, ttl=self.cache_ttl))
-        return response_text
 
     def generate_json(
         self,
@@ -97,22 +98,50 @@ class LLMGuardrails:
 
         return data
 
-    def _maybe_await(self, value):
-        if asyncio.iscoroutine(value):
-            try:
-                return asyncio.run(value)
-            except RuntimeError:
-                loop = asyncio.get_event_loop()
-                return loop.run_until_complete(value)  # type: ignore
-        return value
+    def _run_async(self, coro):
+        """
+        Run an async coroutine from sync context without asyncio.run, safe for
+        both threadpool and event-loop contexts.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return anyio.run(lambda: coro)
+
+        if loop.is_running():
+            return anyio.from_thread.run(lambda: coro)
+
+        return loop.run_until_complete(coro)  # pragma: no cover (fallback)
+
+    async def _generate_text_async(
+        self,
+        prompt: str,
+        version: str,
+        model: Optional[str],
+        timeout: Optional[float],
+        cache_key: Optional[str],
+        **kwargs,
+    ) -> str:
+
+        key = cache_key or f"{model or self.default_model}:{version}:{prompt}"
+        cached = await self.cache.get(key)
+        if cached:
+            return cached
+
+        response_text = await self._with_retries_async(
+            lambda: self._chat_async(prompt, model or self.default_model, timeout, **kwargs)
+        )
+
+        await self.cache.set(key, response_text, ttl=self.cache_ttl)
+        return response_text
 
     # -----------------------------
     # Internals
     # -----------------------------
 
-    def _chat(self, prompt: str, model: str, timeout: Optional[float], **kwargs) -> str:
+    async def _chat_async(self, prompt: str, model: str, timeout: Optional[float], **kwargs) -> str:
         start = time.perf_counter()
-        resp = self.client.chat.completions.create(
+        resp = await self.client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             timeout=timeout or self.default_timeout,
@@ -129,24 +158,23 @@ class LLMGuardrails:
             LLM_TOKENS.labels(provider="openai", model=model, type="prompt").inc(prompt_tokens)
             LLM_TOKENS.labels(provider="openai", model=model, type="completion").inc(completion_tokens)
             LLM_TOKENS.labels(provider="openai", model=model, type="total").inc(total_tokens)
-            # rough cost estimate if model is known pricing; placeholder $0.000002 per token
             estimated_cost = total_tokens * 0.000002
             LLM_COST.labels(provider="openai", model=model).inc(estimated_cost)
 
         content = resp.choices[0].message.content
         return content.strip() if content else ""
 
-    def _with_retries(self, func):
+    async def _with_retries_async(self, func):
         last_exc = None
         for attempt in range(self.max_retries):
             try:
-                return func()
+                return await func()
             except Exception as exc:  # pragma: no cover - network dependent
                 last_exc = exc
                 if attempt == self.max_retries - 1:
                     raise exc
                 sleep_for = self.backoff_base * (2**attempt)
-                time.sleep(sleep_for)
+                await asyncio.sleep(sleep_for)
         if last_exc:
             raise last_exc
 

@@ -1,8 +1,10 @@
 import httpx
 import logging
-from typing import List
+from typing import List, Optional
 import asyncio
 import time
+
+import anyio
 
 from vocablens.infrastructure.observability.metrics import CACHE_HITS, CACHE_MISSES, REQUEST_LATENCY
 
@@ -22,7 +24,7 @@ class LibreTranslateProvider(Translator):
         timeout: float = 10.0,
     ):
         self._base_url = base_url.rstrip("/")
-        self._client = httpx.Client(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout)
         self._cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
 
     # ------------------------------------------------
@@ -36,9 +38,43 @@ class LibreTranslateProvider(Translator):
         target_lang: str,
     ) -> str:
 
+        return self._run_async(
+            self._translate_async(text=text, source_lang=source_lang, target_lang=target_lang)
+        )
+
+    # ------------------------------------------------
+    # Batch translation
+    # ------------------------------------------------
+
+    def translate_batch(
+        self,
+        texts: List[str],
+        source_lang: str,
+        target_lang: str,
+    ) -> List[str]:
+
+        return self._run_async(
+            self._translate_batch_async(texts=texts, source_lang=source_lang, target_lang=target_lang)
+        )
+
+    def close(self):
+        self._run_async(self._client.aclose())
+
+    def _run_async(self, coro):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return anyio.run(lambda: coro)
+
+        if loop.is_running():
+            return anyio.from_thread.run(lambda: coro)
+
+        return loop.run_until_complete(coro)  # pragma: no cover
+
+    async def _translate_async(self, text: str, source_lang: str, target_lang: str) -> str:
         cache_key = f"lt:{source_lang}:{target_lang}:{text}"
         if self._cache:
-            cached = asyncio.run(self._cache.get(cache_key))
+            cached = await self._cache.get(cache_key)
             if cached:
                 CACHE_HITS.labels(cache="translation", op="get").inc()
                 return cached
@@ -46,7 +82,7 @@ class LibreTranslateProvider(Translator):
 
         try:
             start = time.perf_counter()
-            response = self._client.post(
+            response = await self._client.post(
                 f"{self._base_url}/translate",
                 json={
                     "q": text,
@@ -69,7 +105,7 @@ class LibreTranslateProvider(Translator):
                 raise TranslationError("Malformed translation response")
 
             if self._cache:
-                asyncio.run(self._cache.set(cache_key, translated, ttl=int(settings.TRANSLATE_TIMEOUT)))
+                await self._cache.set(cache_key, translated, ttl=int(settings.TRANSLATE_TIMEOUT))
 
             return translated
 
@@ -81,43 +117,29 @@ class LibreTranslateProvider(Translator):
                 f"Translation service error: {exc.response.status_code}"
             ) from exc
 
-    # ------------------------------------------------
-    # Batch translation
-    # ------------------------------------------------
-
-    def translate_batch(
+    async def _translate_batch_async(
         self,
         texts: List[str],
         source_lang: str,
         target_lang: str,
     ) -> List[str]:
 
+        results: List[Optional[str]] = [None] * len(texts)
+        missing: List[tuple[int, str]] = []
+
         if self._cache:
-            results = []
-            missing = []
-            for t in texts:
+            for idx, t in enumerate(texts):
                 ck = f"lt:{source_lang}:{target_lang}:{t}"
-                cached = asyncio.run(self._cache.get(ck))
-                if cached:
-                    results.append(cached)
+                cached = await self._cache.get(ck)
+                if cached is not None:
+                    results[idx] = cached
                 else:
-                    results.append(None)
-                    missing.append(t)
+                    missing.append((idx, t))
             if not missing:
-                return results  # all cached
-            texts = missing
+                return [r for r in results if r is not None]
 
-        translations = []
+        for idx, text in missing or list(enumerate(texts)):
+            translated = await self._translate_async(text, source_lang, target_lang)
+            results[idx] = translated
 
-        for text in texts:
-            translated = self.translate(
-                text,
-                source_lang,
-                target_lang,
-            )
-            translations.append(translated)
-
-        return translations
-
-    def close(self):
-        self._client.close()
+        return [r for r in results if r is not None]
