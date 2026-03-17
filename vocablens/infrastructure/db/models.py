@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    JSON,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -86,8 +87,8 @@ class ConversationHistoryORM(Base):
 Index("idx_conversation_history_user", ConversationHistoryORM.user_id, ConversationHistoryORM.created_at)
 
 
-class SkillHistoryORM(Base):
-    __tablename__ = "skill_history"
+class SkillTrackingORM(Base):
+    __tablename__ = "skill_tracking"
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -96,7 +97,7 @@ class SkillHistoryORM(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
-Index("idx_skill_history_user", SkillHistoryORM.user_id, SkillHistoryORM.created_at)
+Index("idx_skill_tracking_user", SkillTrackingORM.user_id, SkillTrackingORM.created_at)
 
 
 class LearningEventORM(Base):
@@ -124,3 +125,15 @@ class KnowledgeGraphEdgeORM(Base):
 
 
 Index("idx_kge_source", KnowledgeGraphEdgeORM.source_node, KnowledgeGraphEdgeORM.relation_type)
+
+
+class EmbeddingORM(Base):
+    __tablename__ = "embeddings"
+
+    id = Column(Integer, primary_key=True)
+    word = Column(Text, nullable=False, unique=True)
+    embedding = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_embeddings_word", EmbeddingORM.word)

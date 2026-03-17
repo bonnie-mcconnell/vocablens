@@ -1,5 +1,5 @@
 from vocablens.services.retention_engine import RetentionEngine
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 
 
 class ReviewService:
@@ -10,7 +10,7 @@ class ReviewService:
 
     def __init__(
         self,
-        vocab_repo: SQLiteVocabularyRepository,
+        vocab_repo: PostgresVocabularyRepository,
         retention_engine: RetentionEngine,
     ):
         self._repo = vocab_repo
@@ -18,7 +18,7 @@ class ReviewService:
 
     def due_reviews(self, user_id: int):
 
-        items = self._repo.list_all(user_id, limit=1000, offset=0)
+        items = self._repo.list_all_sync(user_id, limit=1000, offset=0)
 
         return [
             item

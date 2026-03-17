@@ -2,7 +2,7 @@ from typing import List
 
 from vocablens.services.word_extraction_service import WordExtractionService
 from vocablens.services.vocabulary_service import VocabularyService
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 
 
 class ConversationVocabularyService:
@@ -15,7 +15,7 @@ class ConversationVocabularyService:
         self,
         extractor: WordExtractionService,
         vocab_service: VocabularyService,
-        vocab_repo: SQLiteVocabularyRepository,
+        vocab_repo: PostgresVocabularyRepository,
     ):
         self._extractor = extractor
         self._vocab_service = vocab_service
@@ -33,7 +33,7 @@ class ConversationVocabularyService:
 
         known_words = {
             item.source_text
-            for item in self._repo.list_all(user_id, limit=1000, offset=0)
+            for item in self._repo.list_all_sync(user_id, limit=1000, offset=0)
         }
 
         new_words = []

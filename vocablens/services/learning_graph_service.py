@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional
 
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 
 
 class LearningGraphService:
@@ -9,12 +9,12 @@ class LearningGraphService:
     Builds a vocabulary graph grouped by semantic cluster.
     """
 
-    def __init__(self, repo: SQLiteVocabularyRepository):
+    def __init__(self, repo: PostgresVocabularyRepository):
         self.repo = repo
 
     def build_graph(self, user_id: int) -> Dict[str, List[str]]:
 
-        items = self.repo.list_all(user_id, limit=10000, offset=0)
+        items = self.repo.list_all_sync(user_id, limit=10000, offset=0)
 
         graph = defaultdict(list)
 

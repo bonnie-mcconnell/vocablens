@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.knowledge_graph_service import KnowledgeGraphService
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 
 
 class CurriculumEngine:
@@ -16,7 +16,7 @@ class CurriculumEngine:
         self,
         skill_tracker: SkillTrackingService,
         kg_service: KnowledgeGraphService,
-        vocab_repo: SQLiteVocabularyRepository,
+        vocab_repo: PostgresVocabularyRepository,
     ):
         self.skills = skill_tracker
         self.kg = kg_service
@@ -27,7 +27,7 @@ class CurriculumEngine:
         skill_profile = self.skills.get_skill_profile(user_id)
         graph = self.kg.build_graph(user_id)
 
-        items = self.vocab_repo.list_all(user_id, limit=1000, offset=0)
+        items = self.vocab_repo.list_all_sync(user_id, limit=1000, offset=0)
         due = [
             i for i in items
             if i.next_review_due and i.next_review_due <= datetime.utcnow()

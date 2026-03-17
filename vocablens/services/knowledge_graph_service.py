@@ -2,7 +2,7 @@ import asyncio
 from collections import defaultdict
 from typing import Dict, List
 
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 from vocablens.infrastructure.cache.redis_cache import get_cache_backend
 from vocablens.config.settings import settings
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
@@ -13,9 +13,9 @@ class KnowledgeGraphService:
     Builds a dynamic language knowledge graph.
     """
 
-    def __init__(self, repo: SQLiteVocabularyRepository, kg_repo: KnowledgeGraphRepository | None = None):
+    def __init__(self, repo: PostgresVocabularyRepository, kg_repo: KnowledgeGraphRepository):
         self.repo = repo
-        self.kg_repo = kg_repo or KnowledgeGraphRepository()
+        self.kg_repo = kg_repo
         self.cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
 
     def build_graph(self, user_id: int) -> Dict:
@@ -26,7 +26,7 @@ class KnowledgeGraphService:
             if cached:
                 return cached
 
-        items = self.repo.list_all(user_id, limit=10000, offset=0)
+        items = self.repo.list_all_sync(user_id, limit=10000, offset=0)
 
         graph = {
             "topics": defaultdict(list),
@@ -48,8 +48,8 @@ class KnowledgeGraphService:
                 graph["grammar_patterns"][grammar].append(item.source_text)
 
             # persist simple relations
-            self.kg_repo.add_edge(item.source_text, cluster, "word->topic", 1.0)
-            self.kg_repo.add_edge(item.source_text, grammar or "general", "word->grammar", 0.8)
+            self.kg_repo.add_edge_sync(item.source_text, topic, "word->topic", 1.0)
+            self.kg_repo.add_edge_sync(item.source_text, grammar or "general", "word->grammar", 0.8)
 
         if self.cache:
             asyncio.run(self.cache.set(cache_key, graph, ttl=600))

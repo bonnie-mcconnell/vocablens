@@ -1,7 +1,7 @@
 from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.retention_engine import RetentionEngine
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 
@@ -15,7 +15,7 @@ class LearningRoadmapService:
         graph_service: LearningGraphService,
         skill_tracker: SkillTrackingService,
         retention_engine: RetentionEngine,
-        vocab_repo: SQLiteVocabularyRepository,
+        vocab_repo: PostgresVocabularyRepository,
     ):
         self.graph = graph_service
         self.skills = skill_tracker
@@ -25,7 +25,7 @@ class LearningRoadmapService:
 
     def generate_today_plan(self, user_id: int):
 
-        items = self.repo.list_all(user_id, limit=1000, offset=0)
+        items = self.repo.list_all_sync(user_id, limit=1000, offset=0)
 
         due = [
             i for i in items

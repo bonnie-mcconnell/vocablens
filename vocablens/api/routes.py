@@ -17,13 +17,13 @@ from vocablens.services.speech_conversation_service import SpeechConversationSer
 from vocablens.services.learning_roadmap_service import LearningRoadmapService
 from vocablens.services.knowledge_graph_service import KnowledgeGraphService
 
-from vocablens.infrastructure.repositories_users import SQLiteUserRepository
+from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
 
 
 def create_routes(
     vocab_service: VocabularyService,
     ocr_service: OCRService,
-    user_repo: SQLiteUserRepository,
+    user_repo: PostgresUserRepository,
     conversation_service: ConversationService,
     speech_service: SpeechConversationService,
     lesson_service: LessonGenerationService,

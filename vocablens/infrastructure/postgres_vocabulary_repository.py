@@ -1,11 +1,10 @@
 import asyncio
 from typing import List
 from sqlalchemy import select, update, func
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from vocablens.infrastructure.db.models import VocabularyORM
-from vocablens.infrastructure.db.session import AsyncSession
 from vocablens.domain.models import VocabularyItem
-from vocablens.domain.errors import PersistenceError
 
 
 def _map_row(row: VocabularyORM) -> VocabularyItem:
@@ -30,8 +29,8 @@ def _map_row(row: VocabularyORM) -> VocabularyItem:
 
 
 class PostgresVocabularyRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._session_factory = session_factory
 
     # sync-friendly wrappers
     def _run(self, coro):
@@ -44,81 +43,91 @@ class PostgresVocabularyRepository:
 
     # Public API (async)
     async def add(self, user_id: int, item: VocabularyItem) -> VocabularyItem:
-        obj = VocabularyORM(
-            user_id=user_id,
-            source_text=item.source_text,
-            translated_text=item.translated_text,
-            source_lang=item.source_lang,
-            target_lang=item.target_lang,
-            created_at=item.created_at,
-            last_reviewed_at=item.last_reviewed_at,
-            review_count=item.review_count,
-            ease_factor=item.ease_factor,
-            interval=item.interval,
-            repetitions=item.repetitions,
-            next_review_due=item.next_review_due,
-            example_source_sentence=item.example_source_sentence,
-            example_translated_sentence=item.example_translated_sentence,
-            grammar_note=item.grammar_note,
-            semantic_cluster=item.semantic_cluster,
-        )
-        self.session.add(obj)
-        await self.session.commit()
-        await self.session.refresh(obj)
-        return _map_row(obj)
-
-    async def list_all(self, user_id: int, limit: int, offset: int) -> List[VocabularyItem]:
-        result = await self.session.execute(
-            select(VocabularyORM).where(VocabularyORM.user_id == user_id).order_by(VocabularyORM.created_at.desc()).limit(limit).offset(offset)
-        )
-        return [_map_row(r) for r in result.scalars().all()]
-
-    async def list_due(self, user_id: int) -> List[VocabularyItem]:
-        result = await self.session.execute(
-            select(VocabularyORM).where(
-                VocabularyORM.user_id == user_id,
-                VocabularyORM.next_review_due.is_not(None),
-                VocabularyORM.next_review_due <= func.now(),
-            ).order_by(VocabularyORM.next_review_due.asc())
-        )
-        return [_map_row(r) for r in result.scalars().all()]
-
-    async def get(self, user_id: int, item_id: int):
-        result = await self.session.execute(
-            select(VocabularyORM).where(
-                VocabularyORM.id == item_id,
-                VocabularyORM.user_id == user_id,
-            )
-        )
-        row = result.scalar_one_or_none()
-        return _map_row(row) if row else None
-
-    async def exists(self, user_id: int, source_text: str, source_lang: str, target_lang: str) -> bool:
-        result = await self.session.execute(
-            select(VocabularyORM.id).where(
-                VocabularyORM.user_id == user_id,
-                VocabularyORM.source_text == source_text,
-                VocabularyORM.source_lang == source_lang,
-                VocabularyORM.target_lang == target_lang,
-            ).limit(1)
-        )
-        return result.scalar_one_or_none() is not None
-
-    async def update(self, item: VocabularyItem) -> VocabularyItem:
-        await self.session.execute(
-            update(VocabularyORM)
-            .where(VocabularyORM.id == item.id)
-            .values(
+        async with self._session_factory() as session:
+            obj = VocabularyORM(
+                user_id=user_id,
+                source_text=item.source_text,
+                translated_text=item.translated_text,
+                source_lang=item.source_lang,
+                target_lang=item.target_lang,
+                created_at=item.created_at,
                 last_reviewed_at=item.last_reviewed_at,
                 review_count=item.review_count,
                 ease_factor=item.ease_factor,
                 interval=item.interval,
                 repetitions=item.repetitions,
                 next_review_due=item.next_review_due,
+                example_source_sentence=item.example_source_sentence,
+                example_translated_sentence=item.example_translated_sentence,
+                grammar_note=item.grammar_note,
+                semantic_cluster=item.semantic_cluster,
             )
-        )
-        await self.session.commit()
-        return item
+            session.add(obj)
+            await session.commit()
+            await session.refresh(obj)
+            return _map_row(obj)
+
+    async def list_all(self, user_id: int, limit: int, offset: int) -> List[VocabularyItem]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(VocabularyORM)
+                .where(VocabularyORM.user_id == user_id)
+                .order_by(VocabularyORM.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            return [_map_row(r) for r in result.scalars().all()]
+
+    async def list_due(self, user_id: int) -> List[VocabularyItem]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(VocabularyORM).where(
+                    VocabularyORM.user_id == user_id,
+                    VocabularyORM.next_review_due.is_not(None),
+                    VocabularyORM.next_review_due <= func.now(),
+                ).order_by(VocabularyORM.next_review_due.asc())
+            )
+            return [_map_row(r) for r in result.scalars().all()]
+
+    async def get(self, user_id: int, item_id: int):
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(VocabularyORM).where(
+                    VocabularyORM.id == item_id,
+                    VocabularyORM.user_id == user_id,
+                )
+            )
+            row = result.scalar_one_or_none()
+            return _map_row(row) if row else None
+
+    async def exists(self, user_id: int, source_text: str, source_lang: str, target_lang: str) -> bool:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(VocabularyORM.id).where(
+                    VocabularyORM.user_id == user_id,
+                    VocabularyORM.source_text == source_text,
+                    VocabularyORM.source_lang == source_lang,
+                    VocabularyORM.target_lang == target_lang,
+                ).limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+
+    async def update(self, item: VocabularyItem) -> VocabularyItem:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(VocabularyORM)
+                .where(VocabularyORM.id == item.id)
+                .values(
+                    last_reviewed_at=item.last_reviewed_at,
+                    review_count=item.review_count,
+                    ease_factor=item.ease_factor,
+                    interval=item.interval,
+                    repetitions=item.repetitions,
+                    next_review_due=item.next_review_due,
+                )
+            )
+            await session.commit()
+            return item
 
     async def update_enrichment(
         self,
@@ -128,17 +137,18 @@ class PostgresVocabularyRepository:
         grammar: str | None,
         cluster: str | None,
     ):
-        await self.session.execute(
-            update(VocabularyORM)
-            .where(VocabularyORM.id == item_id)
-            .values(
-                example_source_sentence=example_source,
-                example_translated_sentence=example_translation,
-                grammar_note=grammar,
-                semantic_cluster=cluster,
+        async with self._session_factory() as session:
+            await session.execute(
+                update(VocabularyORM)
+                .where(VocabularyORM.id == item_id)
+                .values(
+                    example_source_sentence=example_source,
+                    example_translated_sentence=example_translation,
+                    grammar_note=grammar,
+                    semantic_cluster=cluster,
+                )
             )
-        )
-        await self.session.commit()
+            await session.commit()
 
     # sync convenience methods
     def add_sync(self, *a, **k): return self._run(self.add(*a, **k))

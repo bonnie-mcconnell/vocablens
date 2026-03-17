@@ -1,4 +1,3 @@
-from pathlib import Path
 import time
 import uuid
 from sqlalchemy import text
@@ -8,12 +7,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-from vocablens.infrastructure.database import init_db
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
-from vocablens.infrastructure.repositories_users import SQLiteUserRepository
-from vocablens.infrastructure.repositories_translation_cache import (
-    SQLiteTranslationCacheRepository,
+from vocablens.infrastructure.db.session import AsyncSessionMaker
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
+from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
+from vocablens.infrastructure.postgres_translation_cache_repository import (
+    PostgresTranslationCacheRepository,
 )
+from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
+from vocablens.infrastructure.postgres_learning_event_repository import PostgresLearningEventRepository
+from vocablens.infrastructure.postgres_skill_tracking_repository import PostgresSkillTrackingRepository
+from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
+from vocablens.infrastructure.postgres_embedding_repository import PostgresEmbeddingRepository
 
 # Providers
 from vocablens.providers.translation.libretranslate_provider import LibreTranslateProvider
@@ -79,15 +83,17 @@ def create_app() -> FastAPI:
         version="1.0.0",
     )
 
-    db_path = Path("vocablens.db")
-
     # ---------------------------------------------------
     # Repositories
     # ---------------------------------------------------
 
-    vocab_repo = SQLiteVocabularyRepository(db_path)
-    user_repo = SQLiteUserRepository(db_path)
-    cache_repo = SQLiteTranslationCacheRepository(str(db_path))
+    vocab_repo = PostgresVocabularyRepository(AsyncSessionMaker)
+    user_repo = PostgresUserRepository(AsyncSessionMaker)
+    cache_repo = PostgresTranslationCacheRepository(AsyncSessionMaker)
+    conversation_repo = PostgresConversationRepository(AsyncSessionMaker)
+    learning_event_repo = PostgresLearningEventRepository(AsyncSessionMaker)
+    skill_tracking_repo = PostgresSkillTrackingRepository(AsyncSessionMaker)
+    kg_repo = KnowledgeGraphRepository(AsyncSessionMaker)
 
     # ---------------------------------------------------
     # Providers
@@ -129,7 +135,7 @@ def create_app() -> FastAPI:
 
     drill_service = DrillGenerationService(llm_provider)
 
-    skill_tracker = SkillTrackingService()
+    skill_tracker = SkillTrackingService(skill_tracking_repo)
 
     brain_service = LanguageBrainService(
         mistake_engine,
@@ -143,7 +149,7 @@ def create_app() -> FastAPI:
         vocab_repo,
     )
 
-    knowledge_graph = KnowledgeGraphService(vocab_repo)
+    knowledge_graph = KnowledgeGraphService(vocab_repo, kg_repo)
 
     retention_engine = RetentionEngine()
 
@@ -153,12 +159,13 @@ def create_app() -> FastAPI:
             RetentionProcessor(retention_engine, vocab_repo),
             KnowledgeGraphProcessor(knowledge_graph),
         ],
-        db_path=str(db_path),
+        repo=learning_event_repo,
     )
 
     conversation_service = ConversationService(
         llm_provider,
         vocab_repo,
+        conversation_repo,
         brain_service,
         memory_service,
         conversation_vocab_service,
@@ -302,17 +309,6 @@ def create_app() -> FastAPI:
     @app.get("/metrics")
     def metrics():
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-    # ---------------------------------------------------
-    # Startup
-    # ---------------------------------------------------
-
-    @app.on_event("startup")
-    async def startup():
-
-        init_db(db_path)
-
-        logger.info("Database initialized")
 
     # ---------------------------------------------------
     # Routes

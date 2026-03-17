@@ -1,9 +1,8 @@
-from pathlib import Path
-
 from vocablens.worker import celery
 
 from vocablens.providers.llm.openai_provider import OpenAIProvider
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.db.session import AsyncSessionMaker
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 
 from vocablens.services.example_sentence_service import ExampleSentenceService
 from vocablens.services.grammar_service import GrammarExplanationService
@@ -18,9 +17,7 @@ def enrich_vocabulary_item(
     target_lang: str,
 ):
 
-    db_path = Path("vocablens.db")
-
-    repo = SQLiteVocabularyRepository(db_path)
+    repo = PostgresVocabularyRepository(AsyncSessionMaker)
 
     llm = OpenAIProvider()
 
@@ -45,7 +42,7 @@ def enrich_vocabulary_item(
         source_lang,
     )
 
-    repo.update_enrichment(
+    repo.update_enrichment_sync(
         item_id,
         example.get("source_sentence"),
         example.get("translated_sentence"),

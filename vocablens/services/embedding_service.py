@@ -1,14 +1,15 @@
 import numpy as np
 from openai import OpenAI
-import sqlite3
 import json
+
+from vocablens.infrastructure.postgres_embedding_repository import PostgresEmbeddingRepository
 
 
 class EmbeddingService:
 
-    def __init__(self, db_path: str = "vocablens.db"):
+    def __init__(self, repo: PostgresEmbeddingRepository):
         self.client = OpenAI()
-        self.db_path = db_path
+        self.repo = repo
 
     def embed(self, text: str):
 
@@ -26,19 +27,4 @@ class EmbeddingService:
         )
 
     def store_embedding(self, word: str, vector) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS vocabulary_embeddings (
-                    word TEXT PRIMARY KEY,
-                    embedding TEXT
-                )
-                """
-            )
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO vocabulary_embeddings (word, embedding)
-                VALUES (?, ?)
-                """,
-                (word, json.dumps(vector.tolist())),
-            )
+        self.repo.store_sync(word, vector.tolist())

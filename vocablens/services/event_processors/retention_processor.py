@@ -1,5 +1,5 @@
 from vocablens.services.retention_engine import RetentionEngine
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 
@@ -13,7 +13,7 @@ class RetentionProcessor:
     def __init__(
         self,
         retention: RetentionEngine,
-        repo: SQLiteVocabularyRepository,
+        repo: PostgresVocabularyRepository,
     ):
         self._retention = retention
         self._repo = repo
@@ -31,7 +31,7 @@ class RetentionProcessor:
         if item_id is None:
             return
 
-        item = self._repo.get(user_id, item_id)
+        item = self._repo.get_sync(user_id, item_id)
         if not item:
             return
 
@@ -40,4 +40,4 @@ class RetentionProcessor:
             return
 
         updated = self._srs.review(item, int(quality))
-        self._repo.update(updated)
+        self._repo.update_sync(updated)

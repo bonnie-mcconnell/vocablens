@@ -1,29 +1,43 @@
-import sqlite3
+import asyncio
 from typing import List, Dict
+from sqlalchemy import insert, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from vocablens.infrastructure.db.models import KnowledgeGraphEdgeORM
 
 
 class KnowledgeGraphRepository:
-    def __init__(self, db_path: str = "vocablens.db"):
-        self.db_path = db_path
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._session_factory = session_factory
 
-    def _connect(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _run(self, coro):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        else:
+            return loop.run_until_complete(coro)  # type: ignore
 
-    def add_edge(self, source_node: str, target_node: str, relation_type: str, weight: float = 1.0):
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO knowledge_graph_edges (source_node, target_node, relation_type, weight)
-                VALUES (?, ?, ?, ?)
-                """,
-                (source_node, target_node, relation_type, weight),
+    async def add_edge(self, source_node: str, target_node: str, relation_type: str, weight: float = 1.0):
+        async with self._session_factory() as session:
+            await session.execute(
+                insert(KnowledgeGraphEdgeORM).values(
+                    source_node=source_node,
+                    target_node=target_node,
+                    relation_type=relation_type,
+                    weight=weight,
+                )
             )
+            await session.commit()
 
-    def list_edges(self) -> List[Dict]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM knowledge_graph_edges"
-            ).fetchall()
-            return [dict(r) for r in rows]
+    async def list_edges(self) -> List[Dict]:
+        async with self._session_factory() as session:
+            result = await session.execute(select(KnowledgeGraphEdgeORM))
+            return [dict(row._mapping) for row in result.all()]
+
+    # sync helpers
+    def add_edge_sync(self, *a, **k):
+        return self._run(self.add_edge(*a, **k))
+
+    def list_edges_sync(self):
+        return self._run(self.list_edges())

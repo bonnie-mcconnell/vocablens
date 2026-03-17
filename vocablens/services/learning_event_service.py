@@ -1,8 +1,8 @@
 import json
-import sqlite3
 from typing import Dict, List, Protocol, Any
 
 from vocablens.services.learning_events import LearningEvent, ConversationTurnEvent
+from vocablens.infrastructure.postgres_learning_event_repository import PostgresLearningEventRepository
 
 
 class LearningEventProcessor(Protocol):
@@ -26,10 +26,10 @@ class LearningEventService:
     def __init__(
         self,
         processors: List[LearningEventProcessor],
-        db_path: str = "vocablens.db",
+        repo: PostgresLearningEventRepository,
     ):
         self._processors = processors
-        self._db_path = db_path
+        self._repo = repo
 
     def record(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
@@ -61,14 +61,7 @@ class LearningEventService:
 
     def _persist(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
-        with sqlite3.connect(self._db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO learning_events (user_id, event_type, payload_json)
-                VALUES (?, ?, ?)
-                """,
-                (user_id, event_type, json.dumps(payload)),
-            )
+        self._repo.record_sync(user_id=user_id, event_type=event_type, payload_json=json.dumps(payload))
 
     def _dispatch(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 

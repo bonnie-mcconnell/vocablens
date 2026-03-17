@@ -5,20 +5,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from vocablens.auth.jwt import decode_token
 from vocablens.domain.user import User
-from vocablens.infrastructure.db.session import get_session
+from vocablens.infrastructure.db.session import AsyncSessionMaker
 from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
-from vocablens.infrastructure.repositories_users import SQLiteUserRepository
 
 security = HTTPBearer()
 
 
-async def get_user_repo(
-    session=Depends(get_session),
-):
-    # prefer Postgres; fallback to SQLite if session not available
-    if session:
-        return PostgresUserRepository(session)
-    return SQLiteUserRepository("vocablens.db")
+async def get_user_repo():
+    return PostgresUserRepository(AsyncSessionMaker)
 
 
 async def get_current_user(
@@ -34,7 +28,7 @@ async def get_current_user(
             detail="Invalid authentication",
         )
 
-    user = user_repo.get_by_id(user_id)
+    user = await user_repo.get_by_id(user_id)
 
     if not user:
         raise HTTPException(

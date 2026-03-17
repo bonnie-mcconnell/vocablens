@@ -1,4 +1,4 @@
-from typing import Protocol, List, Optional, Any
+from typing import Protocol, List, Optional, Any, Dict
 from datetime import datetime
 
 from vocablens.domain.models import VocabularyItem
@@ -39,3 +39,18 @@ class ConversationRepository(Protocol):
 
 class LearningEventRepository(Protocol):
     async def record(self, user_id: int, event_type: str, payload_json: str) -> None: ...
+
+
+class SkillTrackingRepository(Protocol):
+    async def record(self, user_id: int, skill: str, score: float, created_at: datetime | None = None) -> None: ...
+    async def latest_scores(self, user_id: int) -> Dict[str, float]: ...
+
+
+class KnowledgeGraphRepository(Protocol):
+    async def add_edge(self, source_node: str, target_node: str, relation_type: str, weight: float = 1.0) -> None: ...
+    async def list_edges(self) -> List[Dict]: ...
+
+
+class EmbeddingRepository(Protocol):
+    async def store(self, word: str, embedding: List[float]) -> None: ...
+    async def get(self, word: str) -> Optional[List[float]]: ...

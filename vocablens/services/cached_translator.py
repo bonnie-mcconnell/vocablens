@@ -23,7 +23,7 @@ class CachedTranslator:
         target_lang: str,
     ) -> str:
 
-        cached = self.cache_repo.get(text, source_lang, target_lang)
+        cached = self.cache_repo.get_sync(text, source_lang, target_lang)
 
         if cached:
             logger.debug("Translation cache hit")
@@ -37,7 +37,7 @@ class CachedTranslator:
             target_lang,
         )
 
-        self.cache_repo.save(
+        self.cache_repo.save_sync(
             text,
             source_lang,
             target_lang,
@@ -63,7 +63,7 @@ class CachedTranslator:
 
         for i, text in enumerate(texts):
 
-            cached = self.cache_repo.get(
+            cached = self.cache_repo.get_sync(
                 text,
                 source_lang,
                 target_lang,
@@ -91,7 +91,7 @@ class CachedTranslator:
             ):
                 results[idx] = translation
 
-                self.cache_repo.save(
+                self.cache_repo.save_sync(
                     text,
                     source_lang,
                     target_lang,

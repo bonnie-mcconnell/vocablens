@@ -6,7 +6,7 @@ from vocablens.domain.errors import NotFoundError
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 from vocablens.providers.translation.base import Translator
-from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 from vocablens.services.word_extraction_service import WordExtractionService
 from vocablens.services.language_detection_service import LanguageDetectionService
 from vocablens.services.difficulty_service import DifficultyService
@@ -19,7 +19,7 @@ class VocabularyService:
     def __init__(
         self,
         translator: Translator,
-        repository: SQLiteVocabularyRepository,
+        repository: PostgresVocabularyRepository,
         extractor: WordExtractionService,
     ):
 
@@ -66,7 +66,7 @@ class VocabularyService:
             repetitions=0,
         )
 
-        saved = self._repository.add(user_id, item)
+        saved = self._repository.add_sync(user_id, item)
 
         # async enrichment
         enrich_vocabulary_item.delay(
@@ -124,7 +124,7 @@ class VocabularyService:
 
         for i, word in enumerate(words):
 
-            if self._repository.exists(
+            if self._repository.exists_sync(
                 user_id,
                 word,
                 source_lang,
@@ -146,7 +146,7 @@ class VocabularyService:
             repetitions=0,
         )
 
-            saved = self._repository.add(user_id, item)
+            saved = self._repository.add_sync(user_id, item)
 
             enrich_vocabulary_item.delay(
                 saved.id,
@@ -170,7 +170,7 @@ class VocabularyService:
         rating: str,
     ) -> VocabularyItem:
 
-        item = self._repository.get(user_id, item_id)
+        item = self._repository.get_sync(user_id, item_id)
 
         if not item:
             raise NotFoundError(
@@ -188,7 +188,7 @@ class VocabularyService:
 
         updated = self._srs.review(item, quality)
 
-        return self._repository.update(updated)
+        return self._repository.update_sync(updated)
 
     def review_session(
         self,
@@ -196,6 +196,6 @@ class VocabularyService:
         limit: int = 10,
     ) -> List[VocabularyItem]:
 
-        items = self._repository.list_due(user_id)
+        items = self._repository.list_due_sync(user_id)
 
         return items[:limit]

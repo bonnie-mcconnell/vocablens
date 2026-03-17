@@ -1,12 +1,13 @@
 from collections import defaultdict
-import sqlite3
+
+from vocablens.infrastructure.postgres_skill_tracking_repository import PostgresSkillTrackingRepository
 
 
 class SkillTrackingService:
 
-    def __init__(self, db_path="vocablens.db"):
+    def __init__(self, repo: PostgresSkillTrackingRepository):
 
-        self.db_path = db_path
+        self.repo = repo
 
         self.skills = defaultdict(
             lambda: {
@@ -44,18 +45,5 @@ class SkillTrackingService:
 
         skill = self.skills[user_id]
 
-        with sqlite3.connect(self.db_path) as conn:
-
-            for name in ("grammar", "vocabulary", "fluency"):
-
-                conn.execute(
-                    """
-                    INSERT INTO skill_history (user_id, skill, score)
-                    VALUES (?, ?, ?)
-                    """,
-                    (
-                        user_id,
-                        name,
-                        skill[name],
-                    ),
-                )
+        for name in ("grammar", "vocabulary", "fluency"):
+            self.repo.record_sync(user_id, name, skill[name])
