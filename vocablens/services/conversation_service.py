@@ -72,6 +72,7 @@ class ConversationService:
         user_message: str,
         source_lang: str,
         target_lang: str,
+        tutor_mode: bool = True,
     ) -> dict:
 
         new_words = await self._vocab_extractor.process_message(
@@ -104,6 +105,24 @@ class ConversationService:
         if self._learning_engine:
             recommendation = await self._learning_engine.recommend(user_id)
 
+        # Tutor mode extras
+        tutor_instructions = ""
+        if tutor_mode:
+            # load personalization profile (difficulty, speed) and top mistake patterns
+            async with self._uow_factory() as uow:
+                profile = await uow.profiles.get_or_create(user_id) if hasattr(uow, "profiles") else None
+                patterns = await uow.mistake_patterns.top_patterns(user_id, limit=5) if hasattr(uow, "mistake_patterns") else []
+                await uow.commit()
+            difficulty = (profile.difficulty_preference if profile else "medium").lower()
+            past_errors = [p.pattern for p in patterns]
+            tutor_instructions = (
+                f"\nTutor mode ON. Difficulty: {difficulty}. "
+                "Provide inline corrections after each learner sentence, highlight grammar/vocab issues, "
+                "and give one concise explanation + one targeted drill. "
+                f"Known recurring mistakes: {past_errors}. "
+                "Keep tone human, encouraging, concise."
+            )
+
         prompt = self._template.format(
             source_lang=source_lang,
             grammar=skill_profile["grammar"],
@@ -115,7 +134,7 @@ class ConversationService:
             user_message=user_message,
             vocab_list=vocab_list,
             mistakes=json.dumps(analysis.get("grammar_mistakes", [])),
-        )
+        ) + tutor_instructions
 
         reply = self._llm.generate(prompt)
 
