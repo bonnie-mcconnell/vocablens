@@ -1,17 +1,18 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
-from vocablens.services.vocabulary_service import VocabularyService
-from vocablens.services.ocr_service import OCRService
-from vocablens.api.schemas import VocabularyResponse, TranslationRequest
-from vocablens.api.dependencies import get_current_user
-from vocablens.domain.user import User
+from vocablens.api.dependencies import (
+    get_current_user,
+    get_ocr_service,
+    get_vocabulary_service,
+)
+from vocablens.api.schemas import TranslationRequest, VocabularyResponse
 from vocablens.core.constants import MAX_IMAGE_SIZE, MAX_TEXT_LENGTH
+from vocablens.domain.user import User
+from vocablens.services.ocr_service import OCRService
+from vocablens.services.vocabulary_service import VocabularyService
 
 
-def create_translation_router(
-    service: VocabularyService,
-    ocr_service: OCRService,
-) -> APIRouter:
+def create_translation_router() -> APIRouter:
 
     router = APIRouter(prefix="/translate", tags=["Translation"])
 
@@ -20,9 +21,10 @@ def create_translation_router(
     # ------------------------------------------------
 
     @router.post("/", response_model=VocabularyResponse)
-    def translate_text(
+    async def translate_text(
         payload: TranslationRequest,
         user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
     ):
 
         text = payload.text.strip()
@@ -33,7 +35,7 @@ def create_translation_router(
         if len(text) > MAX_TEXT_LENGTH:
             raise HTTPException(400, "Text too long")
 
-        item = service.process_text(
+        item = await service.process_text(
             user.id,
             text,
             payload.source_lang,
@@ -52,6 +54,8 @@ def create_translation_router(
         source_lang: str = Query("auto"),
         target_lang: str = Query("en"),
         user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
+        ocr_service: OCRService = Depends(get_ocr_service),
     ):
 
         image_bytes = await file.read()
@@ -67,7 +71,7 @@ def create_translation_router(
         if len(text) > MAX_TEXT_LENGTH:
             raise HTTPException(400, "Text too long")
 
-        item = service.process_text(
+        item = await service.process_text(
             user.id,
             text,
             source_lang,
@@ -85,6 +89,8 @@ def create_translation_router(
         file: UploadFile = File(...),
         target_lang: str = Query("en"),
         user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
+        ocr_service: OCRService = Depends(get_ocr_service),
     ):
 
         image = await file.read()
@@ -97,14 +103,14 @@ def create_translation_router(
         if not text.strip():
             raise HTTPException(400, "No text detected")
 
-        items = service.process_ocr_text(
+        items = await service.process_ocr_text(
             user.id,
             text,
             None,
             target_lang,
         )
 
-        session = service.review_session(user.id)
+        session = await service.review_session(user.id)
 
         return {
             "text": text,
