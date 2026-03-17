@@ -12,4 +12,4 @@ class DrillGenerationService:
 
         prompt = self.template.format(mistakes=mistakes)
 
-        return self.llm.generate_json(prompt)
+        return self.llm.generate_json_with_usage(prompt).content

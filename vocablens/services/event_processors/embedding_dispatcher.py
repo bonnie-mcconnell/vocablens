@@ -25,6 +25,7 @@ class EmbeddingDispatchProcessor:
         self._jobs.enqueue(
             "jobs.generate_embedding",
             {
+                "user_id": user_id,
                 "word": word,
             },
             opts,

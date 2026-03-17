@@ -25,4 +25,4 @@ Learner language: {target_lang}
 Keep explanation short and beginner friendly.
 """
 
-        return self._llm.generate(prompt)
+        return self._llm.generate_with_usage(prompt).content

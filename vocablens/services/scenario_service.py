@@ -27,4 +27,4 @@ Language:
 Start the conversation naturally with the learner.
 """
 
-        return self.llm.generate(prompt)
+        return self.llm.generate_with_usage(prompt).content

@@ -136,7 +136,8 @@ class ConversationService:
             mistakes=json.dumps(analysis.get("grammar_mistakes", [])),
         ) + tutor_instructions
 
-        reply = self._llm.generate(prompt)
+        reply_result = self._llm.generate_with_usage(prompt)
+        reply = reply_result.content
 
         self._memory.store_turn(user_id, user_message, reply)
 

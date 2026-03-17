@@ -19,7 +19,8 @@ class MistakeEngine:
             language=language,
         )
 
-        analysis = self.llm.generate_json(prompt)
+        analysis_result = self.llm.generate_json_with_usage(prompt)
+        analysis = analysis_result.content
 
         # store patterns if possible
         if self._uow_factory:

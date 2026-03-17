@@ -27,7 +27,7 @@ Source language: {source_lang}
 Target language: {target_lang}
 """
 
-        result = self._llm.generate_json(prompt)
+        result = self._llm.generate_json_with_usage(prompt).content
 
         return {
             "source_sentence": result.get("source_sentence"),

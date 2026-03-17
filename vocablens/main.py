@@ -56,6 +56,7 @@ def create_app() -> FastAPI:
         path = request.url.path
         request.state.request_id = request_id
         start_request()
+        request.state.tokens_used = 0
 
         # rate limit selected heavy endpoints
         if any(path.startswith(p) for p in ["/speech", "/conversation", "/translate"]):
@@ -82,13 +83,15 @@ def create_app() -> FastAPI:
 
         try:
             response = await call_next(request)
-            tokens_used = getattr(request.state, "tokens_used", 0) or get_tokens()
+            tokens_used = get_tokens()
         except Exception as exc:
             error = str(exc)
             ERROR_COUNT.labels(request.method, path, "500").inc()
             response = Response(status_code=500, content="Internal Server Error")
             raise
         finally:
+            request.state.tokens_used = get_tokens()
+            tokens_used = request.state.tokens_used
             duration = time.time() - start
             status_code = getattr(response, "status_code", 0)
             REQUEST_LATENCY.labels(
@@ -123,7 +126,6 @@ def create_app() -> FastAPI:
                     logger.warning("usage_log_failed", exc_info=True)
 
         response.headers["X-Request-ID"] = request_id
-        request.state.tokens_used = tokens_used
         return response
 
     # ---------------------------------------------------

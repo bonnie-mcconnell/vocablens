@@ -29,4 +29,4 @@ adjective
 shopping
 """
 
-        return self._llm.generate(prompt).strip().lower()
+        return self._llm.generate_with_usage(prompt).content.strip().lower()

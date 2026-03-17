@@ -28,6 +28,7 @@ class EnrichmentDispatchProcessor:
         self._jobs.enqueue(
             "jobs.enrich_vocabulary",
             {
+                "user_id": user_id,
                 "item_id": item_id,
                 "source_text": source_text,
                 "source_lang": source_lang,

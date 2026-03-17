@@ -17,6 +17,7 @@ from vocablens.infrastructure.observability.metrics import (
     LLM_COST,
 )
 from vocablens.infrastructure.observability.token_tracker import add_tokens
+from vocablens.providers.llm.base import LLMJsonResult, LLMTextResult, LLMUsage
 
 
 class LLMGuardrails:
@@ -60,7 +61,24 @@ class LLMGuardrails:
         cache_key: Optional[str] = None,
         **kwargs,
     ) -> str:
+        return self.generate_text_result(
+            prompt=prompt,
+            version=version,
+            model=model,
+            timeout=timeout,
+            cache_key=cache_key,
+            **kwargs,
+        ).content
 
+    def generate_text_result(
+        self,
+        prompt: str,
+        version: str = "v1",
+        model: Optional[str] = None,
+        timeout: Optional[float] = None,
+        cache_key: Optional[str] = None,
+        **kwargs,
+    ) -> LLMTextResult:
         return self._run_async(
             self._generate_text_async(
                 prompt=prompt,
@@ -82,8 +100,27 @@ class LLMGuardrails:
         cache_key: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
+        return self.generate_json_result(
+            prompt,
+            schema=schema,
+            version=version,
+            model=model,
+            timeout=timeout,
+            cache_key=cache_key,
+            **kwargs,
+        ).content
 
-        text = self.generate_text(
+    def generate_json_result(
+        self,
+        prompt: str,
+        schema: Optional[Dict[str, Any]] = None,
+        version: str = "v1",
+        model: Optional[str] = None,
+        timeout: Optional[float] = None,
+        cache_key: Optional[str] = None,
+        **kwargs,
+    ) -> LLMJsonResult:
+        text_result = self.generate_text_result(
             prompt,
             version=version,
             model=model,
@@ -91,16 +128,16 @@ class LLMGuardrails:
             cache_key=cache_key,
             **kwargs,
         )
-
+        text = text_result.content
         try:
             data = json.loads(text)
         except Exception:
-            return {}
+            return LLMJsonResult(content={}, usage=text_result.usage)
 
         if schema:
             self._validate_schema(data, schema)
 
-        return data
+        return LLMJsonResult(content=data, usage=text_result.usage)
 
     def _run_async(self, coro):
         """
@@ -125,25 +162,25 @@ class LLMGuardrails:
         timeout: Optional[float],
         cache_key: Optional[str],
         **kwargs,
-    ) -> str:
+    ) -> LLMTextResult:
 
         key = cache_key or f"{model or self.default_model}:{version}:{prompt}"
         cached = await self.cache.get(key)
         if cached:
-            return cached
+            return LLMTextResult(content=cached, usage=LLMUsage())
 
-        response_text = await self._with_retries_async(
+        response = await self._with_retries_async(
             lambda: self._chat_async(prompt, model or self.default_model, timeout, **kwargs)
         )
 
-        await self.cache.set(key, response_text, ttl=self.cache_ttl)
-        return response_text
+        await self.cache.set(key, response.content, ttl=self.cache_ttl)
+        return response
 
     # -----------------------------
     # Internals
     # -----------------------------
 
-    async def _chat_async(self, prompt: str, model: str, timeout: Optional[float], **kwargs) -> str:
+    async def _chat_async(self, prompt: str, model: str, timeout: Optional[float], **kwargs) -> LLMTextResult:
         # circuit breaker
         if self._open_until and datetime.utcnow() < self._open_until:
             raise RuntimeError("LLM circuit open")
@@ -172,10 +209,16 @@ class LLMGuardrails:
         LLM_LATENCY.labels(provider="openai", model=model).observe(duration)
 
         usage = getattr(resp, "usage", None)
+        llm_usage = LLMUsage()
         if usage:
             prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
             completion_tokens = getattr(usage, "completion_tokens", 0) or 0
             total_tokens = getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens)
+            llm_usage = LLMUsage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+            )
             LLM_TOKENS.labels(provider="openai", model=model, type="prompt").inc(prompt_tokens)
             LLM_TOKENS.labels(provider="openai", model=model, type="completion").inc(completion_tokens)
             LLM_TOKENS.labels(provider="openai", model=model, type="total").inc(total_tokens)
@@ -184,7 +227,7 @@ class LLMGuardrails:
             add_tokens(total_tokens)
 
         content = resp.choices[0].message.content
-        return content.strip() if content else ""
+        return LLMTextResult(content=content.strip() if content else "", usage=llm_usage)
 
     async def _with_retries_async(self, func):
         last_exc = None

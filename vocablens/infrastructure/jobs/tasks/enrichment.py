@@ -15,6 +15,7 @@ logger = get_logger("jobs.enrichment")
 
 @celery_app.task(name="jobs.enrich_vocabulary", soft_time_limit=30, time_limit=45, max_retries=3, default_retry_delay=10)
 def enrich_vocabulary_item(
+    user_id: int | None,
     item_id: int,
     source_text: str,
     source_lang: str,
@@ -56,6 +57,13 @@ def enrich_vocabulary_item(
                 grammar,
                 cluster,
             )
+            if user_id is not None:
+                await uow.usage_logs.log(
+                    user_id=user_id,
+                    endpoint="job:enrich_vocabulary",
+                    tokens=get_tokens(),
+                    success=True,
+                )
             await uow.commit()
 
     anyio.run(_persist)

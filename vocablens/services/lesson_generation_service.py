@@ -48,4 +48,4 @@ Return JSON:
 }}
 """
 
-        return self.llm.generate_json(prompt)
+        return self.llm.generate_json_with_usage(prompt).content
