@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
 from vocablens.api.schemas import RegisterRequest, LoginRequest, TokenResponse
@@ -7,22 +7,26 @@ from vocablens.auth.security import hash_password, verify_password
 from vocablens.auth.jwt import create_access_token
 
 from vocablens.domain.errors import PersistenceError
+from vocablens.api.dependencies import get_user_repo
 
 
 DUMMY_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEeO6cWwWlR9E9QnUnxE27XGr0CcsMEY0p6"
 
 
-def create_auth_router(user_repo: PostgresUserRepository) -> APIRouter:
+def create_auth_router() -> APIRouter:
 
     router = APIRouter(prefix="/auth", tags=["Authentication"])
 
     @router.post("/register", response_model=TokenResponse)
-    def register(payload: RegisterRequest):
+    async def register(
+        payload: RegisterRequest,
+        user_repo: PostgresUserRepository = Depends(get_user_repo),
+    ):
 
         hashed = hash_password(payload.password)
 
         try:
-            user = user_repo.create_sync(
+            user = await user_repo.create(
                 email=payload.email,
                 password_hash=hashed,
             )
@@ -38,9 +42,12 @@ def create_auth_router(user_repo: PostgresUserRepository) -> APIRouter:
         return TokenResponse(access_token=token)
 
     @router.post("/login", response_model=TokenResponse)
-    def login(payload: LoginRequest):
+    async def login(
+        payload: LoginRequest,
+        user_repo: PostgresUserRepository = Depends(get_user_repo),
+    ):
 
-        user = user_repo.get_by_email_sync(payload.email)
+        user = await user_repo.get_by_email(payload.email)
 
         if not user:
             verify_password(payload.password, DUMMY_HASH)

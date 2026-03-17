@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from vocablens.auth.jwt import decode_token
 from vocablens.domain.user import User
-from vocablens.infrastructure.db.session import AsyncSessionMaker
+from vocablens.infrastructure.db.session import get_session
 from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
 from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
@@ -33,57 +33,112 @@ from vocablens.providers.speech.tts_provider import TextToSpeechProvider
 
 security = HTTPBearer()
 
-def _state(request: Request):
-    return request.app.state
 
+async def get_user_repo(session=Depends(get_session)):
+    return PostgresUserRepository(session)
 
-async def get_user_repo():
-    return PostgresUserRepository(AsyncSessionMaker)
+async def get_vocab_repo(session=Depends(get_session)):
+    return PostgresVocabularyRepository(session)
 
-def get_vocab_repo():
-    return PostgresVocabularyRepository(AsyncSessionMaker)
+async def get_translation_cache_repo(session=Depends(get_session)):
+    return PostgresTranslationCacheRepository(session)
 
-def get_translation_cache_repo():
-    return PostgresTranslationCacheRepository(AsyncSessionMaker)
+async def get_conversation_repo(session=Depends(get_session)):
+    return PostgresConversationRepository(session)
 
-def get_conversation_repo():
-    return PostgresConversationRepository(AsyncSessionMaker)
+async def get_learning_event_repo(session=Depends(get_session)):
+    return PostgresLearningEventRepository(session)
 
-def get_learning_event_repo():
-    return PostgresLearningEventRepository(AsyncSessionMaker)
+async def get_skill_tracking_repo(session=Depends(get_session)):
+    return PostgresSkillTrackingRepository(session)
 
-def get_skill_tracking_repo():
-    return PostgresSkillTrackingRepository(AsyncSessionMaker)
+async def get_knowledge_graph_repo(session=Depends(get_session)):
+    return KnowledgeGraphRepository(session)
 
-def get_knowledge_graph_repo():
-    return KnowledgeGraphRepository(AsyncSessionMaker)
+def get_translation_provider() -> LibreTranslateProvider:
+    return LibreTranslateProvider()
 
-def get_translation_provider(state=Depends(_state)) -> LibreTranslateProvider:
-    return state.translation_provider
+def get_llm_provider() -> OpenAIProvider:
+    return OpenAIProvider()
 
-def get_llm_provider(state=Depends(_state)) -> OpenAIProvider:
-    return state.llm_provider
+def get_whisper_provider() -> WhisperProvider:
+    return WhisperProvider()
 
-def get_whisper_provider(state=Depends(_state)) -> WhisperProvider:
-    return state.whisper_provider
+def get_tts_provider() -> TextToSpeechProvider:
+    return TextToSpeechProvider()
 
-def get_tts_provider(state=Depends(_state)) -> TextToSpeechProvider:
-    return state.tts_provider
+async def get_skill_tracking_service(repo=Depends(get_skill_tracking_repo)):
+    return SkillTrackingService(repo)
 
-def get_skill_tracking_service(state=Depends(_state)) -> SkillTrackingService:
-    return state.skill_tracking_service
+async def get_learning_event_service(
+    repo=Depends(get_learning_event_repo),
+    skill_tracker=Depends(get_skill_tracking_service),
+    retention_repo=Depends(get_vocab_repo),
+    knowledge_graph_repo=Depends(get_knowledge_graph_repo),
+):
+    retention = RetentionEngine()
+    kg_service = KnowledgeGraphService(retention_repo, knowledge_graph_repo)
+    processors = [
+        SkillUpdateProcessor(skill_tracker),
+        RetentionProcessor(retention, retention_repo),
+        KnowledgeGraphProcessor(kg_service),
+    ]
+    return LearningEventService(processors=processors, repo=repo)
 
-def get_learning_event_service(state=Depends(_state)) -> LearningEventService:
-    return state.learning_event_service
+async def get_vocabulary_service(
+    repo=Depends(get_vocab_repo),
+    translator_provider=Depends(get_translation_provider),
+    cache_repo=Depends(get_translation_cache_repo),
+):
+    translator = CachedTranslator(
+        provider=translator_provider,
+        cache_repo=cache_repo,
+    )
+    extractor = WordExtractionService()
+    return VocabularyService(
+        translator,
+        repo,
+        extractor,
+    )
 
-def get_vocabulary_service(state=Depends(_state)) -> VocabularyService:
-    return state.vocabulary_service
+async def get_conversation_service(
+    llm_provider=Depends(get_llm_provider),
+    vocab_repo=Depends(get_vocab_repo),
+    conversation_repo=Depends(get_conversation_repo),
+    skill_tracker=Depends(get_skill_tracking_service),
+    learning_events=Depends(get_learning_event_service),
+    vocab_service=Depends(get_vocabulary_service),
+):
+    mistake_engine = MistakeEngine(llm_provider)
+    drill_service = DrillGenerationService(llm_provider)
+    brain = LanguageBrainService(mistake_engine, drill_service, skill_tracker)
+    memory = ConversationMemoryService()
+    vocab_extractor = ConversationVocabularyService(
+        WordExtractionService(),
+        vocab_service,
+        vocab_repo,
+    )
+    return ConversationService(
+        llm_provider,
+        vocab_repo,
+        conversation_repo,
+        brain,
+        memory,
+        vocab_extractor,
+        skill_tracker,
+        learning_events,
+    )
 
-def get_conversation_service(state=Depends(_state)) -> ConversationService:
-    return state.conversation_service
-
-def get_speech_conversation_service(state=Depends(_state)) -> SpeechConversationService:
-    return state.speech_conversation_service
+async def get_speech_conversation_service(
+    speech_provider=Depends(get_whisper_provider),
+    tts_provider=Depends(get_tts_provider),
+    conversation_service=Depends(get_conversation_service),
+):
+    return SpeechConversationService(
+        speech_provider,
+        tts_provider,
+        conversation_service,
+    )
 
 
 async def get_current_user(
