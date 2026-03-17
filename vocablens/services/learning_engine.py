@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
 from vocablens.services.retention_engine import RetentionEngine
 
 NextAction = Literal["review_word", "learn_new_word", "practice_grammar", "conversation_drill"]
@@ -13,6 +14,9 @@ class LearningRecommendation:
     action: NextAction
     target: str | None
     reason: str
+    lesson_difficulty: str = "medium"
+    review_frequency_multiplier: float = 1.0
+    content_type: str = "mixed"
 
 
 class LearningEngine:
@@ -25,7 +29,7 @@ class LearningEngine:
         self,
         uow_factory: type[UnitOfWork],
         retention_engine: RetentionEngine | None = None,
-        personalization=None,
+        personalization: PersonalizationService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
@@ -51,35 +55,63 @@ class LearningEngine:
             profile = await uow.profiles.get_or_create(user_id)
             await uow.commit()
 
+        adaptation = await self._get_adaptation(user_id, profile)
         difficulty_pref = (profile.difficulty_preference if profile else "medium").lower()
         retention_rate = profile.retention_rate if profile else 0.8
 
         grammar_thresh = 0.45 if difficulty_pref != "easy" else 0.55
         vocab_thresh = 0.5 if difficulty_pref != "easy" else 0.6
-        due_pressure = self._review_pressure(due_items, retention_rate)
+        due_pressure = self._review_pressure(
+            due_items,
+            retention_rate,
+            adaptation.review_frequency_multiplier,
+        )
         review_vs_new_bias = self._review_vs_new_bias(total_vocab, recent_events, retention_rate)
 
         if due_items and (due_pressure >= 0.4 or review_vs_new_bias >= 0.5):
             reason = f"{len(due_items)} items due with retention pressure {due_pressure:.2f}"
-            return LearningRecommendation("review_word", due_items[0].source_text, reason)
+            return self._decorate(
+                LearningRecommendation("review_word", due_items[0].source_text, reason),
+                adaptation,
+            )
 
         if grammar_score < grammar_thresh or any(p.category == "grammar" for p in (patterns or [])):
-            return LearningRecommendation("practice_grammar", "grammar", "Grammar skill below threshold")
+            return self._decorate(
+                LearningRecommendation("practice_grammar", "grammar", "Grammar skill below threshold"),
+                adaptation,
+            )
 
-        if vocab_score < vocab_thresh or sparse_cluster or any(p.category == "vocabulary" for p in (patterns or [])):
+        if (
+            adaptation.content_type == "vocab"
+            or vocab_score < vocab_thresh
+            or sparse_cluster
+            or any(p.category == "vocabulary" for p in (patterns or []))
+        ):
             target = sparse_cluster or "general"
-            return LearningRecommendation("learn_new_word", target, "Vocabulary coverage low in cluster")
+            return self._decorate(
+                LearningRecommendation("learn_new_word", target, "Vocabulary coverage low in cluster"),
+                adaptation,
+            )
 
         if repeated_patterns:
             top = repeated_patterns[0]
-            return LearningRecommendation("conversation_drill", top.pattern, "Address repeated errors")
+            return self._decorate(
+                LearningRecommendation("conversation_drill", top.pattern, "Address repeated errors"),
+                adaptation,
+            )
 
-        if fluency_score < 0.6:
-            return LearningRecommendation("conversation_drill", None, "Build fluency through guided practice")
+        if adaptation.content_type == "conversation" or fluency_score < 0.6:
+            return self._decorate(
+                LearningRecommendation("conversation_drill", None, "Build fluency through guided practice"),
+                adaptation,
+            )
 
-        return LearningRecommendation("learn_new_word", sparse_cluster or "general", "Balanced progression into new material")
+        return self._decorate(
+            LearningRecommendation("learn_new_word", sparse_cluster or "general", "Balanced progression into new material"),
+            adaptation,
+        )
 
-    def _review_pressure(self, due_items, retention_rate: float) -> float:
+    def _review_pressure(self, due_items, retention_rate: float, frequency_multiplier: float) -> float:
         if not due_items:
             return 0.0
         now = datetime.utcnow()
@@ -92,8 +124,8 @@ class LearningEngine:
             if overdue_days > 0:
                 overdue_count += 1
             max_decay = max(max_decay, min(1.0, overdue_days / max(1, item.interval or 1)))
-        base_pressure = min(1.0, len(due_items) / 10)
-        decay_pressure = min(1.0, max_decay * (1.2 - retention_rate))
+        base_pressure = min(1.0, len(due_items) / max(6, 10 * frequency_multiplier))
+        decay_pressure = min(1.0, (max_decay / max(0.6, frequency_multiplier)) * (1.2 - retention_rate))
         overdue_pressure = min(1.0, overdue_count / max(1, len(due_items)))
         return max(base_pressure, decay_pressure, overdue_pressure)
 
@@ -108,3 +140,21 @@ class LearningEngine:
         if recent_reviews > recent_new:
             return 0.35
         return 0.5
+
+    async def _get_adaptation(self, user_id: int, profile) -> PersonalizationAdaptation:
+        if self._personalization:
+            return await self._personalization.get_adaptation(user_id)
+        difficulty = profile.difficulty_preference if profile else "medium"
+        retention_rate = profile.retention_rate if profile else 0.8
+        content_type = profile.content_preference if profile else "mixed"
+        return PersonalizationAdaptation(
+            lesson_difficulty=difficulty,
+            review_frequency_multiplier=1.0 if retention_rate >= 0.75 else 0.8,
+            content_type=content_type,
+        )
+
+    def _decorate(self, recommendation: LearningRecommendation, adaptation: PersonalizationAdaptation):
+        recommendation.lesson_difficulty = adaptation.lesson_difficulty
+        recommendation.review_frequency_multiplier = adaptation.review_frequency_multiplier
+        recommendation.content_type = adaptation.content_type
+        return recommendation

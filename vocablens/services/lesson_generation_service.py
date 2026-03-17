@@ -41,6 +41,12 @@ Priority:
 Target:
 {recommendation.target if recommendation else "general"}
 
+Lesson difficulty:
+{recommendation.lesson_difficulty if recommendation else "medium"}
+
+Preferred content type:
+{recommendation.content_type if recommendation else "mixed"}
+
 Return JSON:
 
 {{
@@ -66,5 +72,7 @@ Return JSON:
                 "action": recommendation.action,
                 "target": recommendation.target,
                 "reason": recommendation.reason,
+                "lesson_difficulty": recommendation.lesson_difficulty,
+                "content_type": recommendation.content_type,
             }
         return lesson

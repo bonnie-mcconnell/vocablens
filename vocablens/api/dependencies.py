@@ -54,6 +54,11 @@ def get_job_queue() -> JobQueue:
     return CeleryJobQueue()
 
 
+def get_personalization_service(uow_factory=Depends(get_uow_factory)):
+    from vocablens.services.personalization_service import PersonalizationService
+    return PersonalizationService(uow_factory)
+
+
 # --------------------------------------------------------------------------
 # Repository providers
 # --------------------------------------------------------------------------
@@ -126,16 +131,19 @@ async def get_learning_event_service(
     uow_factory=Depends(get_uow_factory),
     skill_tracker=Depends(get_skill_tracking_service),
     job_queue=Depends(get_job_queue),
+    personalization=Depends(get_personalization_service),
 ):
     retention = RetentionEngine()
     kg_service = KnowledgeGraphService(uow_factory)
     from vocablens.services.event_processors.enrichment_dispatcher import EnrichmentDispatchProcessor
     from vocablens.services.event_processors.embedding_dispatcher import EmbeddingDispatchProcessor
+    from vocablens.services.event_processors.personalization_update_processor import PersonalizationUpdateProcessor
     from vocablens.services.event_processors.skill_snapshot_dispatcher import SkillSnapshotDispatcher
     processors = [
         SkillUpdateProcessor(skill_tracker),
         RetentionProcessor(retention, uow_factory),
         KnowledgeGraphProcessor(kg_service),
+        PersonalizationUpdateProcessor(personalization),
         EnrichmentDispatchProcessor(job_queue),
         EmbeddingDispatchProcessor(job_queue),
         SkillSnapshotDispatcher(job_queue),
@@ -231,6 +239,7 @@ def get_learning_roadmap_service(
     retention_engine=Depends(get_retention_engine),
     uow_factory=Depends(get_uow_factory),
     learning_engine=Depends(get_learning_engine),
+    personalization=Depends(get_personalization_service),
 ) -> LearningRoadmapService:
     return LearningRoadmapService(
         graph_service,
@@ -238,6 +247,7 @@ def get_learning_roadmap_service(
         retention_engine,
         uow_factory,
         learning_engine,
+        personalization,
     )
 
 
@@ -247,11 +257,6 @@ def get_learning_engine(
     personalization=Depends(get_personalization_service),
 ):
     return LearningEngine(uow_factory, retention_engine, personalization)
-
-
-def get_personalization_service(uow_factory=Depends(get_uow_factory)):
-    from vocablens.services.personalization_service import PersonalizationService
-    return PersonalizationService(uow_factory)
 
 
 # --------------------------------------------------------------------------

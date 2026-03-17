@@ -4,6 +4,7 @@ from vocablens.services.retention_engine import RetentionEngine
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 from vocablens.services.learning_engine import LearningEngine
+from vocablens.services.personalization_service import PersonalizationService
 
 
 class LearningRoadmapService:
@@ -18,6 +19,7 @@ class LearningRoadmapService:
         retention_engine: RetentionEngine,
         uow_factory: type[UnitOfWork],
         learning_engine: LearningEngine | None = None,
+        personalization: PersonalizationService | None = None,
     ):
         self.graph = graph_service
         self.skills = skill_tracker
@@ -25,6 +27,7 @@ class LearningRoadmapService:
         self._uow_factory = uow_factory
         self.srs = SpacedRepetitionService()
         self._engine = learning_engine
+        self._personalization = personalization
 
     async def generate_today_plan(self, user_id: int):
 
@@ -44,12 +47,28 @@ class LearningRoadmapService:
 
         grammar_focus = self._select_grammar_focus(skill_profile)
         next_action = None
+        personalization = None
         if self._engine:
             rec = await self._engine.recommend(user_id)
             next_action = {
                 "action": rec.action,
                 "target": rec.target,
                 "reason": rec.reason,
+                "lesson_difficulty": rec.lesson_difficulty,
+                "review_frequency_multiplier": rec.review_frequency_multiplier,
+                "content_type": rec.content_type,
+            }
+        if self._personalization:
+            profile = await self._personalization.get_profile(user_id)
+            adaptation = await self._personalization.get_adaptation(user_id)
+            personalization = {
+                "learning_speed": profile.learning_speed,
+                "retention_rate": profile.retention_rate,
+                "difficulty_preference": profile.difficulty_preference,
+                "content_preference": profile.content_preference,
+                "lesson_difficulty": adaptation.lesson_difficulty,
+                "review_frequency_multiplier": adaptation.review_frequency_multiplier,
+                "content_type": adaptation.content_type,
             }
 
         return {
@@ -58,6 +77,7 @@ class LearningRoadmapService:
             "grammar_focus": grammar_focus,
             "next_cluster": next_cluster,
             "next_action": next_action,
+            "personalization": personalization,
         }
 
     def _today_cutoff(self):

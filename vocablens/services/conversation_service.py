@@ -112,9 +112,11 @@ class ConversationService:
                 patterns = await uow.mistake_patterns.top_patterns(user_id, limit=5) if hasattr(uow, "mistake_patterns") else []
                 await uow.commit()
             difficulty = (profile.difficulty_preference if profile else "medium").lower()
+            content_type = profile.content_preference if profile else "mixed"
             past_errors = [p.pattern for p in patterns]
             tutor_instructions = (
                 f"\nTutor mode ON. Difficulty: {difficulty}. "
+                f"Preferred content type: {content_type}. "
                 "Provide inline corrections after each learner sentence, highlight grammar/vocab issues, "
                 "and give one concise explanation + one targeted drill. "
                 f"Known recurring mistakes: {past_errors}. "
@@ -158,6 +160,8 @@ class ConversationService:
             "correction_feedback": brain_output.get("correction_feedback", []),
             "next_action": recommendation.action if recommendation else None,
             "next_action_reason": recommendation.reason if recommendation else None,
+            "lesson_difficulty": recommendation.lesson_difficulty if recommendation else None,
+            "content_type": recommendation.content_type if recommendation else None,
         }
 
     async def _save_conversation(self, user_id, user_message, reply):
