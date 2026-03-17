@@ -39,8 +39,8 @@ class ConversationService:
         self._events = learning_events
         self._template = load_prompt("conversation_prompt")
 
-    def _get_known_words(self, user_id: int) -> List[str]:
-        items = self._repo.list_all_sync(user_id, limit=500, offset=0)
+    async def _get_known_words(self, user_id: int) -> List[str]:
+        items = await self._repo.list_all(user_id, limit=500, offset=0)
         return [i.source_text for i in items][:200]
 
     def _cefr_level(self, skill_profile: dict) -> str:
@@ -65,7 +65,7 @@ class ConversationService:
             return "intermediate"
         return "advanced"
 
-    def generate_reply(
+    async def generate_reply(
         self,
         user_id: int,
         user_message: str,
@@ -73,7 +73,7 @@ class ConversationService:
         target_lang: str,
     ) -> dict:
 
-        new_words = self._vocab_extractor.process_message(
+        new_words = await self._vocab_extractor.process_message(
             user_id,
             user_message,
             source_lang,
@@ -88,7 +88,7 @@ class ConversationService:
 
         analysis = brain_output["analysis"]
 
-        self._skills.update_from_analysis(user_id, analysis)
+        await self._skills.update_from_analysis(user_id, analysis)
 
         skill_profile = self._skills.get_skill_profile(user_id)
         cefr = self._cefr_level(skill_profile)
@@ -96,7 +96,7 @@ class ConversationService:
 
         history = self._memory.get_recent_context(user_id)
 
-        known_words = self._get_known_words(user_id)
+        known_words = await self._get_known_words(user_id)
 
         vocab_list = ", ".join(known_words)
 
@@ -117,9 +117,9 @@ class ConversationService:
 
         self._memory.store_turn(user_id, user_message, reply)
 
-        self._save_conversation(user_id, user_message, reply)
+        await self._save_conversation(user_id, user_message, reply)
 
-        self._events.record(
+        await self._events.record(
             event_type="conversation_turn",
             user_id=user_id,
             payload={
@@ -135,7 +135,7 @@ class ConversationService:
             "drills": brain_output["drills"],
         }
 
-    def _save_conversation(self, user_id, user_message, reply):
+    async def _save_conversation(self, user_id, user_message, reply):
 
-        self._conversation_repo.save_turn_sync(user_id, "student", user_message)
-        self._conversation_repo.save_turn_sync(user_id, "tutor", reply)
+        await self._conversation_repo.save_turn(user_id, "student", user_message)
+        await self._conversation_repo.save_turn(user_id, "tutor", reply)

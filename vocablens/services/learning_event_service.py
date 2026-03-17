@@ -31,11 +31,11 @@ class LearningEventService:
         self._processors = processors
         self._repo = repo
 
-    def record(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
+    async def record(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
         model = self._validate(event_type, payload)
-        self._persist(event_type, user_id, model.model_dump())
-        self._dispatch(event_type, user_id, model.model_dump())
+        await self._persist(event_type, user_id, model.model_dump())
+        await self._dispatch(event_type, user_id, model.model_dump())
 
     def _validate(self, event_type: str, payload: Dict[str, Any]) -> LearningEvent:
         if event_type == "conversation_turn":
@@ -59,11 +59,11 @@ class LearningEventService:
     # Internal helpers
     # -----------------------------------------------------
 
-    def _persist(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
+    async def _persist(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
-        self._repo.record_sync(user_id=user_id, event_type=event_type, payload_json=json.dumps(payload))
+        await self._repo.record(user_id=user_id, event_type=event_type, payload_json=json.dumps(payload))
 
-    def _dispatch(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
+    async def _dispatch(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
         for processor in self._processors:
             if processor.supports(event_type):

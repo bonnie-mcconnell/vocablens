@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import List
 
+import anyio
+
 from vocablens.domain.models import VocabularyItem
 from vocablens.domain.errors import NotFoundError
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
@@ -35,7 +37,7 @@ class VocabularyService:
     # SINGLE WORD
     # ------------------------------------------------
 
-    def process_text(
+    async def process_text(
         self,
         user_id: int,
         text: str,
@@ -46,7 +48,8 @@ class VocabularyService:
         if source_lang == "auto":
             source_lang = self._lang_detector.detect(text)
 
-        translated = self._translator.translate(
+        translated = await anyio.to_thread.run_sync(
+            self._translator.translate,
             text,
             source_lang,
             target_lang,
@@ -66,7 +69,7 @@ class VocabularyService:
             repetitions=0,
         )
 
-        saved = self._repository.add_sync(user_id, item)
+        saved = await self._repository.add(user_id, item)
 
         # async enrichment
         enrich_vocabulary_item.delay(
@@ -82,7 +85,7 @@ class VocabularyService:
     # OCR PIPELINE
     # ------------------------------------------------
 
-    def process_ocr_text(
+    async def process_ocr_text(
         self,
         user_id: int,
         text: str,
@@ -95,7 +98,7 @@ class VocabularyService:
 
         words = self._extractor.extract_words(text)
 
-        return self.process_vocabulary_batch(
+        return await self.process_vocabulary_batch(
             user_id,
             words,
             source_lang,
@@ -106,7 +109,7 @@ class VocabularyService:
     # BATCH
     # ------------------------------------------------
 
-    def process_vocabulary_batch(
+    async def process_vocabulary_batch(
         self,
         user_id: int,
         words: List[str],
@@ -114,7 +117,8 @@ class VocabularyService:
         target_lang: str,
     ) -> List[VocabularyItem]:
 
-        translations = self._translator.translate_batch(
+        translations = await anyio.to_thread.run_sync(
+            self._translator.translate_batch,
             words,
             source_lang,
             target_lang,
@@ -124,7 +128,7 @@ class VocabularyService:
 
         for i, word in enumerate(words):
 
-            if self._repository.exists_sync(
+            if await self._repository.exists(
                 user_id,
                 word,
                 source_lang,
@@ -146,7 +150,7 @@ class VocabularyService:
             repetitions=0,
         )
 
-            saved = self._repository.add_sync(user_id, item)
+            saved = await self._repository.add(user_id, item)
 
             enrich_vocabulary_item.delay(
                 saved.id,
@@ -163,14 +167,14 @@ class VocabularyService:
     # REVIEW
     # ------------------------------------------------
 
-    def review_item(
+    async def review_item(
         self,
         user_id: int,
         item_id: int,
         rating: str,
     ) -> VocabularyItem:
 
-        item = self._repository.get_sync(user_id, item_id)
+        item = await self._repository.get(user_id, item_id)
 
         if not item:
             raise NotFoundError(
@@ -188,14 +192,14 @@ class VocabularyService:
 
         updated = self._srs.review(item, quality)
 
-        return self._repository.update_sync(updated)
+        return await self._repository.update(updated)
 
-    def review_session(
+    async def review_session(
         self,
         user_id: int,
         limit: int = 10,
     ) -> List[VocabularyItem]:
 
-        items = self._repository.list_due_sync(user_id)
+        items = await self._repository.list_due(user_id)
 
         return items[:limit]

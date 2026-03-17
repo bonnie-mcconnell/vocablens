@@ -1,4 +1,3 @@
-import asyncio
 from collections import defaultdict
 from typing import Dict, List
 
@@ -18,15 +17,15 @@ class KnowledgeGraphService:
         self.kg_repo = kg_repo
         self.cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
 
-    def build_graph(self, user_id: int) -> Dict:
+    async def build_graph(self, user_id: int) -> Dict:
 
         cache_key = f"kg:{user_id}"
         if self.cache:
-            cached = asyncio.run(self.cache.get(cache_key))
+            cached = await self.cache.get(cache_key)
             if cached:
                 return cached
 
-        items = self.repo.list_all_sync(user_id, limit=10000, offset=0)
+        items = await self.repo.list_all(user_id, limit=10000, offset=0)
 
         graph = {
             "topics": defaultdict(list),
@@ -48,11 +47,11 @@ class KnowledgeGraphService:
                 graph["grammar_patterns"][grammar].append(item.source_text)
 
             # persist simple relations
-            self.kg_repo.add_edge_sync(item.source_text, topic, "word->topic", 1.0)
-            self.kg_repo.add_edge_sync(item.source_text, grammar or "general", "word->grammar", 0.8)
+            await self.kg_repo.add_edge(item.source_text, topic, "word->topic", 1.0)
+            await self.kg_repo.add_edge(item.source_text, grammar or "general", "word->grammar", 0.8)
 
         if self.cache:
-            asyncio.run(self.cache.set(cache_key, graph, ttl=600))
+            await self.cache.set(cache_key, graph, ttl=600)
 
         return graph
 

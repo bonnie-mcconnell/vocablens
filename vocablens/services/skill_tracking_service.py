@@ -17,7 +17,7 @@ class SkillTrackingService:
             }
         )
 
-    def update_from_analysis(self, user_id: int, analysis: dict):
+    async def update_from_analysis(self, user_id: int, analysis: dict):
 
         profile = self.skills[user_id]
 
@@ -35,15 +35,15 @@ class SkillTrackingService:
         profile["vocabulary"] = min(max(profile["vocabulary"], 0), 1)
         profile["fluency"] = min(max(profile["fluency"], 0), 1)
 
-        self._save_snapshot(user_id)
+        await self._save_snapshot(user_id)
 
     def get_skill_profile(self, user_id: int):
 
         return self.skills[user_id]
 
-    def _save_snapshot(self, user_id):
+    async def _save_snapshot(self, user_id):
 
         skill = self.skills[user_id]
 
         for name in ("grammar", "vocabulary", "fluency"):
-            self.repo.record_sync(user_id, name, skill[name])
+            await self.repo.record(user_id, name, skill[name])

@@ -21,7 +21,7 @@ class ConversationVocabularyService:
         self._vocab_service = vocab_service
         self._repo = vocab_repo
 
-    def process_message(
+    async def process_message(
         self,
         user_id: int,
         text: str,
@@ -33,7 +33,7 @@ class ConversationVocabularyService:
 
         known_words = {
             item.source_text
-            for item in self._repo.list_all_sync(user_id, limit=1000, offset=0)
+            for item in await self._repo.list_all(user_id, limit=1000, offset=0)
         }
 
         new_words = []
@@ -45,7 +45,7 @@ class ConversationVocabularyService:
 
             try:
 
-                self._vocab_service.process_text(
+                await self._vocab_service.process_text(
                     user_id=user_id,
                     text=word,
                     source_lang=source_lang,
