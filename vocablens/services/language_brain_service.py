@@ -24,13 +24,14 @@ class LanguageBrainService:
         self._drill_generator = drill_generator
         self._skill_tracker = skill_tracker
 
-    def process_message(self, user_id: int, message: str, language: str):
+    async def process_message(self, user_id: int, message: str, language: str):
 
         # --------------------------------
         # Analyze mistakes
         # --------------------------------
 
-        analysis = self._mistake_engine.analyze(
+        analysis = await self._mistake_engine.analyze(
+            user_id,
             message,
             language,
         )
@@ -39,7 +40,7 @@ class LanguageBrainService:
         # Update adaptive skill model
         # --------------------------------
 
-        self._skill_tracker.update_from_analysis(
+        await self._skill_tracker.update_from_analysis(
             user_id,
             analysis,
         )

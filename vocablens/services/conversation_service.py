@@ -81,7 +81,7 @@ class ConversationService:
             target_lang,
         )
 
-        brain_output = self._brain.process_message(
+        brain_output = await self._brain.process_message(
             user_id=user_id,
             message=user_message,
             language=source_lang,

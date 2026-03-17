@@ -169,3 +169,17 @@ class SubscriptionORM(Base):
 
 
 Index("idx_subscription_user", SubscriptionORM.user_id)
+
+
+class MistakePatternORM(Base):
+    __tablename__ = "mistake_patterns"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    category = Column(String, nullable=False)  # grammar | vocabulary | repetition
+    pattern = Column(Text, nullable=False)
+    count = Column(Integer, default=1, nullable=False)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_mistake_user_category", MistakePatternORM.user_id, MistakePatternORM.category)

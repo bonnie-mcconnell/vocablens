@@ -160,8 +160,9 @@ async def get_conversation_service(
     skill_tracker=Depends(get_skill_tracking_service),
     learning_events=Depends(get_learning_event_service),
     vocab_service=Depends(get_vocabulary_service),
+    learning_engine=Depends(get_learning_engine),
 ):
-    mistake_engine = MistakeEngine(llm_provider)
+    mistake_engine = MistakeEngine(llm_provider, uow_factory)
     drill_service = DrillGenerationService(llm_provider)
     brain = LanguageBrainService(mistake_engine, drill_service, skill_tracker)
     memory = ConversationMemoryService()
@@ -178,6 +179,7 @@ async def get_conversation_service(
         vocab_extractor,
         skill_tracker,
         learning_events,
+        learning_engine,
     )
 
 
