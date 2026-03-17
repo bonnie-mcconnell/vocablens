@@ -11,7 +11,7 @@ from vocablens.infrastructure.postgres_skill_tracking_repository import Postgres
 from vocablens.infrastructure.postgres_translation_cache_repository import PostgresTranslationCacheRepository
 from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
 from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
-from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
+from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory, UnitOfWork
 from vocablens.providers.llm.openai_provider import OpenAIProvider
 from vocablens.providers.ocr.pytesseract_provider import PyTesseractProvider
 from vocablens.providers.speech.tts_provider import TextToSpeechProvider
@@ -41,6 +41,10 @@ from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.word_extraction_service import WordExtractionService
 
 security = HTTPBearer()
+
+
+def get_uow_factory():
+    return UnitOfWorkFactory(AsyncSessionMaker)
 
 
 # --------------------------------------------------------------------------
@@ -107,24 +111,22 @@ def get_retention_engine() -> RetentionEngine:
     return RetentionEngine()
 
 
-async def get_skill_tracking_service(repo=Depends(get_skill_tracking_repo)):
-    return SkillTrackingService(repo)
+async def get_skill_tracking_service(uow_factory=Depends(get_uow_factory)):
+    return SkillTrackingService(uow_factory)
 
 
 async def get_learning_event_service(
-    repo=Depends(get_learning_event_repo),
+    uow_factory=Depends(get_uow_factory),
     skill_tracker=Depends(get_skill_tracking_service),
-    retention_repo=Depends(get_vocab_repo),
-    knowledge_graph_repo=Depends(get_knowledge_graph_repo),
 ):
     retention = RetentionEngine()
-    kg_service = KnowledgeGraphService(retention_repo, knowledge_graph_repo)
+    kg_service = KnowledgeGraphService(uow_factory)
     processors = [
         SkillUpdateProcessor(skill_tracker),
-        RetentionProcessor(retention, retention_repo),
+        RetentionProcessor(retention, uow_factory),
         KnowledgeGraphProcessor(kg_service),
     ]
-    return LearningEventService(processors=processors, repo=repo)
+    return LearningEventService(processors=processors, uow_factory=uow_factory)
 
 
 async def get_vocabulary_service(
@@ -139,8 +141,7 @@ async def get_vocabulary_service(
 
 async def get_conversation_service(
     llm_provider=Depends(get_llm_provider),
-    vocab_repo=Depends(get_vocab_repo),
-    conversation_repo=Depends(get_conversation_repo),
+    uow_factory=Depends(get_uow_factory),
     skill_tracker=Depends(get_skill_tracking_service),
     learning_events=Depends(get_learning_event_service),
     vocab_service=Depends(get_vocabulary_service),
@@ -152,12 +153,11 @@ async def get_conversation_service(
     vocab_extractor = ConversationVocabularyService(
         WordExtractionService(),
         vocab_service,
-        vocab_repo,
+        uow_factory,
     )
     return ConversationService(
         llm_provider,
-        vocab_repo,
-        conversation_repo,
+        uow_factory,
         brain,
         memory,
         vocab_extractor,
@@ -183,9 +183,9 @@ def get_ocr_service(provider=Depends(get_ocr_provider)) -> OCRService:
 
 
 def get_learning_graph_service(
-    vocab_repo=Depends(get_vocab_repo),
+    uow_factory=Depends(get_uow_factory),
 ) -> LearningGraphService:
-    return LearningGraphService(vocab_repo)
+    return LearningGraphService(uow_factory)
 
 
 def get_lesson_generation_service(
@@ -202,23 +202,22 @@ def get_scenario_service(
 
 
 def get_knowledge_graph_service(
-    vocab_repo=Depends(get_vocab_repo),
-    knowledge_graph_repo=Depends(get_knowledge_graph_repo),
+    uow_factory=Depends(get_uow_factory),
 ) -> KnowledgeGraphService:
-    return KnowledgeGraphService(vocab_repo, knowledge_graph_repo)
+    return KnowledgeGraphService(uow_factory)
 
 
 def get_learning_roadmap_service(
     graph_service=Depends(get_learning_graph_service),
     skill_tracker=Depends(get_skill_tracking_service),
     retention_engine=Depends(get_retention_engine),
-    vocab_repo=Depends(get_vocab_repo),
+    uow_factory=Depends(get_uow_factory),
 ) -> LearningRoadmapService:
     return LearningRoadmapService(
         graph_service,
         skill_tracker,
         retention_engine,
-        vocab_repo,
+        uow_factory,
     )
 
 

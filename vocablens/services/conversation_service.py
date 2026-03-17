@@ -2,9 +2,8 @@ import json
 from typing import List
 
 from vocablens.providers.llm.base import LLMProvider
-from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
-from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
 
+from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.language_brain_service import LanguageBrainService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
@@ -21,8 +20,7 @@ class ConversationService:
     def __init__(
         self,
         llm: LLMProvider,
-        vocab_repo: PostgresVocabularyRepository,
-        conversation_repo: PostgresConversationRepository,
+        uow_factory: type[UnitOfWork],
         brain: LanguageBrainService,
         memory: ConversationMemoryService,
         vocab_extractor: ConversationVocabularyService,
@@ -30,8 +28,7 @@ class ConversationService:
         learning_events: LearningEventService,
     ):
         self._llm = llm
-        self._repo = vocab_repo
-        self._conversation_repo = conversation_repo
+        self._uow_factory = uow_factory
         self._brain = brain
         self._memory = memory
         self._vocab_extractor = vocab_extractor
@@ -40,7 +37,8 @@ class ConversationService:
         self._template = load_prompt("conversation_prompt")
 
     async def _get_known_words(self, user_id: int) -> List[str]:
-        items = await self._repo.list_all(user_id, limit=500, offset=0)
+        async with self._uow_factory() as uow:
+            items = await uow.vocab.list_all(user_id, limit=500, offset=0)
         return [i.source_text for i in items][:200]
 
     def _cefr_level(self, skill_profile: dict) -> str:
@@ -137,5 +135,7 @@ class ConversationService:
 
     async def _save_conversation(self, user_id, user_message, reply):
 
-        await self._conversation_repo.save_turn(user_id, "student", user_message)
-        await self._conversation_repo.save_turn(user_id, "tutor", reply)
+        async with self._uow_factory() as uow:
+            await uow.conversation.save_turn(user_id, "student", user_message)
+            await uow.conversation.save_turn(user_id, "tutor", reply)
+            await uow.commit()

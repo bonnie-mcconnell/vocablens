@@ -1,5 +1,7 @@
+import anyio
+
 from vocablens.services.retention_engine import RetentionEngine
-from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
+from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 
@@ -13,10 +15,10 @@ class RetentionProcessor:
     def __init__(
         self,
         retention: RetentionEngine,
-        repo: PostgresVocabularyRepository,
+        uow_factory: type[UnitOfWork],
     ):
         self._retention = retention
-        self._repo = repo
+        self._uow_factory = uow_factory
         self._srs = SpacedRepetitionService()
 
     def supports(self, event_type: str) -> bool:
@@ -31,13 +33,17 @@ class RetentionProcessor:
         if item_id is None:
             return
 
-        item = self._repo.get_sync(user_id, item_id)
-        if not item:
-            return
-
         quality = payload.get("quality")
         if quality is None:
             return
 
-        updated = self._srs.review(item, int(quality))
-        self._repo.update_sync(updated)
+        async def _apply():
+            async with self._uow_factory() as uow:
+                item = await uow.vocab.get(user_id, item_id)
+                if not item:
+                    return
+                updated = self._srs.review(item, int(quality))
+                await uow.vocab.update(updated)
+                await uow.commit()
+
+        anyio.run(_apply)

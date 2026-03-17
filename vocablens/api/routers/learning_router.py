@@ -18,12 +18,12 @@ def create_learning_router() -> APIRouter:
     )
 
     @router.get("/roadmap")
-    def roadmap(
+    async def roadmap(
         user: User = Depends(get_current_user),
         roadmap_service: LearningRoadmapService = Depends(get_learning_roadmap_service),
     ):
 
-        return roadmap_service.generate_today_plan(user.id)
+        return await roadmap_service.generate_today_plan(user.id)
 
     @router.get("/graph")
     def graph(

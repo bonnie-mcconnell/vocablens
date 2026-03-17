@@ -2,7 +2,7 @@ from typing import List
 
 from vocablens.services.word_extraction_service import WordExtractionService
 from vocablens.services.vocabulary_service import VocabularyService
-from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
+from vocablens.infrastructure.unit_of_work import UnitOfWork
 
 
 class ConversationVocabularyService:
@@ -15,11 +15,11 @@ class ConversationVocabularyService:
         self,
         extractor: WordExtractionService,
         vocab_service: VocabularyService,
-        vocab_repo: PostgresVocabularyRepository,
+        uow_factory: type[UnitOfWork],
     ):
         self._extractor = extractor
         self._vocab_service = vocab_service
-        self._repo = vocab_repo
+        self._uow_factory = uow_factory
 
     async def process_message(
         self,
@@ -31,10 +31,11 @@ class ConversationVocabularyService:
 
         words = self._extractor.extract_words(text)
 
-        known_words = {
-            item.source_text
-            for item in await self._repo.list_all(user_id, limit=1000, offset=0)
-        }
+        async with self._uow_factory() as uow:
+            known_words = {
+                item.source_text
+                for item in await uow.vocab.list_all(user_id, limit=1000, offset=0)
+            }
 
         new_words = []
 

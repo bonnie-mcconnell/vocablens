@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional
 
-from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
+from vocablens.infrastructure.unit_of_work import UnitOfWork
 
 
 class LearningGraphService:
@@ -9,12 +9,19 @@ class LearningGraphService:
     Builds a vocabulary graph grouped by semantic cluster.
     """
 
-    def __init__(self, repo: PostgresVocabularyRepository):
-        self.repo = repo
+    def __init__(self, uow_factory: type[UnitOfWork]):
+        self._uow_factory = uow_factory
 
     def build_graph(self, user_id: int) -> Dict[str, List[str]]:
 
-        items = self.repo.list_all_sync(user_id, limit=10000, offset=0)
+        # this service is used in sync contexts; run blocking I/O via helper
+        import anyio
+
+        async def _load():
+            async with self._uow_factory() as uow:
+                return await uow.vocab.list_all(user_id, limit=10000, offset=0)
+
+        items = anyio.run(_load)
 
         graph = defaultdict(list)
 

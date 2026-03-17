@@ -1,7 +1,7 @@
 from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.retention_engine import RetentionEngine
-from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
+from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 
@@ -15,17 +15,18 @@ class LearningRoadmapService:
         graph_service: LearningGraphService,
         skill_tracker: SkillTrackingService,
         retention_engine: RetentionEngine,
-        vocab_repo: PostgresVocabularyRepository,
+        uow_factory: type[UnitOfWork],
     ):
         self.graph = graph_service
         self.skills = skill_tracker
         self.retention = retention_engine
-        self.repo = vocab_repo
+        self._uow_factory = uow_factory
         self.srs = SpacedRepetitionService()
 
-    def generate_today_plan(self, user_id: int):
+    async def generate_today_plan(self, user_id: int):
 
-        items = self.repo.list_all_sync(user_id, limit=1000, offset=0)
+        async with self._uow_factory() as uow:
+            items = await uow.vocab.list_all(user_id, limit=1000, offset=0)
 
         due = [
             i for i in items
