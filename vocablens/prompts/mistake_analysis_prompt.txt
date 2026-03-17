@@ -11,5 +11,7 @@ Return JSON:
 {{
  "grammar_mistakes": [],
  "vocab_misuse": [],
+ "repeated_errors": [],
+ "correction_feedback": [],
  "suggestions": []
 }}

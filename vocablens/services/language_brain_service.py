@@ -51,7 +51,11 @@ class LanguageBrainService:
 
         drills = None
 
-        if analysis.get("grammar_mistakes") or analysis.get("vocab_misuse"):
+        if (
+            analysis.get("grammar_mistakes")
+            or analysis.get("vocab_misuse")
+            or analysis.get("repeated_errors")
+        ):
 
             drills = self._drill_generator.generate_drills(
                 analysis
@@ -60,4 +64,5 @@ class LanguageBrainService:
         return {
             "analysis": analysis,
             "drills": drills,
+            "correction_feedback": analysis.get("correction_feedback", []),
         }

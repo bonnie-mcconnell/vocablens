@@ -45,6 +45,7 @@ class LearningEngine:
                 populated = {cluster: words for cluster, words in kg.items() if words}
                 sparse_cluster = min(populated, key=lambda k: len(populated[k])) if populated else None
             patterns = await uow.mistake_patterns.top_patterns(user_id, limit=3)
+            repeated_patterns = await uow.mistake_patterns.repeated_patterns(user_id, threshold=2, limit=3)
             yesterday = datetime.utcnow() - timedelta(hours=24)
             recent_events = await uow.learning_events.list_since(user_id, since=yesterday)
             profile = await uow.profiles.get_or_create(user_id)
@@ -69,8 +70,8 @@ class LearningEngine:
             target = sparse_cluster or "general"
             return LearningRecommendation("learn_new_word", target, "Vocabulary coverage low in cluster")
 
-        if patterns:
-            top = patterns[0]
+        if repeated_patterns:
+            top = repeated_patterns[0]
             return LearningRecommendation("conversation_drill", top.pattern, "Address repeated errors")
 
         if fluency_score < 0.6:

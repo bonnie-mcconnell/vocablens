@@ -26,10 +26,15 @@ class SkillTrackingService:
         else:
             profile["grammar"] += 0.01
 
-        if analysis.get("unknown_words"):
+        if analysis.get("vocab_misuse"):
             profile["vocabulary"] -= 0.01
         else:
             profile["vocabulary"] += 0.01
+
+        if analysis.get("repeated_errors"):
+            profile["fluency"] -= 0.01
+        else:
+            profile["fluency"] += 0.005
 
         profile["grammar"] = min(max(profile["grammar"], 0), 1)
         profile["vocabulary"] = min(max(profile["vocabulary"], 0), 1)

@@ -41,3 +41,15 @@ class PostgresMistakePatternRepository:
             select(MistakePatternORM).where(MistakePatternORM.user_id == user_id).order_by(MistakePatternORM.count.desc()).limit(limit)
         )
         return result.scalars().all()
+
+    async def repeated_patterns(self, user_id: int, threshold: int = 2, limit: int = 10):
+        result = await self.session.execute(
+            select(MistakePatternORM)
+            .where(
+                MistakePatternORM.user_id == user_id,
+                MistakePatternORM.count >= threshold,
+            )
+            .order_by(MistakePatternORM.count.desc(), MistakePatternORM.last_seen_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
