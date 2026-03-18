@@ -6,6 +6,7 @@ from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
+from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 NextAction = Literal["review_word", "learn_new_word", "practice_grammar", "conversation_drill"]
 
@@ -35,6 +36,7 @@ class LearningEngine:
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
         self._personalization = personalization
+        self._scheduler = SpacedRepetitionService()
 
     async def recommend(self, user_id: int) -> LearningRecommendation:
         retention = await self._get_retention_assessment(user_id)
@@ -67,6 +69,7 @@ class LearningEngine:
             due_items,
             retention_rate,
             adaptation.review_frequency_multiplier,
+            patterns,
         )
         review_vs_new_bias = self._review_vs_new_bias(total_vocab, recent_events, retention_rate)
 
@@ -133,23 +136,26 @@ class LearningEngine:
             adaptation,
         )
 
-    def _review_pressure(self, due_items, retention_rate: float, frequency_multiplier: float) -> float:
+    def _review_pressure(self, due_items, retention_rate: float, frequency_multiplier: float, patterns) -> float:
         if not due_items:
             return 0.0
-        now = utc_now()
-        overdue_count = 0
-        max_decay = 0.0
+        max_urgency = 0.0
+        total_urgency = 0.0
         for item in due_items:
-            if not item.next_review_due:
-                continue
-            overdue_days = max(0.0, (now - item.next_review_due).total_seconds() / 86400)
-            if overdue_days > 0:
-                overdue_count += 1
-            max_decay = max(max_decay, min(1.0, overdue_days / max(1, item.interval or 1)))
-        base_pressure = min(1.0, len(due_items) / max(6, 10 * frequency_multiplier))
-        decay_pressure = min(1.0, (max_decay / max(0.6, frequency_multiplier)) * (1.2 - retention_rate))
-        overdue_pressure = min(1.0, overdue_count / max(1, len(due_items)))
-        return max(base_pressure, decay_pressure, overdue_pressure)
+            difficulty_score = min(1.0, max(0.0, (len(item.source_text or "") / 12.0)))
+            mistake_frequency = self._mistake_frequency(item.source_text, patterns)
+            recall_probability = self._scheduler.recall_probability(
+                item,
+                retention_rate=retention_rate,
+                mistake_frequency=mistake_frequency,
+                difficulty_score=difficulty_score,
+            )
+            urgency = 1.0 - recall_probability
+            total_urgency += urgency
+            max_urgency = max(max_urgency, urgency)
+        average_urgency = total_urgency / max(1, len(due_items))
+        due_load = min(1.0, len(due_items) / max(4, int(8 * max(frequency_multiplier, 0.6))))
+        return max(max_urgency, average_urgency, due_load)
 
     def _review_vs_new_bias(self, total_vocab, recent_events, retention_rate: float) -> float:
         total_count = len(total_vocab)
@@ -185,3 +191,13 @@ class LearningEngine:
         recommendation.review_frequency_multiplier = adaptation.review_frequency_multiplier
         recommendation.content_type = adaptation.content_type
         return recommendation
+
+    def _mistake_frequency(self, source_text: str | None, patterns) -> int:
+        if not source_text:
+            return 0
+        frequency = 0
+        needle = source_text.lower()
+        for pattern in patterns or []:
+            if needle in str(getattr(pattern, "pattern", "")).lower():
+                frequency += int(getattr(pattern, "count", 1) or 1)
+        return frequency

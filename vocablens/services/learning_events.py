@@ -23,6 +23,7 @@ class WordReviewedEvent(BaseModel):
     event_type: Literal["word_reviewed"] = "word_reviewed"
     item_id: int
     quality: int
+    response_accuracy: Optional[float] = None
 
 
 class MistakeDetectedEvent(BaseModel):

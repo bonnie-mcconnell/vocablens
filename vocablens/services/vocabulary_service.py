@@ -53,6 +53,7 @@ class VocabularyService:
         )
 
         difficulty = self._difficulty.score(text)
+        retention_rate, review_multiplier = await self._schedule_profile(user_id)
 
         item = VocabularyItem(
             id=None,
@@ -64,6 +65,12 @@ class VocabularyService:
             ease_factor=2.5,
             interval=1,
             repetitions=0,
+        )
+        item = self._srs.initialize(
+            item,
+            retention_rate=retention_rate,
+            difficulty_score=difficulty,
+            review_frequency_multiplier=review_multiplier,
         )
 
         async with self._uow_factory() as uow:
@@ -128,6 +135,7 @@ class VocabularyService:
         )
 
         items = []
+        retention_rate, review_multiplier = await self._schedule_profile(user_id)
 
         for i, word in enumerate(words):
 
@@ -152,6 +160,12 @@ class VocabularyService:
                 ease_factor=2.5,
                 interval=1,
                 repetitions=0,
+            )
+            item = self._srs.initialize(
+                item,
+                retention_rate=retention_rate,
+                difficulty_score=difficulty,
+                review_frequency_multiplier=review_multiplier,
             )
 
             async with self._uow_factory() as uow:
@@ -188,6 +202,8 @@ class VocabularyService:
 
         async with self._uow_factory() as uow:
             item = await uow.vocab.get(user_id, item_id)
+            profile = await uow.profiles.get_or_create(user_id)
+            patterns = await uow.mistake_patterns.top_patterns(user_id, limit=20)
 
         if not item:
             raise NotFoundError(
@@ -202,12 +218,34 @@ class VocabularyService:
         }
 
         quality = quality_map.get(rating, 3)
+        response_accuracy = quality / 5.0
+        difficulty_score = self._difficulty.score(item.source_text)
+        mistake_frequency = self._mistake_frequency(item.source_text, patterns)
+        review_multiplier = self._review_multiplier(profile)
 
-        updated = self._srs.review(item, quality)
+        updated = self._srs.review(
+            item,
+            quality,
+            retention_rate=profile.retention_rate,
+            mistake_frequency=mistake_frequency,
+            difficulty_score=difficulty_score,
+            review_frequency_multiplier=review_multiplier,
+        )
 
         async with self._uow_factory() as uow:
             updated_item = await uow.vocab.update(updated)
             await uow.commit()
+
+        if self._events:
+            await self._events.record(
+                "word_reviewed",
+                user_id,
+                {
+                    "item_id": updated_item.id,
+                    "quality": quality,
+                    "response_accuracy": response_accuracy,
+                },
+            )
 
         return updated_item
 
@@ -233,3 +271,25 @@ class VocabularyService:
     async def list_due_items(self, user_id: int) -> List[VocabularyItem]:
         async with self._uow_factory() as uow:
             return await uow.vocab.list_due(user_id)
+
+    async def _schedule_profile(self, user_id: int) -> tuple[float, float]:
+        async with self._uow_factory() as uow:
+            profile = await uow.profiles.get_or_create(user_id)
+            return profile.retention_rate, self._review_multiplier(profile)
+
+    def _review_multiplier(self, profile) -> float:
+        preference = (getattr(profile, "difficulty_preference", "medium") or "medium").lower()
+        if preference == "easy":
+            return 0.9
+        if preference == "hard":
+            return 1.1
+        return 1.0
+
+    def _mistake_frequency(self, source_text: str, patterns) -> int:
+        word = source_text.lower()
+        frequency = 0
+        for pattern in patterns or []:
+            text = getattr(pattern, "pattern", "")
+            if word in str(text).lower():
+                frequency += int(getattr(pattern, "count", 1) or 1)
+        return frequency

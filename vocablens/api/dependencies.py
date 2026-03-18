@@ -7,6 +7,8 @@ from vocablens.infrastructure.db.session import AsyncSessionMaker, get_session
 from vocablens.infrastructure.jobs.celery_queue import CeleryJobQueue
 from vocablens.infrastructure.jobs.base import JobQueue
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
+from vocablens.infrastructure.notifications.base import NotificationSink
+from vocablens.infrastructure.notifications.logging_notifier import LoggingNotificationSink
 from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
 from vocablens.infrastructure.postgres_learning_event_repository import PostgresLearningEventRepository
 from vocablens.infrastructure.postgres_skill_tracking_repository import PostgresSkillTrackingRepository
@@ -62,6 +64,10 @@ def get_personalization_service(uow_factory=Depends(get_uow_factory)):
 
 def get_tutor_mode_service() -> TutorModeService:
     return TutorModeService()
+
+
+def get_notification_sink() -> NotificationSink:
+    return LoggingNotificationSink()
 
 
 # --------------------------------------------------------------------------
@@ -145,16 +151,19 @@ async def get_learning_event_service(
     skill_tracker=Depends(get_skill_tracking_service),
     job_queue=Depends(get_job_queue),
     personalization=Depends(get_personalization_service),
+    notifier=Depends(get_notification_sink),
 ):
     retention = RetentionEngine(uow_factory)
     kg_service = KnowledgeGraphService(uow_factory)
     from vocablens.services.event_processors.enrichment_dispatcher import EnrichmentDispatchProcessor
     from vocablens.services.event_processors.embedding_dispatcher import EmbeddingDispatchProcessor
     from vocablens.services.event_processors.personalization_update_processor import PersonalizationUpdateProcessor
+    from vocablens.services.event_processors.retention_notification_processor import RetentionNotificationProcessor
     from vocablens.services.event_processors.skill_snapshot_dispatcher import SkillSnapshotDispatcher
     processors = [
         SkillUpdateProcessor(skill_tracker),
         RetentionProcessor(retention, uow_factory),
+        RetentionNotificationProcessor(retention, notifier),
         KnowledgeGraphProcessor(kg_service),
         PersonalizationUpdateProcessor(personalization),
         EnrichmentDispatchProcessor(job_queue),
