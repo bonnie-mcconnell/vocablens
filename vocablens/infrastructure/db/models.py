@@ -226,3 +226,41 @@ class UserProfileORM(Base):
     longest_streak = Column(Integer, default=0, nullable=False)
     drop_off_risk = Column(Float, default=0.0, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class NotificationDeliveryORM(Base):
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        Index("idx_notification_delivery_user", "user_id", "created_at"),
+        Index("idx_notification_delivery_status", "status", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    category = Column(String, nullable=False)
+    provider = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    payload_json = Column(Text)
+    error_message = Column(Text)
+    attempt_count = Column(Integer, default=1, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class SubscriptionEventORM(Base):
+    __tablename__ = "subscription_events"
+    __table_args__ = (
+        Index("idx_subscription_events_user", "user_id", "created_at"),
+        Index("idx_subscription_events_type", "event_type", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String, nullable=False)
+    from_tier = Column(String)
+    to_tier = Column(String)
+    feature_name = Column(String)
+    metadata_json = Column(Text)
+    created_at = Column(DateTime, default=utc_now, nullable=False)

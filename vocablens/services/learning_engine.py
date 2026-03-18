@@ -7,6 +7,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
+from vocablens.services.subscription_service import SubscriptionService
 
 NextAction = Literal["review_word", "learn_new_word", "practice_grammar", "conversation_drill"]
 
@@ -32,10 +33,12 @@ class LearningEngine:
         uow_factory: type[UnitOfWork],
         retention_engine: RetentionEngine | None = None,
         personalization: PersonalizationService | None = None,
+        subscription_service: SubscriptionService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
         self._personalization = personalization
+        self._subscription_service = subscription_service
         self._scheduler = SpacedRepetitionService()
 
     async def recommend(self, user_id: int) -> LearningRecommendation:
@@ -65,6 +68,7 @@ class LearningEngine:
             await uow.commit()
 
         adaptation = await self._get_adaptation(user_id, profile)
+        feature_level = await self._personalization_level(user_id)
         difficulty_pref = (profile.difficulty_preference if profile else "medium").lower()
         retention_rate = profile.retention_rate if profile else 0.8
 
@@ -114,13 +118,13 @@ class LearningEngine:
         if (
             adaptation.content_type == "vocab"
             or vocab_score < vocab_thresh
-            or weak_clusters
+            or (feature_level != "basic" and weak_clusters)
             or sparse_cluster
             or any(p.category == "vocabulary" for p in (patterns or []))
         ):
             target = None
             reason = "Vocabulary coverage low in cluster"
-            if weak_clusters:
+            if feature_level != "basic" and weak_clusters:
                 target = weak_clusters[0]["cluster"]
                 related = ", ".join(weak_clusters[0].get("words", [])[:3])
                 reason = f"Weak cluster '{target}' should be reinforced with related words: {related or 'general set'}"
@@ -216,3 +220,16 @@ class LearningEngine:
             if needle in str(getattr(pattern, "pattern", "")).lower():
                 frequency += int(getattr(pattern, "count", 1) or 1)
         return frequency
+
+    async def _personalization_level(self, user_id: int) -> str:
+        if not self._subscription_service:
+            return "premium"
+        features = await self._subscription_service.get_features(user_id)
+        await self._subscription_service.record_feature_gate(
+            user_id=user_id,
+            feature_name="personalization_level",
+            allowed=True,
+            current_tier=features.tier,
+            required_tier=features.tier,
+        )
+        return features.personalization_level

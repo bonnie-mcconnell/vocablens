@@ -27,7 +27,7 @@ class LanguageBrainService:
         self._explainer = explanation_service
         self._skill_tracker = skill_tracker
 
-    async def process_message(self, user_id: int, message: str, language: str):
+    async def process_message(self, user_id: int, message: str, language: str, explanation_quality: str = "premium"):
 
         # --------------------------------
         # Analyze mistakes
@@ -64,7 +64,7 @@ class LanguageBrainService:
                 analysis
             )
 
-        explanation = await self._explainer.explain(message, analysis)
+        explanation = await self._explainer.explain(message, analysis, quality=explanation_quality)
 
         return {
             "analysis": analysis,

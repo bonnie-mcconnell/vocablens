@@ -9,6 +9,7 @@ from vocablens.infrastructure.jobs.base import JobQueue
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
 from vocablens.infrastructure.notifications.base import CompositeNotificationSink, NotificationSink
 from vocablens.infrastructure.notifications.logging_notifier import LoggingNotificationSink
+from vocablens.infrastructure.notifications.persistent_notifier import PersistentNotificationSink
 from vocablens.infrastructure.notifications.webhook_notifier import WebhookNotificationSink
 from vocablens.config.settings import settings
 from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
@@ -45,6 +46,7 @@ from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.scenario_service import ScenarioService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.speech_conversation_service import SpeechConversationService
+from vocablens.services.subscription_service import SubscriptionService
 from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.word_extraction_service import WordExtractionService
@@ -69,11 +71,15 @@ def get_tutor_mode_service() -> TutorModeService:
     return TutorModeService()
 
 
-def get_notification_sink() -> NotificationSink:
+def get_notification_sink(uow_factory=Depends(get_uow_factory)) -> NotificationSink:
     sinks = [LoggingNotificationSink()]
     if settings.ENABLE_OUTBOUND_NOTIFICATIONS and settings.NOTIFICATION_WEBHOOK_URL:
         sinks.append(WebhookNotificationSink(settings.NOTIFICATION_WEBHOOK_URL))
-    return CompositeNotificationSink(*sinks)
+    return PersistentNotificationSink(CompositeNotificationSink(*sinks), uow_factory)
+
+
+def get_subscription_service(uow_factory=Depends(get_uow_factory)) -> SubscriptionService:
+    return SubscriptionService(uow_factory)
 
 
 # --------------------------------------------------------------------------
@@ -144,8 +150,9 @@ def get_learning_engine(
     uow_factory=Depends(get_uow_factory),
     retention_engine=Depends(get_retention_engine),
     personalization=Depends(get_personalization_service),
+    subscription_service=Depends(get_subscription_service),
 ):
-    return LearningEngine(uow_factory, retention_engine, personalization)
+    return LearningEngine(uow_factory, retention_engine, personalization, subscription_service)
 
 
 async def get_skill_tracking_service(uow_factory=Depends(get_uow_factory)):
@@ -198,6 +205,7 @@ async def get_conversation_service(
     vocab_service=Depends(get_vocabulary_service),
     learning_engine=Depends(get_learning_engine),
     tutor_mode_service=Depends(get_tutor_mode_service),
+    subscription_service=Depends(get_subscription_service),
 ):
     mistake_engine = MistakeEngine(llm_provider, uow_factory)
     drill_service = DrillGenerationService(llm_provider)
@@ -219,6 +227,7 @@ async def get_conversation_service(
         learning_events,
         learning_engine,
         tutor_mode_service,
+        subscription_service,
     )
 
 

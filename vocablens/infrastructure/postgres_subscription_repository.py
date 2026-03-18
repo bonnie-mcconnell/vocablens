@@ -1,3 +1,4 @@
+from vocablens.core.time import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,7 @@ class PostgresSubscriptionRepository:
             existing.tier = tier
             existing.request_limit = request_limit
             existing.token_limit = token_limit
+            existing.renewed_at = utc_now()
             return existing
         sub = SubscriptionORM(
             user_id=user_id,

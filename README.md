@@ -124,6 +124,23 @@ Notifications now support:
 - optional outbound webhook delivery via:
   - `ENABLE_OUTBOUND_NOTIFICATIONS=true`
   - `NOTIFICATION_WEBHOOK_URL=...`
+- persisted delivery attempts/status in `notification_deliveries`
+
+## Subscription tiers
+
+The subscription system now supports feature-based tiers:
+
+- `free`
+- `pro`
+- `premium`
+
+Feature gates include:
+
+- `tutor_depth`
+- `explanation_quality`
+- `personalization_level`
+
+Conversion and gate events are tracked in `subscription_events`.
 
 ## Explain My Thinking
 

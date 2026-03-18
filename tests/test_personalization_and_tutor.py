@@ -169,3 +169,35 @@ def test_tutor_mode_service_returns_live_corrections_and_memory():
     assert payload["thinking_explanation"]["natural_phrasing"] == "I went there yesterday."
     assert payload["inline_explanations"][0] == "Use the past tense here."
     assert payload["mistake_memory"] == ["verb tense", "article usage"]
+
+
+def test_tutor_mode_service_applies_basic_depth_restrictions():
+    service = TutorModeService()
+    recommendation = SimpleNamespace(action="review_word", reason="Due review")
+    context = service.build_context(
+        profile=SimpleNamespace(difficulty_preference="easy", content_preference="mixed"),
+        patterns=[SimpleNamespace(pattern="verb tense"), SimpleNamespace(pattern="articles")],
+        recommendation=recommendation,
+    )
+
+    payload = service.response_payload(
+        brain_output={
+            "analysis": {"grammar_mistakes": ["verb tense"]},
+            "drills": {"focus": "Practice corrected sentences"},
+            "correction_feedback": ["Use the past tense here.", "Drop the extra article."],
+            "thinking_explanation": {
+                "grammar_mistake": "The tense does not match the time marker.",
+                "natural_phrasing": "I went there yesterday.",
+                "native_level_explanation": "Native speakers switch tense automatically.",
+            },
+        },
+        recommendation=recommendation,
+        context=context,
+        reply="Try this version.",
+        tutor_depth="basic",
+    )
+
+    assert payload["tutor_depth"] == "basic"
+    assert payload["live_corrections"] == ["Use the past tense here."]
+    assert payload["mistake_memory"] == ["verb tense"]
+    assert len(payload["inline_explanations"]) == 1

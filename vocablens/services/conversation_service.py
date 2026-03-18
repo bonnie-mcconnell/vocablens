@@ -10,6 +10,7 @@ from vocablens.services.conversation_vocab_service import ConversationVocabulary
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.learning_engine import LearningEngine
+from vocablens.services.subscription_service import SubscriptionService
 from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.prompts import load_prompt
 
@@ -30,6 +31,7 @@ class ConversationService:
         learning_events: LearningEventService,
         learning_engine: LearningEngine | None = None,
         tutor_mode_service: TutorModeService | None = None,
+        subscription_service: SubscriptionService | None = None,
     ):
         self._llm = llm
         self._uow_factory = uow_factory
@@ -40,6 +42,7 @@ class ConversationService:
         self._events = learning_events
         self._learning_engine = learning_engine
         self._tutor_mode = tutor_mode_service or TutorModeService()
+        self._subscriptions = subscription_service
         self._template = load_prompt("conversation_prompt")
 
     async def _get_known_words(self, user_id: int) -> List[str]:
@@ -77,6 +80,7 @@ class ConversationService:
         target_lang: str,
         tutor_mode: bool = True,
     ) -> dict:
+        features = await self._feature_access(user_id)
 
         new_words = await self._vocab_extractor.process_message(
             user_id,
@@ -89,6 +93,7 @@ class ConversationService:
             user_id=user_id,
             message=user_message,
             language=source_lang,
+            explanation_quality=features.explanation_quality,
         )
 
         analysis = brain_output["analysis"]
@@ -118,6 +123,7 @@ class ConversationService:
             tutor_instructions = self._tutor_mode.prompt_suffix(
                 tutor_context,
                 brain_output.get("correction_feedback", []),
+                tutor_depth=features.tutor_depth,
             )
 
         prompt = self._template.format(
@@ -156,6 +162,7 @@ class ConversationService:
                 recommendation,
                 tutor_context,
                 reply,
+                tutor_depth=features.tutor_depth,
             )
 
         return {
@@ -169,6 +176,7 @@ class ConversationService:
             "lesson_difficulty": recommendation.lesson_difficulty if recommendation else None,
             "content_type": recommendation.content_type if recommendation else None,
             "tutor_mode": False,
+            "subscription_tier": features.tier,
         }
 
     async def _save_conversation(self, user_id, user_message, reply):
@@ -177,3 +185,31 @@ class ConversationService:
             await uow.conversation.save_turn(user_id, "student", user_message)
             await uow.conversation.save_turn(user_id, "tutor", reply)
             await uow.commit()
+
+    async def _feature_access(self, user_id: int):
+        if not self._subscriptions:
+            return type(
+                "Features",
+                (),
+                {
+                    "tier": "premium",
+                    "tutor_depth": "deep",
+                    "explanation_quality": "premium",
+                },
+            )()
+        features = await self._subscriptions.get_features(user_id)
+        await self._subscriptions.record_feature_gate(
+            user_id=user_id,
+            feature_name="tutor_depth",
+            allowed=True,
+            current_tier=features.tier,
+            required_tier=features.tier,
+        )
+        await self._subscriptions.record_feature_gate(
+            user_id=user_id,
+            feature_name="explanation_quality",
+            allowed=True,
+            current_tier=features.tier,
+            required_tier=features.tier,
+        )
+        return features

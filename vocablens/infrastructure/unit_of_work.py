@@ -12,8 +12,10 @@ from vocablens.infrastructure.postgres_user_repository import PostgresUserReposi
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
 from vocablens.infrastructure.postgres_usage_repository import PostgresUsageRepository
 from vocablens.infrastructure.postgres_subscription_repository import PostgresSubscriptionRepository
+from vocablens.infrastructure.postgres_subscription_event_repository import PostgresSubscriptionEventRepository
 from vocablens.infrastructure.postgres_mistake_pattern_repository import PostgresMistakePatternRepository
 from vocablens.infrastructure.postgres_user_profile_repository import PostgresUserProfileRepository
+from vocablens.infrastructure.postgres_notification_delivery_repository import PostgresNotificationDeliveryRepository
 
 
 class UnitOfWork:
@@ -34,8 +36,10 @@ class UnitOfWork:
         self._knowledge_graph: Optional[KnowledgeGraphRepository] = None
         self._usage: Optional[PostgresUsageRepository] = None
         self._subscriptions: Optional[PostgresSubscriptionRepository] = None
+        self._subscription_events: Optional[PostgresSubscriptionEventRepository] = None
         self._mistakes: Optional[PostgresMistakePatternRepository] = None
         self._profiles: Optional[PostgresUserProfileRepository] = None
+        self._notification_deliveries: Optional[PostgresNotificationDeliveryRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -137,12 +141,28 @@ class UnitOfWork:
         return self._mistakes
 
     @property
+    def subscription_events(self) -> PostgresSubscriptionEventRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._subscription_events is None:
+            self._subscription_events = PostgresSubscriptionEventRepository(self.session)
+        return self._subscription_events
+
+    @property
     def profiles(self) -> PostgresUserProfileRepository:
         if not self.session:
             raise RuntimeError("UnitOfWork session not initialized")
         if self._profiles is None:
             self._profiles = PostgresUserProfileRepository(self.session)
         return self._profiles
+
+    @property
+    def notification_deliveries(self) -> PostgresNotificationDeliveryRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._notification_deliveries is None:
+            self._notification_deliveries = PostgresNotificationDeliveryRepository(self.session)
+        return self._notification_deliveries
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

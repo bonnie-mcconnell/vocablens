@@ -13,9 +13,11 @@ class ExplainMyThinkingService:
         self._llm = llm
         self._template = load_prompt("explain_thinking_prompt")
 
-    async def explain(self, message: str, analysis: dict) -> dict | None:
+    async def explain(self, message: str, analysis: dict, quality: str = "premium") -> dict | None:
         if not self._has_signal(analysis):
             return None
+        if quality == "basic":
+            return self._normalize({}, analysis)
 
         prompt = self._template.format(
             message=message,
@@ -30,7 +32,10 @@ class ExplainMyThinkingService:
             ),
         )
         result = await self._llm.generate_json_with_usage(prompt)
-        return self._normalize(result.content, analysis)
+        normalized = self._normalize(result.content, analysis)
+        if quality == "standard":
+            normalized["native_level_explanation"] = normalized["native_level_explanation"][:180]
+        return normalized
 
     def _has_signal(self, analysis: dict) -> bool:
         return bool(
