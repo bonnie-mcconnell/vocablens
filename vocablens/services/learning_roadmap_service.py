@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from vocablens.core.time import utc_now
 from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.retention_engine import RetentionEngine
@@ -48,6 +51,7 @@ class LearningRoadmapService:
         grammar_focus = self._select_grammar_focus(skill_profile)
         next_action = None
         personalization = None
+        retention = None
         if self._engine:
             rec = await self._engine.recommend(user_id)
             next_action = {
@@ -70,6 +74,24 @@ class LearningRoadmapService:
                 "review_frequency_multiplier": adaptation.review_frequency_multiplier,
                 "content_type": adaptation.content_type,
             }
+        if hasattr(self.retention, "assess_user"):
+            assessment = await self.retention.assess_user(user_id)
+            retention = {
+                "state": assessment.state,
+                "drop_off_risk": assessment.drop_off_risk,
+                "session_frequency": assessment.session_frequency,
+                "current_streak": assessment.current_streak,
+                "longest_streak": assessment.longest_streak,
+                "is_high_engagement": assessment.is_high_engagement,
+                "actions": [
+                    {
+                        "kind": action.kind,
+                        "reason": action.reason,
+                        "target": action.target,
+                    }
+                    for action in assessment.suggested_actions
+                ],
+            }
 
         return {
             "review_words": review_count,
@@ -78,12 +100,11 @@ class LearningRoadmapService:
             "next_cluster": next_cluster,
             "next_action": next_action,
             "personalization": personalization,
+            "retention": retention,
         }
 
     def _today_cutoff(self):
-        from datetime import datetime, timedelta
-        now = datetime.utcnow()
-        return now + timedelta(days=1)
+        return utc_now() + timedelta(days=1)
 
     def _select_grammar_focus(self, skill_profile):
 

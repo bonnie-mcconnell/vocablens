@@ -8,7 +8,7 @@ class RetentionProcessor:
     Adjusts retention scheduling based on review events.
     """
 
-    SUPPORTED = {"word_reviewed"}
+    SUPPORTED = {"conversation_turn", "word_learned", "word_reviewed"}
 
     def __init__(
         self,
@@ -23,6 +23,7 @@ class RetentionProcessor:
         return event_type in self.SUPPORTED
 
     async def handle(self, event_type: str, user_id: int, payload: dict) -> None:
+        await self._retention.record_activity(user_id)
 
         if event_type != "word_reviewed":
             return

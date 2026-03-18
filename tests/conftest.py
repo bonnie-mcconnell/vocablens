@@ -1,6 +1,6 @@
 import asyncio
-from datetime import datetime
 
+from vocablens.core.time import utc_now
 from vocablens.domain.user import User
 
 
@@ -13,5 +13,5 @@ def make_user(user_id: int = 1, email: str = "test@example.com") -> User:
         id=user_id,
         email=email,
         password_hash="hashed-password",
-        created_at=datetime.utcnow(),
+        created_at=utc_now(),
     )

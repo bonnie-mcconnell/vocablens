@@ -1,6 +1,6 @@
-from datetime import datetime
 from typing import List
 
+from vocablens.core.time import utc_now
 from vocablens.domain.models import VocabularyItem
 from vocablens.domain.errors import NotFoundError
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
@@ -60,7 +60,7 @@ class VocabularyService:
             translated_text=translated,
             source_lang=source_lang,
             target_lang=target_lang,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
             ease_factor=2.5,
             interval=1,
             repetitions=0,
@@ -148,7 +148,7 @@ class VocabularyService:
                 translated_text=translations[i],
                 source_lang=source_lang,
                 target_lang=target_lang,
-                created_at=datetime.utcnow(),
+                created_at=utc_now(),
                 ease_factor=2.5,
                 interval=1,
                 repetitions=0,

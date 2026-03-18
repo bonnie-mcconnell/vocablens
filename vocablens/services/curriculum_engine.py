@@ -1,6 +1,6 @@
 from typing import Dict, List
-from datetime import datetime, timedelta
 
+from vocablens.core.time import utc_now
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.knowledge_graph_service import KnowledgeGraphService
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
@@ -30,7 +30,7 @@ class CurriculumEngine:
         items = await self.vocab_repo.list_all(user_id, limit=1000, offset=0)
         due = [
             i for i in items
-            if i.next_review_due and i.next_review_due <= datetime.utcnow()
+            if i.next_review_due and i.next_review_due <= utc_now()
         ]
 
         review_words = [i.source_text for i in due[:15]]

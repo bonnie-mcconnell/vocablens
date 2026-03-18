@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+from vocablens.core.time import utc_now
 from vocablens.domain.models import VocabularyItem
 
 
@@ -31,7 +32,7 @@ class SpacedRepetitionService:
         )
         item.ease_factor = max(1.3, item.ease_factor)
 
-        now = datetime.utcnow()
+        now = utc_now()
         item.last_reviewed_at = now
         item.next_review_due = now + timedelta(days=item.interval)
         item.review_count += 1

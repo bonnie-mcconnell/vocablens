@@ -78,6 +78,7 @@ Current coverage includes:
 - auth register/login flow
 - token tracking and quota middleware
 - learning engine decision logic
+- retention engine state classification and action generation
 - mistake detection and mistake-pattern storage
 - personalization updates and tutor-mode payload behavior
 - background job execution paths
@@ -93,3 +94,10 @@ Current coverage includes:
 
 These tables include foreign keys back to `users`, non-null constraints for required
 fields, and indexes for high-frequency access paths such as `user_id` and timestamps.
+`user_profiles` also stores retention fields used by the retention engine:
+
+- `last_active_at`
+- `session_frequency`
+- `current_streak`
+- `longest_streak`
+- `drop_off_risk`

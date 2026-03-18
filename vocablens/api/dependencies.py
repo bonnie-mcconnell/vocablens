@@ -124,8 +124,8 @@ def get_ocr_provider() -> PyTesseractProvider:
 # Services
 # --------------------------------------------------------------------------
 
-def get_retention_engine() -> RetentionEngine:
-    return RetentionEngine()
+def get_retention_engine(uow_factory=Depends(get_uow_factory)) -> RetentionEngine:
+    return RetentionEngine(uow_factory)
 
 
 def get_learning_engine(
@@ -146,7 +146,7 @@ async def get_learning_event_service(
     job_queue=Depends(get_job_queue),
     personalization=Depends(get_personalization_service),
 ):
-    retention = RetentionEngine()
+    retention = RetentionEngine(uow_factory)
     kg_service = KnowledgeGraphService(uow_factory)
     from vocablens.services.event_processors.enrichment_dispatcher import EnrichmentDispatchProcessor
     from vocablens.services.event_processors.embedding_dispatcher import EmbeddingDispatchProcessor

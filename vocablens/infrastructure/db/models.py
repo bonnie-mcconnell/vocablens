@@ -1,4 +1,3 @@
-from datetime import datetime
 from sqlalchemy import (
     Column,
     Integer,
@@ -15,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
+from vocablens.core.time import utc_now
 
 Base = declarative_base()
 
@@ -25,7 +25,7 @@ class UserORM(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     vocabulary = relationship("VocabularyORM", back_populates="user")
 
@@ -41,7 +41,7 @@ class VocabularyORM(Base):
     source_lang = Column(String, nullable=False)
     target_lang = Column(String, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
     last_reviewed_at = Column(DateTime)
     review_count = Column(Integer, default=0, nullable=False)
     ease_factor = Column(Float, default=2.5, nullable=False)
@@ -85,7 +85,7 @@ class ConversationHistoryORM(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(String, nullable=False)
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 Index("idx_conversation_history_user", ConversationHistoryORM.user_id, ConversationHistoryORM.created_at)
@@ -98,7 +98,7 @@ class SkillTrackingORM(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     skill = Column(String, nullable=False)
     score = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 Index("idx_skill_tracking_user", SkillTrackingORM.user_id, SkillTrackingORM.created_at)
@@ -111,7 +111,7 @@ class LearningEventORM(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     event_type = Column(String, nullable=False)
     payload_json = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 Index("idx_learning_events_user", LearningEventORM.user_id, LearningEventORM.created_at)
@@ -125,7 +125,7 @@ class KnowledgeGraphEdgeORM(Base):
     target_node = Column(Text, nullable=False)
     relation_type = Column(String, nullable=False)
     weight = Column(Float, default=1.0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 Index("idx_kge_source", KnowledgeGraphEdgeORM.source_node, KnowledgeGraphEdgeORM.relation_type)
@@ -137,7 +137,7 @@ class EmbeddingORM(Base):
     id = Column(Integer, primary_key=True)
     word = Column(Text, nullable=False, unique=True)
     embedding = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 Index("idx_embeddings_word", EmbeddingORM.word)
@@ -156,7 +156,7 @@ class UsageLogORM(Base):
     endpoint = Column(String, nullable=False)
     tokens_used = Column(Integer, default=0, nullable=False)
     success = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 class SubscriptionORM(Base):
     __tablename__ = "subscriptions"
@@ -173,8 +173,8 @@ class SubscriptionORM(Base):
     tier = Column(String, default="free", nullable=False)
     request_limit = Column(Integer, default=100, nullable=False)
     token_limit = Column(Integer, default=50000, nullable=False)
-    renewed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    renewed_at = Column(DateTime, default=utc_now, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 class MistakePatternORM(Base):
     __tablename__ = "mistake_patterns"
@@ -190,7 +190,7 @@ class MistakePatternORM(Base):
     category = Column(String, nullable=False)  # grammar | vocabulary | repetition
     pattern = Column(Text, nullable=False)
     count = Column(Integer, default=1, nullable=False)
-    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at = Column(DateTime, default=utc_now, nullable=False)
 
 class UserProfileORM(Base):
     __tablename__ = "user_profiles"
@@ -198,8 +198,14 @@ class UserProfileORM(Base):
         UniqueConstraint("user_id", name="uq_user_profiles_user_id"),
         CheckConstraint("learning_speed > 0", name="ck_user_profiles_learning_speed_positive"),
         CheckConstraint("retention_rate >= 0 AND retention_rate <= 1", name="ck_user_profiles_retention_rate_range"),
+        CheckConstraint("session_frequency >= 0", name="ck_user_profiles_session_frequency_nonnegative"),
+        CheckConstraint("current_streak >= 0", name="ck_user_profiles_current_streak_nonnegative"),
+        CheckConstraint("longest_streak >= 0", name="ck_user_profiles_longest_streak_nonnegative"),
+        CheckConstraint("drop_off_risk >= 0 AND drop_off_risk <= 1", name="ck_user_profiles_drop_off_risk_range"),
         Index("idx_user_profile_user", "user_id"),
         Index("idx_user_profile_updated_at", "updated_at"),
+        Index("idx_user_profile_last_active_at", "last_active_at"),
+        Index("idx_user_profile_drop_off_risk", "drop_off_risk"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -208,5 +214,9 @@ class UserProfileORM(Base):
     retention_rate = Column(Float, default=0.8, nullable=False)  # 0-1
     difficulty_preference = Column(String, default="medium", nullable=False)  # easy|medium|hard
     content_preference = Column(String, default="mixed", nullable=False)  # vocab|grammar|conversation|mixed
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
+    last_active_at = Column(DateTime, default=utc_now, nullable=False)
+    session_frequency = Column(Float, default=0.0, nullable=False)
+    current_streak = Column(Integer, default=0, nullable=False)
+    longest_streak = Column(Integer, default=0, nullable=False)
+    drop_off_risk = Column(Float, default=0.0, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)

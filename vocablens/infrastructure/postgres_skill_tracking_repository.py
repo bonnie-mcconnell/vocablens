@@ -1,9 +1,9 @@
-from datetime import datetime
 from typing import Dict
 
 from sqlalchemy import select, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import SkillTrackingORM
 
 
@@ -11,13 +11,13 @@ class PostgresSkillTrackingRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def record(self, user_id: int, skill: str, score: float, created_at: datetime | None = None) -> None:
+    async def record(self, user_id: int, skill: str, score: float, created_at=None) -> None:
         await self.session.execute(
             insert(SkillTrackingORM).values(
                 user_id=user_id,
                 skill=skill,
                 score=score,
-                created_at=created_at or datetime.utcnow(),
+                created_at=created_at or utc_now(),
             )
         )
         await self.session.commit()

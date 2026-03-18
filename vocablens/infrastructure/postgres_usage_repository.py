@@ -1,9 +1,10 @@
-from datetime import datetime, date
+from datetime import date
 from typing import Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import UsageLogORM
 
 
@@ -21,7 +22,7 @@ class PostgresUsageRepository:
         self.session.add(entry)
 
     async def totals_for_user_day(self, user_id: int, day: date | None = None) -> Tuple[int, int]:
-        day = day or datetime.utcnow().date()
+        day = day or utc_now().date()
         result = await self.session.execute(
             select(
                 func.count(UsageLogORM.id),

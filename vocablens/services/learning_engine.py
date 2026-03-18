@@ -1,10 +1,11 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Literal
 
+from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
-from vocablens.services.retention_engine import RetentionEngine
+from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
 
 NextAction = Literal["review_word", "learn_new_word", "practice_grammar", "conversation_drill"]
 
@@ -36,6 +37,7 @@ class LearningEngine:
         self._personalization = personalization
 
     async def recommend(self, user_id: int) -> LearningRecommendation:
+        retention = await self._get_retention_assessment(user_id)
         async with self._uow_factory() as uow:
             due_items = await uow.vocab.list_due(user_id)
             total_vocab = await uow.vocab.list_all(user_id, limit=200, offset=0)
@@ -50,7 +52,7 @@ class LearningEngine:
                 sparse_cluster = min(populated, key=lambda k: len(populated[k])) if populated else None
             patterns = await uow.mistake_patterns.top_patterns(user_id, limit=3)
             repeated_patterns = await uow.mistake_patterns.repeated_patterns(user_id, threshold=2, limit=3)
-            yesterday = datetime.utcnow() - timedelta(hours=24)
+            yesterday = utc_now() - timedelta(hours=24)
             recent_events = await uow.learning_events.list_since(user_id, since=yesterday)
             profile = await uow.profiles.get_or_create(user_id)
             await uow.commit()
@@ -67,6 +69,26 @@ class LearningEngine:
             adaptation.review_frequency_multiplier,
         )
         review_vs_new_bias = self._review_vs_new_bias(total_vocab, recent_events, retention_rate)
+
+        if retention and retention.state in {"at-risk", "churned"} and due_items:
+            return self._decorate(
+                LearningRecommendation(
+                    "review_word",
+                    due_items[0].source_text,
+                    f"Retention state is {retention.state}; bring back due material first",
+                ),
+                adaptation,
+            )
+
+        if retention and retention.state in {"at-risk", "churned"} and repeated_patterns:
+            return self._decorate(
+                LearningRecommendation(
+                    "conversation_drill",
+                    repeated_patterns[0].pattern,
+                    f"Retention state is {retention.state}; use a quick targeted drill",
+                ),
+                adaptation,
+            )
 
         if due_items and (due_pressure >= 0.4 or review_vs_new_bias >= 0.5):
             reason = f"{len(due_items)} items due with retention pressure {due_pressure:.2f}"
@@ -114,7 +136,7 @@ class LearningEngine:
     def _review_pressure(self, due_items, retention_rate: float, frequency_multiplier: float) -> float:
         if not due_items:
             return 0.0
-        now = datetime.utcnow()
+        now = utc_now()
         overdue_count = 0
         max_decay = 0.0
         for item in due_items:
@@ -152,6 +174,11 @@ class LearningEngine:
             review_frequency_multiplier=1.0 if retention_rate >= 0.75 else 0.8,
             content_type=content_type,
         )
+
+    async def _get_retention_assessment(self, user_id: int) -> RetentionAssessment | None:
+        if not self._retention or not hasattr(self._retention, "assess_user"):
+            return None
+        return await self._retention.assess_user(user_id)
 
     def _decorate(self, recommendation: LearningRecommendation, adaptation: PersonalizationAdaptation):
         recommendation.lesson_difficulty = adaptation.lesson_difficulty

@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 from tests.conftest import run_async
+from vocablens.core.time import utc_now
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.personalization_service import PersonalizationAdaptation
 from vocablens.services.retention_engine import RetentionEngine
@@ -93,7 +94,7 @@ def _factory_for(uow):
 def test_learning_engine_prioritizes_due_reviews():
     due_item = SimpleNamespace(
         source_text="hola",
-        next_review_due=datetime.utcnow() - timedelta(days=3),
+        next_review_due=utc_now() - timedelta(days=3),
         interval=1,
     )
     total_vocab = [object()] * 30
@@ -149,3 +150,40 @@ def test_learning_engine_uses_repeated_errors_for_conversation_drill():
     assert recommendation.action == "conversation_drill"
     assert recommendation.target == "verb tense confusion"
     assert recommendation.lesson_difficulty == "hard"
+
+
+def test_learning_engine_uses_retention_state_to_prioritize_low_friction_review():
+    due_item = SimpleNamespace(
+        source_text="bonjour",
+        next_review_due=utc_now() - timedelta(days=2),
+        interval=2,
+    )
+    total_vocab = [object()] * 40
+    retention = SimpleNamespace(
+        assess_user=lambda user_id: _retention_assessment("at-risk"),
+    )
+    uow = FakeLearningEngineUOW(
+        due_items=[due_item],
+        total_vocab=total_vocab,
+        skills={"grammar": 0.9, "vocabulary": 0.9, "fluency": 0.9},
+    )
+    engine = LearningEngine(_factory_for(uow), retention)
+
+    recommendation = run_async(engine.recommend(1))
+
+    assert recommendation.action == "review_word"
+    assert recommendation.target == "bonjour"
+    assert "Retention state is at-risk" in recommendation.reason
+
+
+async def _retention_assessment(state: str):
+    return SimpleNamespace(
+        state=state,
+        drop_off_risk=0.6,
+        session_frequency=1.0,
+        current_streak=1,
+        longest_streak=2,
+        last_active_at=utc_now() - timedelta(days=5),
+        is_high_engagement=False,
+        suggested_actions=[],
+    )

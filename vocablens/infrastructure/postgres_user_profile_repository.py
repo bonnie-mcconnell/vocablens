@@ -1,7 +1,7 @@
-from datetime import datetime
 from sqlalchemy import select, insert, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import UserProfileORM
 
 
@@ -32,8 +32,13 @@ class PostgresUserProfileRepository:
         retention_rate: float | None = None,
         difficulty_preference: str | None = None,
         content_preference: str | None = None,
+        last_active_at=None,
+        session_frequency: float | None = None,
+        current_streak: int | None = None,
+        longest_streak: int | None = None,
+        drop_off_risk: float | None = None,
     ):
-        values = {"updated_at": datetime.utcnow()}
+        values = {"updated_at": utc_now()}
         if learning_speed is not None:
             values["learning_speed"] = learning_speed
         if retention_rate is not None:
@@ -42,6 +47,16 @@ class PostgresUserProfileRepository:
             values["difficulty_preference"] = difficulty_preference
         if content_preference is not None:
             values["content_preference"] = content_preference
+        if last_active_at is not None:
+            values["last_active_at"] = last_active_at
+        if session_frequency is not None:
+            values["session_frequency"] = session_frequency
+        if current_streak is not None:
+            values["current_streak"] = current_streak
+        if longest_streak is not None:
+            values["longest_streak"] = longest_streak
+        if drop_off_risk is not None:
+            values["drop_off_risk"] = drop_off_risk
         await self.session.execute(
             update(UserProfileORM)
             .where(UserProfileORM.user_id == user_id)

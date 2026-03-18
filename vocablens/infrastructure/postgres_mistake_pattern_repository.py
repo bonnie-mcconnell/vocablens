@@ -1,7 +1,7 @@
-from datetime import datetime
 from sqlalchemy import select, update, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import MistakePatternORM
 
 
@@ -10,7 +10,7 @@ class PostgresMistakePatternRepository:
         self.session = session
 
     async def record(self, user_id: int, category: str, pattern: str):
-        now = datetime.utcnow()
+        now = utc_now()
         existing = await self.session.execute(
             select(MistakePatternORM).where(
                 MistakePatternORM.user_id == user_id,

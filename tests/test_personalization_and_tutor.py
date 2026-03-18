@@ -1,8 +1,9 @@
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 from tests.conftest import run_async
+from vocablens.core.time import utc_now
 from vocablens.providers.llm.base import LLMJsonResult, LLMUsage
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.personalization_service import PersonalizationService
@@ -41,7 +42,7 @@ class FakeProfileRepo:
             retention_rate=0.8,
             difficulty_preference="medium",
             content_preference="mixed",
-            updated_at=datetime.utcnow() - timedelta(days=1),
+            updated_at=utc_now() - timedelta(days=1),
         )
 
     async def get_or_create(self, user_id: int):
@@ -51,7 +52,7 @@ class FakeProfileRepo:
         for key, value in kwargs.items():
             if value is not None:
                 setattr(self.profile, key, value)
-        self.profile.updated_at = datetime.utcnow()
+        self.profile.updated_at = utc_now()
 
 
 class FakeLearningEventsRepo:
