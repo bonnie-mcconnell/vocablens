@@ -1,23 +1,47 @@
 import numpy as np
 from openai import OpenAI
-import json
 
 from vocablens.infrastructure.postgres_embedding_repository import PostgresEmbeddingRepository
 from vocablens.infrastructure.observability.metrics import LLM_COST, LLM_TOKENS
 from vocablens.infrastructure.observability.token_tracker import add_tokens
+from vocablens.config.settings import settings
+from vocablens.infrastructure.resilience import CircuitBreaker, sync_retry
 
 
 class EmbeddingService:
 
     def __init__(self, repo: PostgresEmbeddingRepository):
-        self.client = OpenAI()
+        self.client = OpenAI(
+            api_key=settings.OPENAI_API_KEY or None,
+            timeout=settings.EMBEDDING_TIMEOUT,
+            max_retries=0,
+        )
         self.repo = repo
+        self._circuit = CircuitBreaker(
+            name="openai_embedding",
+            failure_threshold=settings.CIRCUIT_BREAKER_THRESHOLD,
+            reset_timeout_seconds=settings.CIRCUIT_BREAKER_RESET_SECONDS,
+        )
 
     def embed(self, text: str):
+        def _call():
+            self._circuit.ensure_closed()
+            try:
+                result = self.client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=text,
+                )
+            except Exception:
+                self._circuit.record_failure()
+                raise
+            self._circuit.record_success()
+            return result
 
-        result = self.client.embeddings.create(
-            model="text-embedding-3-small",
-            input=text,
+        result = sync_retry(
+            name="openai_embedding",
+            func=_call,
+            attempts=settings.EMBEDDING_MAX_RETRIES,
+            backoff_base=0.5,
         )
         usage = getattr(result, "usage", None)
         if usage:

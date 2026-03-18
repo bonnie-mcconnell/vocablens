@@ -1,4 +1,3 @@
-import asyncio
 from typing import List, Dict
 from collections import defaultdict
 
@@ -12,14 +11,6 @@ class KnowledgeGraphRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    def _run(self, coro):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        else:
-            return loop.run_until_complete(coro)  # type: ignore
-
     async def add_edge(self, source_node: str, target_node: str, relation_type: str, weight: float = 1.0):
         await self.session.execute(
             insert(KnowledgeGraphEdgeORM).values(
@@ -29,7 +20,11 @@ class KnowledgeGraphRepository:
                 weight=weight,
             )
         )
-        await self.session.commit()
+
+    async def add_edges(self, edges: List[Dict]):
+        if not edges:
+            return
+        await self.session.execute(insert(KnowledgeGraphEdgeORM), edges)
 
     async def list_edges(self) -> List[Dict]:
         result = await self.session.execute(select(KnowledgeGraphEdgeORM))

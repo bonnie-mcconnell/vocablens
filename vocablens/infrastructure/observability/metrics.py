@@ -48,3 +48,21 @@ DB_QUERY_LATENCY = Histogram(
     "DB query duration",
     ["db"],
 )
+
+EXTERNAL_CALLS = Counter(
+    "vocablens_external_calls_total",
+    "External provider call outcomes",
+    ["name", "result"],
+)
+
+CIRCUIT_BREAKER_EVENTS = Counter(
+    "vocablens_circuit_breaker_events_total",
+    "Circuit breaker state changes and blocked calls",
+    ["name", "event"],
+)
+
+JOB_EVENTS = Counter(
+    "vocablens_job_events_total",
+    "Background job lifecycle events",
+    ["task", "event"],
+)

@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 
 from vocablens.services.vocabulary_service import VocabularyService
@@ -75,9 +77,9 @@ def create_vocabulary_router() -> APIRouter:
 
     @router.post("/extract", response_model=list[VocabularyResponse])
     async def extract_vocabulary(
-        text: str,
-        source_lang: str,
-        target_lang: str,
+        text: Annotated[str, Query(min_length=1, max_length=5000)],
+        source_lang: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
+        target_lang: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
         user: User = Depends(get_current_user),
         service: VocabularyService = Depends(get_vocabulary_service),
     ):
@@ -94,8 +96,8 @@ def create_vocabulary_router() -> APIRouter:
 
     @router.post("/extract-async")
     def extract_vocabulary_async(
-        text: str,
-        target_lang: str,
+        text: Annotated[str, Query(min_length=1, max_length=5000)],
+        target_lang: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
         background_tasks: BackgroundTasks,
         user: User = Depends(get_current_user),
         service: VocabularyService = Depends(get_vocabulary_service),

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from vocablens.api.dependencies import get_current_user, get_conversation_service, get_speech_conversation_service
 from vocablens.domain.user import User
@@ -15,9 +17,9 @@ def create_conversation_router() -> APIRouter:
 
     @router.post("/chat")
     async def chat(
-        message: str,
-        source_lang: str,
-        target_lang: str,
+        message: Annotated[str, Query(min_length=1, max_length=2000)],
+        source_lang: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
+        target_lang: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
         tutor_mode: bool = True,
         user: User = Depends(get_current_user),
         service: ConversationService = Depends(get_conversation_service),
@@ -38,9 +40,9 @@ def create_conversation_router() -> APIRouter:
 
     @router.post("/speech")
     async def speech_conversation(
-        audio_path: str,
-        source_lang: str,
-        target_lang: str,
+        audio_path: Annotated[str, Query(min_length=1, max_length=512)],
+        source_lang: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
+        target_lang: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
         tutor_mode: bool = True,
         user: User = Depends(get_current_user),
         speech_service: SpeechConversationService = Depends(get_speech_conversation_service),

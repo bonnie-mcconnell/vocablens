@@ -1,8 +1,8 @@
 import json
-import os
 
 from openai import AsyncOpenAI
 
+from vocablens.config.settings import settings
 from vocablens.providers.llm.base import LLMJsonResult, LLMProvider, LLMTextResult
 from vocablens.providers.llm.llm_guardrails import LLMGuardrails
 
@@ -10,14 +10,22 @@ from vocablens.providers.llm.llm_guardrails import LLMGuardrails
 class OpenAIProvider(LLMProvider):
 
     def __init__(self):
-
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = settings.OPENAI_API_KEY
 
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY not set")
 
-        self._client = AsyncOpenAI(api_key=api_key)
-        self._guardrails = LLMGuardrails(self._client)
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            timeout=settings.LLM_TIMEOUT,
+            max_retries=0,
+        )
+        self._guardrails = LLMGuardrails(
+            self._client,
+            default_timeout=settings.LLM_TIMEOUT,
+            max_retries=settings.LLM_MAX_RETRIES,
+            backoff_base=settings.LLM_BACKOFF_BASE,
+        )
 
     def generate(self, prompt: str) -> str:
         return self.generate_with_usage(prompt).content

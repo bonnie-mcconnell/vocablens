@@ -51,12 +51,14 @@ def create_translation_router() -> APIRouter:
     @router.post("/image", response_model=VocabularyResponse)
     async def translate_image(
         file: UploadFile = File(...),
-        source_lang: str = Query("auto"),
-        target_lang: str = Query("en"),
+        source_lang: str = Query("auto", min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$"),
+        target_lang: str = Query("en", min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$"),
         user: User = Depends(get_current_user),
         service: VocabularyService = Depends(get_vocabulary_service),
         ocr_service: OCRService = Depends(get_ocr_service),
     ):
+        if file.content_type and not file.content_type.startswith("image/"):
+            raise HTTPException(400, "Unsupported file type")
 
         image_bytes = await file.read()
 
@@ -87,11 +89,13 @@ def create_translation_router() -> APIRouter:
     @router.post("/ocr-flashcards")
     async def ocr_flashcards(
         file: UploadFile = File(...),
-        target_lang: str = Query("en"),
+        target_lang: str = Query("en", min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$"),
         user: User = Depends(get_current_user),
         service: VocabularyService = Depends(get_vocabulary_service),
         ocr_service: OCRService = Depends(get_ocr_service),
     ):
+        if file.content_type and not file.content_type.startswith("image/"):
+            raise HTTPException(400, "Unsupported file type")
 
         image = await file.read()
 

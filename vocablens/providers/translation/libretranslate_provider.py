@@ -12,6 +12,7 @@ from vocablens.providers.translation.base import Translator
 from vocablens.domain.errors import TranslationError
 from vocablens.config.settings import settings
 from vocablens.infrastructure.cache.redis_cache import get_cache_backend
+from vocablens.infrastructure.resilience import CircuitBreaker, async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,13 @@ class LibreTranslateProvider(Translator):
         self._base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(timeout=timeout)
         self._cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
+        self._timeout = settings.TRANSLATE_TIMEOUT or timeout
+        self._cache_ttl = settings.TRANSLATE_CACHE_TTL
+        self._circuit = CircuitBreaker(
+            name="libretranslate",
+            failure_threshold=settings.CIRCUIT_BREAKER_THRESHOLD,
+            reset_timeout_seconds=settings.CIRCUIT_BREAKER_RESET_SECONDS,
+        )
 
     # ------------------------------------------------
     # Single translation
@@ -81,34 +89,21 @@ class LibreTranslateProvider(Translator):
             CACHE_MISSES.labels(cache="translation", op="get").inc()
 
         try:
-            start = time.perf_counter()
-            response = await asyncio.wait_for(
-                self._client.post(
-                    f"{self._base_url}/translate",
-                    json={
-                        "q": text,
-                        "source": source_lang,
-                        "target": target_lang,
-                        "format": "text",
-                    },
-                ),
-                timeout=settings.TRANSLATE_TIMEOUT if hasattr(settings, "TRANSLATE_TIMEOUT") else 15,
+            response = await async_retry(
+                name="libretranslate_translate",
+                func=lambda: self._post_translation(text, source_lang, target_lang),
+                attempts=settings.TRANSLATE_MAX_RETRIES,
+                backoff_base=0.5,
             )
-            REQUEST_LATENCY.labels(method="POST", endpoint="/translate", status=response.status_code).observe(
-                time.perf_counter() - start
-            )
-
             response.raise_for_status()
-
             data = response.json()
-
             translated = data.get("translatedText")
 
             if not translated:
                 raise TranslationError("Malformed translation response")
 
             if self._cache:
-                await self._cache.set(cache_key, translated, ttl=int(settings.TRANSLATE_TIMEOUT))
+                await self._cache.set(cache_key, translated, ttl=self._cache_ttl)
 
             return translated
 
@@ -146,3 +141,29 @@ class LibreTranslateProvider(Translator):
             results[idx] = translated
 
         return [r for r in results if r is not None]
+
+    async def _post_translation(self, text: str, source_lang: str, target_lang: str) -> httpx.Response:
+        self._circuit.ensure_closed()
+        start = time.perf_counter()
+        try:
+            response = await asyncio.wait_for(
+                self._client.post(
+                    f"{self._base_url}/translate",
+                    json={
+                        "q": text,
+                        "source": source_lang,
+                        "target": target_lang,
+                        "format": "text",
+                    },
+                ),
+                timeout=self._timeout,
+            )
+        except Exception:
+            self._circuit.record_failure()
+            raise
+        else:
+            self._circuit.record_success()
+            REQUEST_LATENCY.labels(method="POST", endpoint="/translate", status=response.status_code).observe(
+                time.perf_counter() - start
+            )
+            return response

@@ -1,17 +1,20 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
-from vocablens.domain.models import VocabularyItem
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field
+
+from vocablens.core.constants import MAX_TEXT_LENGTH
+from vocablens.domain.models import VocabularyItem
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -20,9 +23,9 @@ class TokenResponse(BaseModel):
     
 
 class TranslationRequest(BaseModel):
-    text: str = Field(..., min_length=1)
-    source_lang: str = Field(..., min_length=2, max_length=10)
-    target_lang: str = Field(..., min_length=2, max_length=10)
+    text: str = Field(..., min_length=1, max_length=MAX_TEXT_LENGTH)
+    source_lang: str = Field(..., min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")
+    target_lang: str = Field(..., min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")
 
 
 class VocabularyResponse(BaseModel):
@@ -59,4 +62,4 @@ class VocabularyResponse(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    rating: str
+    rating: Literal["again", "hard", "good", "easy"]

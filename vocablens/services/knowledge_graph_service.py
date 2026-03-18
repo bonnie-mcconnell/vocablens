@@ -23,9 +23,6 @@ class KnowledgeGraphService:
             if cached:
                 return cached
 
-        async with self._uow_factory() as uow:
-            items = await uow.vocab.list_all(user_id, limit=10000, offset=0)
-
         graph = {
             "topics": defaultdict(list),
             "difficulty": defaultdict(list),
@@ -33,6 +30,8 @@ class KnowledgeGraphService:
         }
 
         async with self._uow_factory() as uow:
+            items = await uow.vocab.list_all(user_id, limit=10000, offset=0)
+            edges = []
             for item in items:
 
                 topic = item.semantic_cluster or "general"
@@ -46,14 +45,28 @@ class KnowledgeGraphService:
                 if grammar:
                     graph["grammar_patterns"][grammar].append(item.source_text)
 
-                # persist simple relations within the same transaction
-                await uow.knowledge_graph.add_edge(item.source_text, topic, "word->topic", 1.0)
-                await uow.knowledge_graph.add_edge(item.source_text, grammar or "general", "word->grammar", 0.8)
+                edges.append(
+                    {
+                        "source_node": item.source_text,
+                        "target_node": topic,
+                        "relation_type": "word->topic",
+                        "weight": 1.0,
+                    }
+                )
+                edges.append(
+                    {
+                        "source_node": item.source_text,
+                        "target_node": grammar or "general",
+                        "relation_type": "word->grammar",
+                        "weight": 0.8,
+                    }
+                )
 
+            await uow.knowledge_graph.add_edges(edges)
             await uow.commit()
 
         if self.cache:
-            await self.cache.set(cache_key, graph, ttl=600)
+            await self.cache.set(cache_key, graph, ttl=settings.KNOWLEDGE_GRAPH_CACHE_TTL)
 
         return graph
 

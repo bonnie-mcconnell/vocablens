@@ -1,5 +1,6 @@
 import time
 import uuid
+import secrets
 from sqlalchemy import text
 
 from fastapi import FastAPI, Request, Response
@@ -61,7 +62,8 @@ def create_app() -> FastAPI:
 
         # rate limit selected heavy endpoints
         if any(path.startswith(p) for p in ["/speech", "/conversation", "/translate"]):
-            allowed = await limiter.allow(f"{path}:{request.client.host}")
+            client_host = request.client.host if request.client else "unknown"
+            allowed = await limiter.allow(f"{path}:{client_host}")
             if not allowed:
                 return Response(status_code=429, content="Too Many Requests")
 
@@ -170,8 +172,8 @@ def create_app() -> FastAPI:
     @app.get("/metrics")
     def metrics(request: Request):
         token = request.headers.get("X-Metrics-Token") or request.query_params.get("token")
-        expected = getattr(settings, "METRICS_TOKEN", None)
-        if expected and token != expected:
+        expected = getattr(settings, "METRICS_TOKEN", "")
+        if expected and not (token and secrets.compare_digest(token, expected)):
             return Response(status_code=403, content="Forbidden")
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 

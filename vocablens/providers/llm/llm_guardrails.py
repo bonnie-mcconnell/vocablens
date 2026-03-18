@@ -4,7 +4,6 @@ import asyncio
 from typing import Any, Dict, Optional
 
 import anyio
-from datetime import datetime, timedelta
 
 from vocablens.config.settings import settings
 from vocablens.infrastructure.cache.redis_cache import (
@@ -17,6 +16,7 @@ from vocablens.infrastructure.observability.metrics import (
     LLM_COST,
 )
 from vocablens.infrastructure.observability.token_tracker import add_tokens
+from vocablens.infrastructure.resilience import CircuitBreaker, async_retry
 from vocablens.providers.llm.base import LLMJsonResult, LLMTextResult, LLMUsage
 
 
@@ -41,8 +41,11 @@ class LLMGuardrails:
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self.cache_ttl = cache_ttl
-        self._failure_count = 0
-        self._open_until: Optional[datetime] = None
+        self._circuit = CircuitBreaker(
+            name="openai_llm",
+            failure_threshold=settings.CIRCUIT_BREAKER_THRESHOLD,
+            reset_timeout_seconds=settings.CIRCUIT_BREAKER_RESET_SECONDS,
+        )
         if settings.ENABLE_REDIS_CACHE:
             self.cache = get_cache_backend()
         else:
@@ -169,8 +172,11 @@ class LLMGuardrails:
         if cached:
             return LLMTextResult(content=cached, usage=LLMUsage())
 
-        response = await self._with_retries_async(
-            lambda: self._chat_async(prompt, model or self.default_model, timeout, **kwargs)
+        response = await async_retry(
+            name="openai_chat",
+            func=lambda: self._chat_async(prompt, model or self.default_model, timeout, **kwargs),
+            attempts=self.max_retries,
+            backoff_base=self.backoff_base,
         )
 
         await self.cache.set(key, response.content, ttl=self.cache_ttl)
@@ -181,9 +187,7 @@ class LLMGuardrails:
     # -----------------------------
 
     async def _chat_async(self, prompt: str, model: str, timeout: Optional[float], **kwargs) -> LLMTextResult:
-        # circuit breaker
-        if self._open_until and datetime.utcnow() < self._open_until:
-            raise RuntimeError("LLM circuit open")
+        self._circuit.ensure_closed()
 
         attempt_timeout = timeout or self.default_timeout
         start = time.perf_counter()
@@ -198,13 +202,10 @@ class LLMGuardrails:
                 timeout=attempt_timeout + 5,
             )
         except Exception as exc:
-            self._failure_count += 1
-            if self._failure_count >= self.max_retries:
-                self._open_until = datetime.utcnow() + timedelta(seconds=30)
+            self._circuit.record_failure()
             raise
         else:
-            self._failure_count = 0
-            self._open_until = None
+            self._circuit.record_success()
         duration = time.perf_counter() - start
         LLM_LATENCY.labels(provider="openai", model=model).observe(duration)
 
@@ -228,20 +229,6 @@ class LLMGuardrails:
 
         content = resp.choices[0].message.content
         return LLMTextResult(content=content.strip() if content else "", usage=llm_usage)
-
-    async def _with_retries_async(self, func):
-        last_exc = None
-        for attempt in range(self.max_retries):
-            try:
-                return await func()
-            except Exception as exc:  # pragma: no cover - network dependent
-                last_exc = exc
-                if attempt == self.max_retries - 1:
-                    raise exc
-                sleep_for = self.backoff_base * (2**attempt)
-                await asyncio.sleep(sleep_for)
-        if last_exc:
-            raise last_exc
 
     def _validate_schema(self, data: Dict[str, Any], schema: Dict[str, Any]) -> None:
         """

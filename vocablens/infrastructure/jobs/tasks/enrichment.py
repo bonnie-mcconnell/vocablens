@@ -13,8 +13,19 @@ import anyio
 logger = get_logger("jobs.enrichment")
 
 
-@celery_app.task(name="jobs.enrich_vocabulary", soft_time_limit=30, time_limit=45, max_retries=3, default_retry_delay=10)
+@celery_app.task(
+    bind=True,
+    name="jobs.enrich_vocabulary",
+    soft_time_limit=30,
+    time_limit=45,
+    max_retries=3,
+    default_retry_delay=10,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+)
 def enrich_vocabulary_item(
+    self,
     user_id: int | None,
     item_id: int,
     source_text: str,
