@@ -34,3 +34,14 @@ class PostgresExperimentAssignmentRepository:
         )
         self.session.add(assignment)
         return assignment
+
+    async def list_all(self, experiment_key: str | None = None):
+        query = select(ExperimentAssignmentORM).order_by(
+            ExperimentAssignmentORM.experiment_key.asc(),
+            ExperimentAssignmentORM.assigned_at.asc(),
+            ExperimentAssignmentORM.user_id.asc(),
+        )
+        if experiment_key is not None:
+            query = query.where(ExperimentAssignmentORM.experiment_key == experiment_key)
+        result = await self.session.execute(query)
+        return result.scalars().all()

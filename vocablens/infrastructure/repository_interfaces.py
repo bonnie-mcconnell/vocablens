@@ -73,6 +73,7 @@ class EmbeddingRepository(Protocol):
 
 class ExperimentAssignmentRepository(Protocol):
     async def get(self, user_id: int, experiment_key: str) -> Optional[Any]: ...
+    async def list_all(self, experiment_key: str | None = None) -> List[Any]: ...
     async def create(
         self,
         *,

@@ -5,6 +5,7 @@ from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
     get_current_user,
+    get_experiment_results_service,
     get_frontend_service,
     get_subscription_service,
 )
@@ -84,6 +85,19 @@ class FakeAnalyticsService:
         return {"dau": 12, "mau": 40, "dau_mau_ratio": 0.3}
 
 
+class FakeExperimentResultsService:
+    async def results(self, experiment_key: str | None = None):
+        return {
+            "experiments": [
+                {
+                    "experiment_key": experiment_key or "paywall_offer",
+                    "variants": [{"variant": "control", "retention_rate": 40.0, "conversion_rate": 10.0, "engagement": {"sessions_per_user": 1.5}}],
+                    "comparisons": [],
+                }
+            ]
+        }
+
+
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: make_user()
@@ -118,11 +132,13 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_admin_token] = lambda: "ok"
     app.dependency_overrides[get_subscription_service] = lambda: FakeSubscriptionService()
     app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
+    app.dependency_overrides[get_experiment_results_service] = lambda: FakeExperimentResultsService()
     client = TestClient(app)
 
     response = client.get("/admin/reports/conversions", headers={"X-Admin-Token": "secret"})
     retention = client.get("/admin/analytics/retention", headers={"X-Admin-Token": "secret"})
     usage = client.get("/admin/analytics/usage", headers={"X-Admin-Token": "secret"})
+    experiments = client.get("/admin/experiments/results?experiment_key=paywall_offer", headers={"X-Admin-Token": "secret"})
 
     assert response.status_code == 200
     payload = response.json()
@@ -134,3 +150,6 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert usage.status_code == 200
     assert usage.json()["meta"]["source"] == "admin.analytics.usage"
     assert usage.json()["data"]["usage"]["dau"] == 12
+    assert experiments.status_code == 200
+    assert experiments.json()["meta"]["source"] == "admin.experiments.results"
+    assert experiments.json()["data"]["experiment_results"]["experiments"][0]["experiment_key"] == "paywall_offer"

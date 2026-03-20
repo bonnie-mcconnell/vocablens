@@ -33,6 +33,7 @@ from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.event_service import EventService
 from vocablens.services.explanation_service import ExplainMyThinkingService
 from vocablens.services.experiment_service import ExperimentService
+from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.frontend_service import FrontendService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
@@ -205,6 +206,12 @@ def get_analytics_service(
     uow_factory=Depends(get_uow_factory),
 ) -> AnalyticsService:
     return AnalyticsService(uow_factory)
+
+
+def get_experiment_results_service(
+    uow_factory=Depends(get_uow_factory),
+) -> ExperimentResultsService:
+    return ExperimentResultsService(uow_factory)
 
 
 async def get_experiment_service(
