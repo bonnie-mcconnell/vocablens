@@ -27,6 +27,7 @@ from vocablens.services.cached_translator import CachedTranslator
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.addiction_engine import AddictionEngine
 from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
+from vocablens.services.business_metrics_service import BusinessMetricsService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
@@ -263,6 +264,14 @@ def get_conversion_funnel_service(
     experiment_service=Depends(get_experiment_service),
 ) -> ConversionFunnelService:
     return ConversionFunnelService(uow_factory, paywall_service, analytics_service, experiment_service)
+
+
+def get_business_metrics_service(
+    uow_factory=Depends(get_uow_factory),
+    analytics_service=Depends(get_analytics_service),
+    conversion_funnel_service=Depends(get_conversion_funnel_service),
+) -> BusinessMetricsService:
+    return BusinessMetricsService(uow_factory, analytics_service, conversion_funnel_service)
 
 
 def get_subscription_service(
