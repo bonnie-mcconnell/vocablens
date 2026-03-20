@@ -26,6 +26,7 @@ from vocablens.providers.speech.whisper_provider import WhisperProvider
 from vocablens.providers.translation.libretranslate_provider import LibreTranslateProvider
 from vocablens.services.cached_translator import CachedTranslator
 from vocablens.services.analytics_service import AnalyticsService
+from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
@@ -190,13 +191,6 @@ def get_event_service(uow_factory=Depends(get_uow_factory)) -> EventService:
     return EventService(uow_factory)
 
 
-def get_paywall_service(
-    uow_factory=Depends(get_uow_factory),
-    event_service=Depends(get_event_service),
-) -> PaywallService:
-    return PaywallService(uow_factory, event_service)
-
-
 def get_progress_service(
     uow_factory=Depends(get_uow_factory),
 ) -> ProgressService:
@@ -220,6 +214,14 @@ async def get_experiment_service(
     learning_events=Depends(get_learning_event_service),
 ):
     return ExperimentService(uow_factory, learning_events)
+
+
+def get_paywall_service(
+    uow_factory=Depends(get_uow_factory),
+    event_service=Depends(get_event_service),
+    experiment_service=Depends(get_experiment_service),
+) -> PaywallService:
+    return AdaptivePaywallService(uow_factory, event_service, experiment_service)
 
 
 def get_subscription_service(

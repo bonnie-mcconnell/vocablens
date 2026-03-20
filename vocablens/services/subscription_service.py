@@ -168,7 +168,7 @@ class SubscriptionService:
             )
         return target
 
-    async def start_trial(self, user_id: int, duration_days: int = 3) -> SubscriptionFeatures:
+    async def start_trial(self, user_id: int, duration_days: int | None = None) -> SubscriptionFeatures:
         if self._paywall_service:
             await self._paywall_service.start_trial(user_id, duration_days)
         return await self.get_features(user_id)

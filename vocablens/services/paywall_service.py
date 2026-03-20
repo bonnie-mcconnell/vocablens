@@ -152,7 +152,8 @@ class PaywallService:
             )
         return decision
 
-    async def start_trial(self, user_id: int, duration_days: int = 3) -> None:
+    async def start_trial(self, user_id: int, duration_days: int | None = 3) -> None:
+        duration_days = 3 if duration_days is None else duration_days
         duration_days = max(3, min(7, int(duration_days)))
         async with self._uow_factory() as uow:
             await uow.subscriptions.start_trial(

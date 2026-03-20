@@ -28,6 +28,9 @@ DEFAULT_EXPERIMENTS = {
     "learning_strategy": {"control": 100},
     "retention_nudges": {"control": 100},
     "paywall_offer": {"control": 100},
+    "paywall_trigger_timing": {"control": 100},
+    "paywall_trial_length": {"control": 100},
+    "paywall_pricing_messaging": {"control": 100},
 }
 
 
