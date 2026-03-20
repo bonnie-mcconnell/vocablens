@@ -6,6 +6,7 @@ from typing import Literal
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
+from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
@@ -31,6 +32,7 @@ class LifecycleService:
         notification_engine: NotificationDecisionEngine,
         paywall_service: PaywallService,
         global_decision_engine: GlobalDecisionEngine | None = None,
+        onboarding_service: OnboardingService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine
@@ -38,6 +40,7 @@ class LifecycleService:
         self._notifications = notification_engine
         self._paywall = paywall_service
         self._global_decision = global_decision_engine
+        self._onboarding = onboarding_service
 
     async def evaluate(self, user_id: int) -> LifecyclePlan:
         if self._global_decision:
@@ -53,6 +56,7 @@ class LifecycleService:
             progress=progress,
         )
         actions = self._actions_for_stage(stage, retention, paywall, progress)
+        actions.extend(await self._onboarding_actions(user_id, stage))
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
 
         return LifecyclePlan(
@@ -194,6 +198,7 @@ class LifecycleService:
         stage = decision.lifecycle_stage
         reasons = [decision.reason]
         actions = self._actions_for_stage(stage, retention, paywall, progress)
+        actions.extend(await self._onboarding_actions(user_id, stage))
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
         return LifecyclePlan(
             stage=stage,
@@ -208,3 +213,14 @@ class LifecycleService:
             },
             notification=notification,
         )
+
+    async def _onboarding_actions(self, user_id: int, stage: LifecycleStage) -> list[dict]:
+        if not self._onboarding or stage not in {"new_user", "activating"}:
+            return []
+        plan = await self._onboarding.plan(user_id)
+        return [
+            {"type": "goal_capture", "message": step["message"]}
+            if step["type"] == "goal_capture"
+            else {"type": step["type"], "message": step["message"]}
+            for step in plan.guided_flow
+        ]

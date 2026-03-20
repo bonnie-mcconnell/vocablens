@@ -50,6 +50,7 @@ from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
+from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
@@ -266,6 +267,15 @@ def get_global_decision_engine(
     )
 
 
+def get_onboarding_service(
+    uow_factory=Depends(get_uow_factory),
+    progress_service=Depends(get_progress_service),
+    wow_engine=Depends(get_wow_engine),
+    global_decision_engine=Depends(get_global_decision_engine),
+) -> OnboardingService:
+    return OnboardingService(uow_factory, progress_service, wow_engine, global_decision_engine)
+
+
 def get_habit_engine(
     retention_engine=Depends(get_retention_engine),
     notification_decision_engine=Depends(get_notification_decision_engine),
@@ -282,6 +292,7 @@ def get_lifecycle_service(
     notification_decision_engine=Depends(get_notification_decision_engine),
     paywall_service=Depends(get_paywall_service),
     global_decision_engine=Depends(get_global_decision_engine),
+    onboarding_service=Depends(get_onboarding_service),
 ) -> LifecycleService:
     return LifecycleService(
         uow_factory,
@@ -290,6 +301,7 @@ def get_lifecycle_service(
         notification_decision_engine,
         paywall_service,
         global_decision_engine,
+        onboarding_service,
     )
 
 
