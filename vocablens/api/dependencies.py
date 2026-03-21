@@ -38,6 +38,7 @@ from vocablens.services.explanation_service import ExplainMyThinkingService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.frontend_service import FrontendService
+from vocablens.services.gamification_service import GamificationService
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.habit_engine import HabitEngine
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
@@ -67,6 +68,7 @@ from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.scenario_service import ScenarioService
+from vocablens.services.session_engine import SessionEngine
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.speech_conversation_service import SpeechConversationService
 from vocablens.services.subscription_service import SubscriptionService
@@ -292,6 +294,15 @@ def get_retention_engine(
     return RetentionEngine(uow_factory, experiment_service, event_service)
 
 
+def get_gamification_service(
+    uow_factory=Depends(get_uow_factory),
+    progress_service=Depends(get_progress_service),
+    retention_engine=Depends(get_retention_engine),
+    event_service=Depends(get_event_service),
+) -> GamificationService:
+    return GamificationService(uow_factory, progress_service, retention_engine, event_service)
+
+
 def get_global_decision_engine(
     uow_factory=Depends(get_uow_factory),
     retention_engine=Depends(get_retention_engine),
@@ -393,6 +404,15 @@ def get_learning_engine(
         event_service,
         global_decision_engine,
     )
+
+
+def get_session_engine(
+    uow_factory=Depends(get_uow_factory),
+    learning_engine=Depends(get_learning_engine),
+    wow_engine=Depends(get_wow_engine),
+    gamification_service=Depends(get_gamification_service),
+) -> SessionEngine:
+    return SessionEngine(uow_factory, learning_engine, wow_engine, gamification_service)
 
 
 async def get_vocabulary_service(
