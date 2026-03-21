@@ -160,6 +160,7 @@ def test_daily_loop_service_always_generates_a_mission():
     assert plan.weak_area == "vocabulary"
     assert plan.mission[0].target == "travel"
     assert plan.notification_preview["should_send"] is True
+    assert plan.reward_preview["badge_hint"] == "Accuracy Ace"
 
 
 def test_daily_loop_service_skip_shield_updates_correctly():

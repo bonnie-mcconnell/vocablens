@@ -73,6 +73,7 @@ class DailyLoopService:
     async def build_daily_loop(self, user_id: int) -> DailyLoopPlan:
         recommendation = await self._learning.get_next_lesson(user_id)
         retention = await self._retention.assess_user(user_id)
+        gamification = await self._gamification.summary(user_id)
 
         async with self._uow_factory() as uow:
             learning_state = await uow.learning_states.get_or_create(user_id)
@@ -87,7 +88,7 @@ class DailyLoopService:
         mission = self._mission_steps(recommendation, weak_area, mission_max_sessions, due_items)
         shield_available = self._shield_available(engagement_state)
         reward_chest_ready = self._mission_completed_today(engagement_state)
-        reward_preview = self._reward_preview(progress_state, reward_chest_ready)
+        reward_preview = self._reward_preview(progress_state, gamification, reward_chest_ready)
         notification = await self._notifications.decide(user_id, retention)
 
         if self._events:
@@ -142,7 +143,8 @@ class DailyLoopService:
                 milestones=milestones,
             )
             await uow.commit()
-        reward_preview = self._reward_preview(progress_state, True)
+        gamification = await self._gamification.summary(user_id)
+        reward_preview = self._reward_preview(progress_state, gamification, True)
 
         if self._events:
             await self._events.track_event(
@@ -278,10 +280,12 @@ class DailyLoopService:
             return f"Skip today and {len(due_items)} review items will keep decaying."
         return f"Skip today and your current progress pace plus {xp} XP momentum will cool off."
 
-    def _reward_preview(self, progress_state, unlocked: bool) -> dict[str, Any]:
+    def _reward_preview(self, progress_state, gamification, unlocked: bool) -> dict[str, Any]:
         level = int(getattr(progress_state, "level", 1) or 1)
+        badges = list(getattr(gamification, "badges", []) or [])
+        badge_hint = badges[0].label if badges else f"Level {level + 1} push"
         return {
             "xp_reward": 25,
-            "badge_hint": f"Level {level + 1} push",
+            "badge_hint": badge_hint,
             "chest_state": "unlocked" if unlocked else "locked",
         }
