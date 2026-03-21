@@ -40,6 +40,8 @@ class UserLearningState:
     skills: dict[str, float]
     weak_areas: list[str]
     mastery_percent: float
+    accuracy_rate: float
+    response_speed_seconds: float
     updated_at: datetime
 
 
@@ -54,6 +56,7 @@ class UserEngagementState:
     last_session_at: Optional[datetime]
     shields_used_this_week: int
     daily_mission_completed_at: Optional[datetime]
+    interaction_stats: dict[str, int]
     updated_at: datetime
 
 

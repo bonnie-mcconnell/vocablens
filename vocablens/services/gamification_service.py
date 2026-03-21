@@ -61,27 +61,30 @@ class GamificationService:
 
     async def summary(self, user_id: int) -> GamificationProfile:
         async with self._uow_factory() as uow:
-            events = await uow.events.list_by_user(user_id, limit=5000)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            progress_state = await uow.progress_states.get_or_create(user_id)
             await uow.commit()
         progress = await self._progress.build_dashboard(user_id)
-        retention = await self._retention.assess_user(user_id)
+        current_streak = int(getattr(engagement_state, "current_streak", 0) or 0)
+        longest_streak = int(getattr(engagement_state, "longest_streak", 0) or 0)
+        interaction_stats = dict(getattr(engagement_state, "interaction_stats", {}) or {})
 
-        xp = self._xp_total(events)
-        level = self._level(xp)
-        milestones_reached = [milestone for milestone in STREAK_MILESTONES if retention.current_streak >= milestone]
-        next_milestone = next((milestone for milestone in STREAK_MILESTONES if milestone > retention.current_streak), None)
-        stats = self._stats(events, progress)
+        xp = int(getattr(progress_state, "xp", 0) or 0)
+        level = int(getattr(progress_state, "level", self._level(xp)) or self._level(xp))
+        milestones_reached = [milestone for milestone in STREAK_MILESTONES if current_streak >= milestone]
+        next_milestone = next((milestone for milestone in STREAK_MILESTONES if milestone > current_streak), None)
+        stats = self._stats(engagement_state, interaction_stats, progress)
 
         return GamificationProfile(
             xp=xp,
             level=level,
             xp_into_level=xp % XP_PER_LEVEL,
             xp_to_next_level=(XP_PER_LEVEL - (xp % XP_PER_LEVEL)) % XP_PER_LEVEL or XP_PER_LEVEL,
-            current_streak=retention.current_streak,
-            longest_streak=retention.longest_streak,
+            current_streak=current_streak,
+            longest_streak=longest_streak,
             streak_milestones_reached=milestones_reached,
             next_streak_milestone=next_milestone,
-            badges=self._badges(stats, progress, retention),
+            badges=self._badges(stats, progress, engagement_state),
             stats=stats,
         )
 
@@ -147,30 +150,16 @@ class GamificationService:
             "new_streak_milestones": new_milestones,
         }
 
-    def _xp_total(self, events) -> int:
-        total = 0
-        for event in events:
-            event_type = getattr(event, "event_type", None)
-            total += XP_EVENT_VALUES.get(event_type, 0)
-            if event_type == "referral_reward_granted":
-                payload = getattr(event, "payload", {}) or {}
-                total += int(payload.get("xp_reward", 0) or 0)
-        return total
-
     def _level(self, xp: int) -> int:
         return max(1, (xp // XP_PER_LEVEL) + 1)
 
-    def _stats(self, events, progress: dict) -> dict[str, float | int]:
-        counts = {}
-        for event in events:
-            key = getattr(event, "event_type", "unknown")
-            counts[key] = counts.get(key, 0) + 1
+    def _stats(self, engagement_state, interaction_stats: dict[str, int], progress: dict) -> dict[str, float | int]:
         return {
-            "sessions": counts.get("session_started", 0),
-            "lessons_completed": counts.get("lesson_completed", 0),
-            "reviews_completed": counts.get("review_completed", 0),
-            "messages_sent": counts.get("message_sent", 0),
-            "progress_shares": counts.get("progress_shared", 0),
+            "sessions": int(getattr(engagement_state, "total_sessions", 0) or 0),
+            "lessons_completed": int(interaction_stats.get("lessons_completed", 0) or 0),
+            "reviews_completed": int(interaction_stats.get("reviews_completed", 0) or 0),
+            "messages_sent": int(interaction_stats.get("messages_sent", 0) or 0),
+            "progress_shares": int(interaction_stats.get("progress_shares", 0) or 0),
             "mastery_percent": float(progress.get("metrics", {}).get("vocabulary_mastery_percent", 0.0) or 0.0),
             "accuracy_rate": float(progress.get("metrics", {}).get("accuracy_rate", 0.0) or 0.0),
             "fluency_score": float(progress.get("metrics", {}).get("fluency_score", 0.0) or 0.0),

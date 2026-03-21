@@ -93,6 +93,8 @@ class UserLearningStateRepository(Protocol):
         skills: Dict[str, float] | None = None,
         weak_areas: List[str] | None = None,
         mastery_percent: float | None = None,
+        accuracy_rate: float | None = None,
+        response_speed_seconds: float | None = None,
     ) -> UserLearningState: ...
 
 
@@ -110,6 +112,7 @@ class UserEngagementStateRepository(Protocol):
         last_session_at: datetime | None = None,
         shields_used_this_week: int | None = None,
         daily_mission_completed_at: datetime | None = None,
+        interaction_stats: Dict[str, int] | None = None,
     ) -> UserEngagementState: ...
 
 

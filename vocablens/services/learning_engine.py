@@ -378,11 +378,21 @@ class LearningEngine:
                 total_vocab=total_vocab,
             )
             mastery_percent = self._mastery_percent(total_vocab)
+            accuracy_rate = self._canonical_accuracy_rate(
+                existing=float(getattr(learning_state, "accuracy_rate", 0.0) or 0.0),
+                session_result=session_result,
+            )
+            response_speed_seconds = self._canonical_response_speed(
+                existing=float(getattr(learning_state, "response_speed_seconds", 0.0) or 0.0),
+                session_result=session_result,
+            )
             await uow.learning_states.update(
                 user_id,
                 skills=current_skills,
                 weak_areas=weak_areas,
                 mastery_percent=mastery_percent,
+                accuracy_rate=accuracy_rate,
+                response_speed_seconds=response_speed_seconds,
             )
 
             total_sessions = int(engagement_state.total_sessions or 0) + 1
@@ -680,3 +690,20 @@ class LearningEngine:
         gain = (reviewed_count * 20) + (learned_count * 15)
         gain += min(20, len(skill_scores) * 5)
         return gain
+
+    def _canonical_accuracy_rate(self, *, existing: float, session_result: SessionResult) -> float:
+        scores = [
+            max(0.0, min(1.0, review.response_accuracy if review.response_accuracy is not None else review.quality / 5.0))
+            for review in session_result.reviewed_items
+        ]
+        if not scores:
+            return round(existing, 1)
+        session_accuracy = (sum(scores) / len(scores)) * 100
+        if existing <= 0:
+            return round(session_accuracy, 1)
+        return round((existing * 0.7) + (session_accuracy * 0.3), 1)
+
+    def _canonical_response_speed(self, *, existing: float, session_result: SessionResult) -> float:
+        if "response_speed_seconds" in session_result.skill_scores:
+            return round(float(session_result.skill_scores["response_speed_seconds"]), 1)
+        return round(existing, 1)

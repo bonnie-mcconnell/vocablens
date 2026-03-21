@@ -30,6 +30,8 @@ class FakeEventsRepo:
 class FakeUOW:
     def __init__(self, repo: FakeEventsRepo):
         self.events = repo
+        self.engagement_states = SimpleNamespace(get_or_create=self._get_or_create, update=self._update)
+        self._engagement_state = SimpleNamespace(interaction_stats={})
 
     async def __aenter__(self):
         return self
@@ -39,6 +41,14 @@ class FakeUOW:
 
     async def commit(self):
         return None
+
+    async def _get_or_create(self, user_id: int):
+        return self._engagement_state
+
+    async def _update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self._engagement_state, key, value)
+        return self._engagement_state
 
 
 def test_event_service_persists_events_and_supports_queries():
@@ -50,7 +60,9 @@ def test_event_service_persists_events_and_supports_queries():
         await service.track_event(1, "mistake_made", {"count": 2})
         await service.track_event(2, "message_sent", {"text": "bonjour"})
         await service.flush()
-        return await service.get_user_events(1), await service.get_events_by_type("message_sent")
+        result = await service.get_user_events(1), await service.get_events_by_type("message_sent")
+        await service.close()
+        return result
 
     user_events, message_events = run_async(scenario())
 
@@ -71,7 +83,9 @@ def test_event_service_handles_high_volume_buffered_ingestion():
                 {"sequence": user_id},
             )
         await service.flush()
-        return await service.get_events_by_type("message_sent")
+        result = await service.get_events_by_type("message_sent")
+        await service.close()
+        return result
 
     events = run_async(scenario())
 

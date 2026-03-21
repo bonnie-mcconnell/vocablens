@@ -12,20 +12,26 @@ class ProgressService:
     async def build_dashboard(self, user_id: int) -> dict:
         now = utc_now()
         async with self._uow_factory() as uow:
+            learning_state = await uow.learning_states.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            progress_state = await uow.progress_states.get_or_create(user_id)
             vocab = await uow.vocab.list_all(user_id, limit=1000, offset=0)
             due = await uow.vocab.list_due(user_id)
-            skills = await uow.skill_tracking.latest_scores(user_id)
             events = await uow.learning_events.list_since(user_id, since=now - timedelta(days=14))
             await uow.commit()
 
-        mastery_percent = self._mastery_percent(vocab)
-        accuracy_rate = self._accuracy_rate(events)
-        response_speed = self._response_speed(events)
+        skills = dict(getattr(learning_state, "skills", {}) or {})
+        mastery_percent = round(float(getattr(learning_state, "mastery_percent", 0.0) or 0.0), 1)
+        accuracy_rate = round(float(getattr(learning_state, "accuracy_rate", 0.0) or 0.0), 1)
+        response_speed = round(float(getattr(learning_state, "response_speed_seconds", 0.0) or 0.0), 1)
         fluency_score = round(float(skills.get("fluency", 0.5)) * 100, 1)
 
         return {
             "vocabulary_total": len(vocab),
             "due_reviews": len(due),
+            "xp": int(getattr(progress_state, "xp", 0) or 0),
+            "level": int(getattr(progress_state, "level", 1) or 1),
+            "milestones": list(getattr(progress_state, "milestones", []) or []),
             "metrics": {
                 "vocabulary_mastery_percent": mastery_percent,
                 "accuracy_rate": accuracy_rate,
@@ -40,19 +46,12 @@ class ProgressService:
                 "vocabulary": round(float(skills.get("vocabulary", 0.5)) * 100, 1),
                 "fluency": fluency_score,
             },
+            "engagement": {
+                "current_streak": int(getattr(engagement_state, "current_streak", 0) or 0),
+                "momentum_score": round(float(getattr(engagement_state, "momentum_score", 0.0) or 0.0), 3),
+                "total_sessions": int(getattr(engagement_state, "total_sessions", 0) or 0),
+            },
         }
-
-    def _mastery_percent(self, vocab) -> float:
-        total = len(vocab)
-        if total == 0:
-            return 0.0
-        mastered = sum(
-            1
-            for item in vocab
-            if int(getattr(item, "review_count", 0) or 0) >= 3
-            and float(getattr(item, "ease_factor", 2.5) or 2.5) >= 2.3
-        )
-        return round((mastered / total) * 100, 1)
 
     def _accuracy_rate(self, events) -> float:
         scores = []

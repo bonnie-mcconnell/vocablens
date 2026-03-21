@@ -67,7 +67,13 @@ class FakeProfiles:
 
 class FakeLearningStates:
     def __init__(self, state=None):
-        self.state = state or SimpleNamespace(skills={}, weak_areas=[], mastery_percent=0.0)
+        self.state = state or SimpleNamespace(
+            skills={},
+            weak_areas=[],
+            mastery_percent=0.0,
+            accuracy_rate=0.0,
+            response_speed_seconds=0.0,
+        )
         self.updated = []
 
     async def get_or_create(self, user_id: int):
@@ -91,6 +97,7 @@ class FakeEngagementStates:
             last_session_at=None,
             shields_used_this_week=0,
             daily_mission_completed_at=None,
+            interaction_stats={},
             updated_at=utc_now(),
         )
         self.updated = []

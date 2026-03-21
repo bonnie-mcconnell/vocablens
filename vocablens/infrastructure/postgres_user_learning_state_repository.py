@@ -14,6 +14,8 @@ def _map_row(row: UserLearningStateORM) -> UserLearningState:
         skills=dict(row.skills or {}),
         weak_areas=list(row.weak_areas or []),
         mastery_percent=float(row.mastery_percent or 0.0),
+        accuracy_rate=float(row.accuracy_rate or 0.0),
+        response_speed_seconds=float(row.response_speed_seconds or 0.0),
         updated_at=row.updated_at,
     )
 
@@ -43,6 +45,8 @@ class PostgresUserLearningStateRepository:
         skills: dict[str, float] | None = None,
         weak_areas: list[str] | None = None,
         mastery_percent: float | None = None,
+        accuracy_rate: float | None = None,
+        response_speed_seconds: float | None = None,
     ) -> UserLearningState:
         await self.get_or_create(user_id)
         values: dict[str, object] = {"updated_at": utc_now()}
@@ -52,6 +56,10 @@ class PostgresUserLearningStateRepository:
             values["weak_areas"] = list(weak_areas)
         if mastery_percent is not None:
             values["mastery_percent"] = float(mastery_percent)
+        if accuracy_rate is not None:
+            values["accuracy_rate"] = float(accuracy_rate)
+        if response_speed_seconds is not None:
+            values["response_speed_seconds"] = float(response_speed_seconds)
         await self.session.execute(
             update(UserLearningStateORM)
             .where(UserLearningStateORM.user_id == user_id)

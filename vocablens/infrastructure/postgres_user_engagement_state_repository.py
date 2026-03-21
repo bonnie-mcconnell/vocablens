@@ -19,6 +19,7 @@ def _map_row(row: UserEngagementStateORM) -> UserEngagementState:
         last_session_at=row.last_session_at,
         shields_used_this_week=int(row.shields_used_this_week or 0),
         daily_mission_completed_at=row.daily_mission_completed_at,
+        interaction_stats=dict(row.interaction_stats or {}),
         updated_at=row.updated_at,
     )
 
@@ -53,6 +54,7 @@ class PostgresUserEngagementStateRepository:
         last_session_at=None,
         shields_used_this_week: int | None = None,
         daily_mission_completed_at=None,
+        interaction_stats: dict[str, int] | None = None,
     ) -> UserEngagementState:
         await self.get_or_create(user_id)
         values: dict[str, object] = {"updated_at": utc_now()}
@@ -72,6 +74,8 @@ class PostgresUserEngagementStateRepository:
             values["shields_used_this_week"] = int(shields_used_this_week)
         if daily_mission_completed_at is not None:
             values["daily_mission_completed_at"] = daily_mission_completed_at
+        if interaction_stats is not None:
+            values["interaction_stats"] = {key: int(value) for key, value in interaction_stats.items()}
         await self.session.execute(
             update(UserEngagementStateORM)
             .where(UserEngagementStateORM.user_id == user_id)

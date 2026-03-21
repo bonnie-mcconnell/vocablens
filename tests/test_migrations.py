@@ -125,7 +125,15 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "idx_vocab_user_decay" in vocabulary_indexes
 
     learning_state_columns = {col["name"] for col in inspector.get_columns("user_learning_states")}
-    assert {"user_id", "skills", "weak_areas", "mastery_percent", "updated_at"} <= learning_state_columns
+    assert {
+        "user_id",
+        "skills",
+        "weak_areas",
+        "mastery_percent",
+        "accuracy_rate",
+        "response_speed_seconds",
+        "updated_at",
+    } <= learning_state_columns
     learning_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_learning_states")}
     assert "idx_user_learning_states_user" in learning_state_indexes
     assert "idx_user_learning_states_updated_at" in learning_state_indexes
@@ -143,6 +151,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
         "last_session_at",
         "shields_used_this_week",
         "daily_mission_completed_at",
+        "interaction_stats",
         "updated_at",
     } <= engagement_state_columns
     engagement_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_engagement_states")}

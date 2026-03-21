@@ -13,8 +13,22 @@ class FakeEventsRepo:
 
 
 class FakeUOW:
-    def __init__(self, events):
+    def __init__(self, events, engagement_state=None, progress_state=None):
         self.events = FakeEventsRepo(events)
+        self.engagement_states = SimpleNamespace(get_or_create=self._get_engagement_state)
+        self.progress_states = SimpleNamespace(get_or_create=self._get_progress_state)
+        self._engagement_state = engagement_state or SimpleNamespace(
+            current_streak=7,
+            longest_streak=12,
+            total_sessions=1,
+            interaction_stats={
+                "messages_sent": 10,
+                "lessons_completed": 5,
+                "reviews_completed": 1,
+                "progress_shares": 1,
+            },
+        )
+        self._progress_state = progress_state or SimpleNamespace(xp=645, level=3, milestones=[2, 3])
 
     async def __aenter__(self):
         return self
@@ -24,6 +38,12 @@ class FakeUOW:
 
     async def commit(self):
         return None
+
+    async def _get_engagement_state(self, user_id: int):
+        return self._engagement_state
+
+    async def _get_progress_state(self, user_id: int):
+        return self._progress_state
 
 
 class FakeProgressService:
@@ -138,7 +158,21 @@ def test_gamification_service_refresh_emits_only_new_achievements():
     ]
     event_service = FakeEventService()
     service = GamificationService(
-        lambda: FakeUOW(events),
+        lambda: FakeUOW(
+            events,
+            engagement_state=SimpleNamespace(
+                current_streak=7,
+                longest_streak=9,
+                total_sessions=1,
+                interaction_stats={
+                    "messages_sent": 10,
+                    "lessons_completed": 5,
+                    "reviews_completed": 0,
+                    "progress_shares": 0,
+                },
+            ),
+            progress_state=SimpleNamespace(xp=160, level=1, milestones=[]),
+        ),
         FakeProgressService(),
         FakeRetentionEngine(current_streak=7, longest_streak=9),
         event_service,

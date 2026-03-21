@@ -18,12 +18,12 @@ class FakeVocabRepo:
         return [item for item in self.items if getattr(item, "next_review_due", None) is not None]
 
 
-class FakeSkillTrackingRepo:
-    def __init__(self, skills):
-        self.skills = skills
+class FakeStateRepo:
+    def __init__(self, state):
+        self.state = state
 
-    async def latest_scores(self, user_id: int):
-        return self.skills
+    async def get_or_create(self, user_id: int):
+        return self.state
 
 
 class FakeLearningEventsRepo:
@@ -35,9 +35,11 @@ class FakeLearningEventsRepo:
 
 
 class FakeUOW:
-    def __init__(self, items, skills, events):
+    def __init__(self, items, learning_state, engagement_state, progress_state, events):
         self.vocab = FakeVocabRepo(items)
-        self.skill_tracking = FakeSkillTrackingRepo(skills)
+        self.learning_states = FakeStateRepo(learning_state)
+        self.engagement_states = FakeStateRepo(engagement_state)
+        self.progress_states = FakeStateRepo(progress_state)
         self.learning_events = FakeLearningEventsRepo(events)
 
     async def __aenter__(self):
@@ -80,7 +82,20 @@ def test_progress_service_computes_metric_accuracy():
             created_at=now - timedelta(minutes=29, seconds=30),
         ),
     ]
-    service = ProgressService(lambda: FakeUOW(items, {"grammar": 0.7, "vocabulary": 0.8, "fluency": 0.65}, events))
+    service = ProgressService(
+        lambda: FakeUOW(
+            items,
+            SimpleNamespace(
+                skills={"grammar": 0.7, "vocabulary": 0.8, "fluency": 0.65},
+                mastery_percent=50.0,
+                accuracy_rate=70.0,
+                response_speed_seconds=30.0,
+            ),
+            SimpleNamespace(current_streak=4, momentum_score=0.6, total_sessions=8),
+            SimpleNamespace(xp=240, level=1, milestones=[]),
+            events,
+        )
+    )
 
     progress = run_async(service.build_dashboard(1))
 
@@ -101,7 +116,20 @@ def test_progress_service_aggregates_daily_weekly_and_trends_correctly():
         SimpleNamespace(event_type="word_reviewed", payload_json=json.dumps({"response_accuracy": 0.5}), created_at=now - timedelta(days=9)),
         SimpleNamespace(event_type="conversation_turn", payload_json="{}", created_at=now - timedelta(days=10)),
     ]
-    service = ProgressService(lambda: FakeUOW(items, {"grammar": 0.55, "vocabulary": 0.6, "fluency": 0.72}, events))
+    service = ProgressService(
+        lambda: FakeUOW(
+            items,
+            SimpleNamespace(
+                skills={"grammar": 0.55, "vocabulary": 0.6, "fluency": 0.72},
+                mastery_percent=100.0,
+                accuracy_rate=78.0,
+                response_speed_seconds=12.0,
+            ),
+            SimpleNamespace(current_streak=2, momentum_score=0.4, total_sessions=3),
+            SimpleNamespace(xp=380, level=2, milestones=[2]),
+            events,
+        )
+    )
 
     progress = run_async(service.build_dashboard(9))
 

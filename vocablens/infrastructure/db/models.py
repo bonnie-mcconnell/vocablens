@@ -324,6 +324,8 @@ class UserLearningStateORM(Base):
     skills = Column(JSON, nullable=False, default=dict)
     weak_areas = Column(JSON, nullable=False, default=list)
     mastery_percent = Column(Float, default=0.0, nullable=False)
+    accuracy_rate = Column(Float, default=0.0, nullable=False)
+    response_speed_seconds = Column(Float, default=0.0, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
@@ -351,6 +353,7 @@ class UserEngagementStateORM(Base):
     last_session_at = Column(DateTime)
     shields_used_this_week = Column(Integer, default=0, nullable=False)
     daily_mission_completed_at = Column(DateTime)
+    interaction_stats = Column(JSON, nullable=False, default=dict)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 

@@ -123,8 +123,28 @@ class EventService:
                 event_type=envelope["event_type"],
                 payload=envelope["payload"],
             )
+            await self._project_state(uow, envelope)
             await uow.commit()
 
     def _validate_event_type(self, event_type: str) -> None:
         if event_type not in SUPPORTED_EVENT_TYPES:
             raise ValueError(f"Unsupported event type '{event_type}'")
+
+    async def _project_state(self, uow, envelope: dict[str, Any]) -> None:
+        event_type = envelope["event_type"]
+        if event_type not in {"message_sent", "review_completed", "lesson_completed", "progress_shared"}:
+            return
+        engagement = await uow.engagement_states.get_or_create(envelope["user_id"])
+        stats = dict(getattr(engagement, "interaction_stats", {}) or {})
+        key_map = {
+            "message_sent": "messages_sent",
+            "review_completed": "reviews_completed",
+            "lesson_completed": "lessons_completed",
+            "progress_shared": "progress_shares",
+        }
+        key = key_map[event_type]
+        stats[key] = int(stats.get(key, 0) or 0) + 1
+        await uow.engagement_states.update(
+            envelope["user_id"],
+            interaction_stats=stats,
+        )
