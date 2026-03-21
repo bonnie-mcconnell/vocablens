@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.lifecycle_stage_policy import LifecycleSnapshot, classify_lifecycle_stage
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
@@ -47,12 +48,14 @@ class GlobalDecisionEngine:
         progress = await self._progress.build_dashboard(user_id)
         features = await self._subscriptions.get_features(user_id)
         paywall = await self._paywall.evaluate(user_id)
-        sessions = await self._session_count(user_id)
+        learning_state, engagement_state = await self._state_snapshot(user_id)
 
-        stage = self._classify_stage(
-            sessions=sessions,
-            retention=retention,
-            progress=progress,
+        stage, _ = classify_lifecycle_stage(
+            snapshot=LifecycleSnapshot(
+                learning_state=learning_state,
+                engagement_state=engagement_state,
+                retention=retention,
+            )
         )
         difficulty = self._difficulty(stage, progress, features)
         monetization = self._monetization_action(stage, paywall)
@@ -74,27 +77,12 @@ class GlobalDecisionEngine:
             reason=reason,
         )
 
-    async def _session_count(self, user_id: int) -> int:
+    async def _state_snapshot(self, user_id: int) -> tuple[object, object]:
         async with self._uow_factory() as uow:
-            events = await uow.events.list_by_user(user_id, limit=500)
+            learning_state = await uow.learning_states.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
             await uow.commit()
-        return sum(1 for event in events if getattr(event, "event_type", None) == "session_started")
-
-    def _classify_stage(self, *, sessions: int, retention, progress: dict) -> LifecycleStage:
-        if retention.state == "churned":
-            return "churned"
-        if retention.state == "at-risk":
-            return "at_risk"
-        if sessions <= 1:
-            return "new_user"
-        accuracy = float(progress["metrics"].get("accuracy_rate", 0.0))
-        mastery = float(progress["metrics"].get("vocabulary_mastery_percent", 0.0))
-        fluency = float(progress["metrics"].get("fluency_score", 0.0))
-        if sessions < 5 or accuracy < 70 or fluency < 60:
-            return "activating"
-        if retention.is_high_engagement or (sessions >= 5 and mastery >= 40 and accuracy >= 75 and fluency >= 65):
-            return "engaged"
-        return "activating"
+        return learning_state, engagement_state
 
     def _difficulty(self, stage: LifecycleStage, progress: dict, features) -> str:
         accuracy = float(progress["metrics"].get("accuracy_rate", 0.0))

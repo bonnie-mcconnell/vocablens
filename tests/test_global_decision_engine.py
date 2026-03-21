@@ -13,17 +13,26 @@ from vocablens.services.notification_decision_engine import NotificationDecision
 from vocablens.services.retention_engine import RetentionAssessment
 
 
-class FakeEventsRepo:
-    def __init__(self, events):
-        self.events = events
+class FakeLearningStates:
+    def __init__(self, state):
+        self.state = state
 
-    async def list_by_user(self, user_id: int, limit: int = 500):
-        return self.events[:limit]
+    async def get_or_create(self, user_id: int):
+        return self.state
+
+
+class FakeEngagementStates:
+    def __init__(self, state):
+        self.state = state
+
+    async def get_or_create(self, user_id: int):
+        return self.state
 
 
 class FakeDecisionUOW:
-    def __init__(self, events):
-        self.events = FakeEventsRepo(events)
+    def __init__(self, *, learning_state, engagement_state):
+        self.learning_states = FakeLearningStates(learning_state)
+        self.engagement_states = FakeEngagementStates(engagement_state)
 
     async def __aenter__(self):
         return self
@@ -108,6 +117,12 @@ class FakeLearningAdapterUOW:
         self.vocab = SimpleNamespace(
             list_due=self._list_due,
         )
+        self.learning_states = SimpleNamespace(
+            get_or_create=self._learning_state,
+        )
+        self.engagement_states = SimpleNamespace(
+            get_or_create=self._engagement_state,
+        )
         self.knowledge_graph = SimpleNamespace(
             get_weak_clusters=self._get_weak_clusters,
         )
@@ -142,6 +157,16 @@ class FakeLearningAdapterUOW:
             retention_rate=0.8,
             content_preference="mixed",
         )
+
+    async def _learning_state(self, user_id: int):
+        return SimpleNamespace(
+            skills={"grammar": 0.8, "vocabulary": 0.8, "fluency": 0.8},
+            weak_areas=[],
+            mastery_percent=60.0,
+        )
+
+    async def _engagement_state(self, user_id: int):
+        return SimpleNamespace(total_sessions=7)
 
 
 def _assessment(stage: str) -> RetentionAssessment:
@@ -179,6 +204,19 @@ def _progress(accuracy: float, mastery: float, fluency: float, due_reviews: int 
     }
 
 
+def _learning_state_from_progress(progress: dict) -> SimpleNamespace:
+    metrics = progress["metrics"]
+    return SimpleNamespace(
+        skills={
+            "grammar": float(metrics["accuracy_rate"]) / 100,
+            "vocabulary": min(1.0, float(metrics["vocabulary_mastery_percent"]) / 100),
+            "fluency": float(metrics["fluency_score"]) / 100,
+        },
+        weak_areas=[],
+        mastery_percent=float(metrics["vocabulary_mastery_percent"]),
+    )
+
+
 @pytest.mark.parametrize(
     ("stage", "sessions", "progress", "paywall", "expected"),
     [
@@ -190,9 +228,11 @@ def _progress(accuracy: float, mastery: float, fluency: float, due_reviews: int 
     ],
 )
 def test_global_decision_engine_outputs_correct_priorities_for_each_stage(stage, sessions, progress, paywall, expected):
-    events = [SimpleNamespace(event_type="session_started") for _ in range(sessions)]
     engine = GlobalDecisionEngine(
-        lambda: FakeDecisionUOW(events),
+        lambda: FakeDecisionUOW(
+            learning_state=_learning_state_from_progress(progress),
+            engagement_state=SimpleNamespace(total_sessions=sessions),
+        ),
         FakeRetentionEngine(_assessment(stage)),
         FakeProgressService(progress),
         FakeSubscriptionService(),
@@ -211,11 +251,14 @@ def test_global_decision_engine_outputs_correct_priorities_for_each_stage(stage,
 
 
 def test_global_decision_engine_is_deterministic_for_same_inputs():
-    events = [SimpleNamespace(event_type="session_started") for _ in range(4)]
+    progress = _progress(74.0, 38.0, 63.0, due_reviews=2)
     engine = GlobalDecisionEngine(
-        lambda: FakeDecisionUOW(events),
+        lambda: FakeDecisionUOW(
+            learning_state=_learning_state_from_progress(progress),
+            engagement_state=SimpleNamespace(total_sessions=4),
+        ),
         FakeRetentionEngine(_assessment("at_risk")),
-        FakeProgressService(_progress(74.0, 38.0, 63.0, due_reviews=2)),
+        FakeProgressService(progress),
         FakeSubscriptionService(),
         FakePaywallService(),
     )
@@ -267,7 +310,14 @@ def test_learning_lifecycle_and_habit_services_use_global_decision_engine():
         global_decision_engine=global_engine,
     )
     lifecycle = LifecycleService(
-        lambda: FakeDecisionUOW([SimpleNamespace(event_type="session_started") for _ in range(7)]),
+        lambda: FakeDecisionUOW(
+            learning_state=SimpleNamespace(
+                skills={"grammar": 0.9, "vocabulary": 0.9, "fluency": 0.84},
+                weak_areas=[],
+                mastery_percent=70.0,
+            ),
+            engagement_state=SimpleNamespace(total_sessions=7),
+        ),
         retention,
         progress_service,
         notification,

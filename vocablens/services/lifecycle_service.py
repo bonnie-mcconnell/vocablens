@@ -5,6 +5,7 @@ from typing import Literal
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
+from vocablens.services.lifecycle_stage_policy import LifecycleSnapshot, classify_lifecycle_stage
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
@@ -49,10 +50,12 @@ class LifecycleService:
         paywall = await self._paywall.evaluate(user_id)
         learning_state, engagement_state = await self._state_snapshot(user_id)
 
-        stage, reasons = self._classify(
-            learning_state=learning_state,
-            engagement_state=engagement_state,
-            retention=retention,
+        stage, reasons = classify_lifecycle_stage(
+            snapshot=LifecycleSnapshot(
+                learning_state=learning_state,
+                engagement_state=engagement_state,
+                retention=retention,
+            )
         )
         actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
@@ -78,35 +81,6 @@ class LifecycleService:
             engagement_state = await uow.engagement_states.get_or_create(user_id)
             await uow.commit()
         return learning_state, engagement_state
-
-    def _classify(self, *, learning_state, engagement_state, retention: RetentionAssessment) -> tuple[LifecycleStage, list[str]]:
-        reasons: list[str] = []
-        sessions = int(getattr(engagement_state, "total_sessions", 0) or 0)
-        if retention.state == "churned":
-            reasons.append("retention engine marked user as churned")
-            return "churned", reasons
-        if retention.state == "at-risk":
-            reasons.append("retention engine marked user as at risk")
-            return "at_risk", reasons
-        if sessions <= 1:
-            reasons.append("user has one or fewer sessions")
-            return "new_user", reasons
-
-        skills = dict(getattr(learning_state, "skills", {}) or {})
-        grammar = float(skills.get("grammar", 0.0) or 0.0) * 100
-        fluency = float(skills.get("fluency", 0.0) or 0.0) * 100
-        mastery = float(getattr(learning_state, "mastery_percent", 0.0) or 0.0)
-
-        if sessions < 5 or grammar < 70 or fluency < 60 or mastery < 40:
-            reasons.append("user is building toward activation")
-            return "activating", reasons
-
-        if retention.is_high_engagement or (sessions >= 5 and mastery >= 40 and grammar >= 75 and fluency >= 65):
-            reasons.append("user shows strong engagement and progress")
-            return "engaged", reasons
-
-        reasons.append("engagement is improving, but not yet stable enough for the engaged stage")
-        return "activating", reasons
 
     def _actions_for_stage(self, stage: LifecycleStage, retention: RetentionAssessment, paywall, learning_state, engagement_state) -> list[dict]:
         actions: list[dict] = []
