@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -147,6 +148,28 @@ class SessionEngine:
             mode="game_round",
             weak_area=weak_area,
             lesson_target=recommendation.target,
+            phases=phases,
+        )
+
+    def to_payload(self, session: StructuredSession) -> dict[str, Any]:
+        return asdict(session)
+
+    def from_payload(self, payload: dict[str, Any]) -> StructuredSession:
+        phases = [
+            SessionPhase(
+                name=phase["name"],
+                duration_seconds=int(phase["duration_seconds"]),
+                title=str(phase["title"]),
+                directive=str(phase["directive"]),
+                payload=dict(phase.get("payload", {})),
+            )
+            for phase in payload.get("phases", [])
+        ]
+        return StructuredSession(
+            duration_seconds=int(payload.get("duration_seconds", 0)),
+            mode=str(payload.get("mode", "game_round")),
+            weak_area=str(payload.get("weak_area", "vocabulary")),
+            lesson_target=payload.get("lesson_target"),
             phases=phases,
         )
 

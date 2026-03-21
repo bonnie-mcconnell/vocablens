@@ -85,3 +85,12 @@ class OnboardingNextRequest(BaseModel):
     preferred_time_of_day: int | None = Field(default=None, ge=0, le=23)
     preferred_channel: Literal["email", "push", "in_app"] | None = None
     frequency_limit: int | None = Field(default=None, ge=1)
+
+
+class SessionStartRequest(BaseModel):
+    pass
+
+
+class SessionEvaluateRequest(BaseModel):
+    session: dict[str, Any]
+    learner_response: str = Field(..., min_length=1, max_length=500)
