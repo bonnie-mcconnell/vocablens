@@ -224,7 +224,7 @@ def test_onboarding_flow_service_triggers_wow_and_advances_to_progress_illusion(
     assert response["current_step"] == "progress_illusion"
     assert response["onboarding_state"]["wow"]["qualifies"] is True
     assert response["onboarding_state"]["wow"]["understood_percent"] == 81.0
-    assert response["messaging"]["encouragement_message"].startswith("You just banked")
+    assert response["messaging"]["encouragement_message"].startswith("You picked up")
 
 
 def test_onboarding_flow_service_times_soft_paywall_after_progress_illusion_only():

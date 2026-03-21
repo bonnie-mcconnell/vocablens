@@ -279,22 +279,6 @@ def get_business_metrics_service(
     return BusinessMetricsService(uow_factory, analytics_service, conversion_funnel_service)
 
 
-def get_monetization_engine(
-    uow_factory=Depends(get_uow_factory),
-    paywall_service=Depends(get_paywall_service),
-    business_metrics_service=Depends(get_business_metrics_service),
-    onboarding_flow_service=Depends(get_onboarding_flow_service),
-    lifecycle_service=Depends(get_lifecycle_service),
-) -> MonetizationEngine:
-    return MonetizationEngine(
-        uow_factory,
-        paywall_service,
-        business_metrics_service,
-        onboarding_flow_service,
-        lifecycle_service,
-    )
-
-
 def get_subscription_service(
     uow_factory=Depends(get_uow_factory),
     experiment_service=Depends(get_experiment_service),
@@ -401,6 +385,22 @@ def get_onboarding_flow_service(
         paywall_service,
         notification_decision_engine,
         retention_engine,
+    )
+
+
+def get_monetization_engine(
+    uow_factory=Depends(get_uow_factory),
+    paywall_service=Depends(get_paywall_service),
+    business_metrics_service=Depends(get_business_metrics_service),
+    onboarding_flow_service=Depends(get_onboarding_flow_service),
+    lifecycle_service=Depends(get_lifecycle_service),
+) -> MonetizationEngine:
+    return MonetizationEngine(
+        uow_factory,
+        paywall_service,
+        business_metrics_service,
+        onboarding_flow_service,
+        lifecycle_service,
     )
 
 
