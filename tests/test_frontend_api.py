@@ -7,6 +7,7 @@ from vocablens.api.dependencies import (
     get_current_user,
     get_experiment_results_service,
     get_frontend_service,
+    get_onboarding_flow_service,
     get_subscription_service,
 )
 from vocablens.main import create_app
@@ -98,6 +99,26 @@ class FakeExperimentResultsService:
         }
 
 
+class FakeOnboardingFlowService:
+    async def start(self, user_id: int):
+        return {
+            "current_step": "identity_selection",
+            "onboarding_state": {"current_step": "identity_selection", "steps_completed": []},
+            "ui_directives": {"show_identity_picker": True},
+            "messaging": {"encouragement_message": "Choose your goal.", "urgency_message": "", "reward_message": ""},
+            "next_action": {"action": "select_identity", "target": ["fluency"], "reason": "Start motivation capture."},
+        }
+
+    async def next(self, user_id: int, payload: dict | None = None):
+        return {
+            "current_step": "personalization",
+            "onboarding_state": {"current_step": "personalization", "steps_completed": ["identity_selection"]},
+            "ui_directives": {"show_personalization_form": True},
+            "messaging": {"encouragement_message": "We will tailor this fast.", "urgency_message": "", "reward_message": ""},
+            "next_action": {"action": "set_preferences", "target": {"skill_level": "beginner"}, "reason": "Tailor the first win."},
+        }
+
+
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: make_user()
@@ -153,3 +174,20 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert experiments.status_code == 200
     assert experiments.json()["meta"]["source"] == "admin.experiments.results"
     assert experiments.json()["data"]["experiment_results"]["experiments"][0]["experiment_key"] == "paywall_offer"
+
+
+def test_onboarding_endpoints_return_standardized_envelopes():
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: make_user()
+    app.dependency_overrides[get_onboarding_flow_service] = lambda: FakeOnboardingFlowService()
+    client = TestClient(app)
+
+    start = client.post("/onboarding/start", json={}, headers={"Authorization": "Bearer ignored"})
+    nxt = client.post("/onboarding/next", json={"motivation": "travel"}, headers={"Authorization": "Bearer ignored"})
+
+    assert start.status_code == 200
+    assert start.json()["meta"]["source"] == "onboarding.start"
+    assert start.json()["data"]["current_step"] == "identity_selection"
+    assert nxt.status_code == 200
+    assert nxt.json()["meta"]["source"] == "onboarding.next"
+    assert nxt.json()["data"]["current_step"] == "personalization"

@@ -68,3 +68,20 @@ class ReviewRequest(BaseModel):
 class APIResponse(BaseModel):
     data: Any
     meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class OnboardingStartRequest(BaseModel):
+    pass
+
+
+class OnboardingNextRequest(BaseModel):
+    motivation: str | None = None
+    skill_level: str | None = None
+    daily_goal: int | None = None
+    learning_intent: str | None = None
+    session_snapshot: dict[str, Any] | None = None
+    accept_trial: bool | None = None
+    skip_paywall: bool | None = None
+    preferred_time_of_day: int | None = Field(default=None, ge=0, le=23)
+    preferred_channel: Literal["email", "push", "in_app"] | None = None
+    frequency_limit: int | None = Field(default=None, ge=1)

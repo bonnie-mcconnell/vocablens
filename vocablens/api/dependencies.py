@@ -59,6 +59,7 @@ from vocablens.services.notification_delivery_service import (
     NotificationDeliverySink,
     PushDeliveryBackend,
 )
+from vocablens.services.onboarding_flow_service import OnboardingFlowService
 from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.paywall_service import PaywallService
@@ -351,6 +352,26 @@ def get_lifecycle_service(
         paywall_service,
         global_decision_engine,
         onboarding_service,
+    )
+
+
+def get_onboarding_flow_service(
+    uow_factory=Depends(get_uow_factory),
+    wow_engine=Depends(get_wow_engine),
+    addiction_engine=Depends(get_addiction_engine),
+    lifecycle_service=Depends(get_lifecycle_service),
+    paywall_service=Depends(get_paywall_service),
+    notification_decision_engine=Depends(get_notification_decision_engine),
+    retention_engine=Depends(get_retention_engine),
+) -> OnboardingFlowService:
+    return OnboardingFlowService(
+        uow_factory,
+        wow_engine,
+        addiction_engine,
+        lifecycle_service,
+        paywall_service,
+        notification_decision_engine,
+        retention_engine,
     )
 
 
