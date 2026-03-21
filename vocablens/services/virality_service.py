@@ -8,6 +8,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.subscription_service import SubscriptionService
+from vocablens.services.viral_moment_service import ViralMomentService
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,17 @@ class ProgressShare:
     stats: dict[str, float | int]
 
 
+@dataclass(frozen=True)
+class MomentShare:
+    user_id: int
+    moment_type: str
+    share_text: str
+    share_url: str
+    caption: str
+    hook: str
+    visual_payload: dict[str, object]
+
+
 class ViralityService:
     def __init__(
         self,
@@ -45,6 +57,7 @@ class ViralityService:
         progress_service: ProgressService,
         subscription_service: SubscriptionService | None = None,
         event_service: EventService | None = None,
+        viral_moment_service: ViralMomentService | None = None,
         *,
         share_base_url: str = "https://vocablens.app",
         referral_xp_reward: int = 250,
@@ -54,6 +67,7 @@ class ViralityService:
         self._progress = progress_service
         self._subscriptions = subscription_service
         self._events = event_service
+        self._viral_moments = viral_moment_service
         self._share_base_url = share_base_url.rstrip("/")
         self._referral_xp_reward = int(referral_xp_reward)
         self._referral_premium_days = max(1, int(referral_premium_days))
@@ -166,6 +180,56 @@ class ViralityService:
             share_text=share_text,
             share_url=share_url,
             stats=stats,
+        )
+
+    async def share_moment(self, user_id: int, moment_type: str | None = None) -> MomentShare:
+        if not self._viral_moments:
+            progress = await self.share_progress(user_id)
+            return MomentShare(
+                user_id=user_id,
+                moment_type="progress_share",
+                share_text=progress.share_text,
+                share_url=progress.share_url,
+                caption=progress.share_text,
+                hook="Share your progress",
+                visual_payload=progress.stats,
+            )
+
+        moment = await self._viral_moments.best_share_moment(user_id, moment_type)
+        if moment is None:
+            progress = await self.share_progress(user_id)
+            return MomentShare(
+                user_id=user_id,
+                moment_type="progress_share",
+                share_text=progress.share_text,
+                share_url=progress.share_url,
+                caption=progress.share_text,
+                hook="Share your progress",
+                visual_payload=progress.stats,
+            )
+
+        share_url = (
+            f"{self._share_base_url}/share/moment?"
+            f"user_id={user_id}&type={quote(moment.type)}&priority={quote(str(moment.priority))}"
+        )
+        if self._events:
+            await self._events.track_event(
+                user_id,
+                "progress_shared",
+                {
+                    "share_url": share_url,
+                    "moment_type": moment.type,
+                    "source_signals": moment.source_signals,
+                },
+            )
+        return MomentShare(
+            user_id=user_id,
+            moment_type=moment.type,
+            share_text=moment.share_text,
+            share_url=share_url,
+            caption=moment.caption,
+            hook=moment.hook,
+            visual_payload=moment.visual_payload,
         )
 
     async def referral_summary(self, user_id: int) -> dict:

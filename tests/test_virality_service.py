@@ -76,6 +76,19 @@ class FakeEventService:
         self.events.append(event)
 
 
+class FakeViralMomentService:
+    async def best_share_moment(self, user_id: int, moment_type: str | None = None):
+        return SimpleNamespace(
+            type=moment_type or "streak_flex",
+            hook="I actually stuck with this.",
+            caption="7-day streak and climbing.",
+            share_text="7-day streak. Level 3. 645 XP.",
+            visual_payload={"badge": "streak_master", "streak_days": 7},
+            source_signals={"current_streak": 7},
+            priority=0.88,
+        )
+
+
 def _service(*, users, events=None, features=None):
     event_service = FakeEventService()
     subscription_service = FakeSubscriptionService(
@@ -90,6 +103,7 @@ def _service(*, users, events=None, features=None):
         FakeProgressService(),
         subscription_service,
         event_service,
+        FakeViralMomentService(),
         share_base_url="https://example.test",
         referral_xp_reward=300,
         referral_premium_days=5,
@@ -168,4 +182,17 @@ def test_virality_service_builds_progress_share_payload():
     assert share.stats["mastery_percent"] == 61.4
     assert "4-day VocabLens streak" in share.share_text
     assert share.share_url.startswith("https://example.test/share/progress?")
+    assert events.events[-1].event_type == "progress_shared"
+
+
+def test_virality_service_builds_share_payload_from_viral_moment_service():
+    users = [SimpleNamespace(id=1, email="user@example.com")]
+    service, _, events = _service(users=users)
+
+    share = run_async(service.share_moment(1))
+
+    assert share.moment_type == "streak_flex"
+    assert share.share_text == "7-day streak. Level 3. 645 XP."
+    assert share.share_url.startswith("https://example.test/share/moment?")
+    assert share.hook == "I actually stuck with this."
     assert events.events[-1].event_type == "progress_shared"
