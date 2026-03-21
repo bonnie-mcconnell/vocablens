@@ -400,6 +400,7 @@ async def get_vocabulary_service(
     cache_repo=Depends(get_translation_cache_repo),
     learning_events=Depends(get_learning_event_service),
     event_service=Depends(get_event_service),
+    learning_engine=Depends(get_learning_engine),
 ):
     translator = CachedTranslator(provider=translator_provider, cache_repo=cache_repo)
     extractor = WordExtractionService()
@@ -410,6 +411,7 @@ async def get_vocabulary_service(
         extractor,
         events=learning_events,
         event_service=event_service,
+        learning_engine=learning_engine,
     )
 
 

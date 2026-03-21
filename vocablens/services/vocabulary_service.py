@@ -11,6 +11,7 @@ from vocablens.services.language_detection_service import LanguageDetectionServi
 from vocablens.services.difficulty_service import DifficultyService
 from vocablens.services.event_service import EventService
 from vocablens.services.learning_event_service import LearningEventService
+from vocablens.services.learning_engine import LearningEngine, ReviewedKnowledge, SessionResult
 
 
 class VocabularyService:
@@ -22,6 +23,7 @@ class VocabularyService:
         extractor: WordExtractionService,
         events: LearningEventService | None = None,
         event_service: EventService | None = None,
+        learning_engine: LearningEngine | None = None,
     ):
 
         self._translator = translator
@@ -29,6 +31,7 @@ class VocabularyService:
         self._extractor = extractor
         self._events = events
         self._event_service = event_service
+        self._learning_engine = learning_engine
 
         self._srs = SpacedRepetitionService()
         self._lang_detector = LanguageDetectionService()
@@ -259,6 +262,22 @@ class VocabularyService:
                     "quality": quality,
                     "response_accuracy": response_accuracy,
                 },
+            )
+
+        if self._learning_engine:
+            await self._learning_engine.update_knowledge(
+                user_id,
+                SessionResult(
+                    reviewed_items=[
+                        ReviewedKnowledge(
+                            item_id=updated_item.id,
+                            quality=quality,
+                            response_accuracy=response_accuracy,
+                            mistake_frequency=mistake_frequency,
+                            difficulty_score=difficulty_score,
+                        )
+                    ],
+                ),
             )
 
         return updated_item

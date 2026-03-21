@@ -22,6 +22,15 @@ class FakeEvents:
         self.calls.append((event_type, user_id, payload))
 
 
+class FakeLearningEngine:
+    def __init__(self):
+        self.calls = []
+
+    async def update_knowledge(self, user_id: int, session_result):
+        self.calls.append((user_id, session_result))
+        return SimpleNamespace(reviewed_count=1, learned_count=0, weak_areas=[], updated_item_ids=[1])
+
+
 class FakeVocabRepo:
     def __init__(self):
         self.items = {
@@ -87,8 +96,15 @@ class FakeUOW:
 
 def test_vocabulary_service_emits_review_event_and_sets_next_review_due():
     events = FakeEvents()
+    learning_engine = FakeLearningEngine()
     uow = FakeUOW()
-    service = VocabularyService(FakeTranslator(), lambda: uow, extractor=SimpleNamespace(), events=events)
+    service = VocabularyService(
+        FakeTranslator(),
+        lambda: uow,
+        extractor=SimpleNamespace(),
+        events=events,
+        learning_engine=learning_engine,
+    )
 
     updated = run_async(service.review_item(1, 1, "good"))
 
@@ -105,3 +121,8 @@ def test_vocabulary_service_emits_review_event_and_sets_next_review_due():
             },
         )
     ]
+    assert len(learning_engine.calls) == 1
+    user_id, session_result = learning_engine.calls[0]
+    assert user_id == 1
+    assert session_result.reviewed_items[0].item_id == 1
+    assert session_result.reviewed_items[0].quality == 4
