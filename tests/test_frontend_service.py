@@ -200,6 +200,8 @@ def test_frontend_service_returns_activation_ui_signals_for_new_user():
     assert dashboard["ui"]["show_celebration"] is True
     assert dashboard["session_config"]["session_length"] == 8
     assert dashboard["session_config"]["mode"] == "chat"
+    assert dashboard["core_loop"]["focus_skill"] == "vocabulary"
+    assert dashboard["core_loop"]["goal_label"]
     assert "first win" in dashboard["emotion_hooks"]["encouragement_message"].lower()
 
 
@@ -216,6 +218,7 @@ def test_frontend_service_returns_retention_and_paywall_signals_for_at_risk_user
     assert recommendations["ui"]["show_paywall"] is True
     assert recommendations["session_config"]["mode"] == "review"
     assert recommendations["session_config"]["difficulty"] == "easy"
+    assert recommendations["core_loop"]["review_window_minutes"] == 30
     assert "first win" in recommendations["emotion_hooks"]["encouragement_message"].lower()
     assert "usage" in recommendations["emotion_hooks"]["urgency_message"].lower() or "streak" in recommendations["emotion_hooks"]["urgency_message"].lower()
     assert "progress step" in recommendations["emotion_hooks"]["reward_message"].lower()

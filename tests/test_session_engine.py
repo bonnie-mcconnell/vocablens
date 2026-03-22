@@ -97,6 +97,9 @@ def test_session_engine_always_builds_structured_five_phase_round():
 
     assert session.mode == "game_round"
     assert session.duration_seconds == 220
+    assert session.goal_label
+    assert session.success_criteria
+    assert session.review_window_minutes == 15
     assert [phase.name for phase in session.phases] == [
         "warmup",
         "core_challenge",
@@ -158,5 +161,7 @@ def test_session_engine_feedback_loop_returns_correction_reinforcement_and_win()
     assert feedback.reinforcement_prompt.startswith("Repeat exactly:")
     assert "slight variation" in feedback.variation_prompt
     assert "Wow score" in feedback.win_message
+    assert "improved" in feedback.progress_summary.lower()
+    assert "next" in feedback.recommended_next_step.lower() or "repeat" in feedback.recommended_next_step.lower()
     assert feedback.xp_preview == 145
     assert len(learning_engine.update_calls) == 1

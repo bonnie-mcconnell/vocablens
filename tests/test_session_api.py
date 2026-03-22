@@ -13,6 +13,9 @@ class FakeSessionEngine:
                 "mode": "game_round",
                 "weak_area": "grammar",
                 "lesson_target": "past tense",
+                "goal_label": "Fix one grammar pattern cleanly",
+                "success_criteria": "Use the corrected form without carrying the original mistake forward.",
+                "review_window_minutes": 15,
                 "phases": [
                     {
                         "name": "warmup",
@@ -70,6 +73,9 @@ class FakeSessionEngine:
                 "wow_score": 0.78,
                 "xp_preview": 145,
                 "badges_preview": ["First Session"],
+                "progress_summary": "Grammar improved to 74%, with one correction path to repeat next.",
+                "recommended_next_step": "Repeat one more grammar round inside the next 15 minutes.",
+                "review_window_minutes": 15,
             },
         )()
 
@@ -79,6 +85,9 @@ class FakeSessionEngine:
             "mode": session.mode,
             "weak_area": session.weak_area,
             "lesson_target": session.lesson_target,
+            "goal_label": session.goal_label,
+            "success_criteria": session.success_criteria,
+            "review_window_minutes": session.review_window_minutes,
             "phases": [
                 {
                     "name": phase.name,
@@ -99,6 +108,9 @@ class FakeSessionEngine:
             mode=payload["mode"],
             weak_area=payload["weak_area"],
             lesson_target=payload.get("lesson_target"),
+            goal_label=payload.get("goal_label", "Fix one grammar pattern cleanly"),
+            success_criteria=payload.get("success_criteria", "Use the corrected form."),
+            review_window_minutes=payload.get("review_window_minutes", 15),
             phases=[
                 SessionPhase(
                     name=phase["name"],
@@ -123,6 +135,7 @@ def test_session_endpoints_return_standardized_envelopes():
     start_payload = start.json()
     assert start_payload["meta"]["source"] == "session.start"
     assert start_payload["data"]["mode"] == "game_round"
+    assert "goal_label" in start_payload["data"]
     assert [phase["name"] for phase in start_payload["data"]["phases"]] == [
         "warmup",
         "core_challenge",
@@ -145,3 +158,4 @@ def test_session_endpoints_return_standardized_envelopes():
     assert eval_payload["data"]["structured"] is True
     assert eval_payload["data"]["targeted_weak_area"] == "grammar"
     assert "went" in eval_payload["data"]["corrected_response"]
+    assert "progress_summary" in eval_payload["data"]

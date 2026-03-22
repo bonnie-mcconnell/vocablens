@@ -9,6 +9,7 @@ from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.subscription_service import SubscriptionService
 from vocablens.services.user_experience_contracts import (
+    CoreLoopSnapshot,
     DashboardProgress,
     EmotionHooksSnapshot,
     FrontendDashboardResponse,
@@ -89,6 +90,7 @@ class FrontendService:
                 trends=ProgressTrends(**progress["trends"]),
                 skill_breakdown=SkillBreakdown(**progress["skill_breakdown"]),
             ),
+            core_loop=self._core_loop_snapshot(progress, recommendation),
             subscription=SubscriptionSnapshot(
                 tier=features.tier,
                 tutor_depth=features.tutor_depth,
@@ -136,6 +138,7 @@ class FrontendService:
 
         response = FrontendRecommendationsResponse(
             next_action=self._next_action_snapshot(recommendation),
+            core_loop=self._core_loop_snapshot({}, recommendation),
             retention_actions=[
                 RetentionActionSnapshot(kind=action.kind, reason=action.reason, target=action.target)
                 for action in retention.suggested_actions
@@ -193,6 +196,13 @@ class FrontendService:
             "weekly": {},
             "trends": {},
             "skill_breakdown": {},
+            "core_loop": {
+                "focus_skill": "vocabulary",
+                "review_cadence": "light_review_then_new",
+                "recommended_session_count": 1,
+                "review_window_minutes": 30,
+                "recent_improvement_score": None,
+            },
         }
 
     def _next_action_snapshot(self, recommendation) -> NextActionSnapshot:
@@ -226,6 +236,18 @@ class FrontendService:
             request_usage_percent=getattr(paywall, "request_usage_percent", None),
             token_usage_percent=getattr(paywall, "token_usage_percent", None),
             trial_tier=getattr(paywall, "trial_tier", None),
+        )
+
+    def _core_loop_snapshot(self, progress: dict, recommendation) -> CoreLoopSnapshot:
+        core_loop = progress.get("core_loop", {}) if progress else {}
+        return CoreLoopSnapshot(
+            focus_skill=str(getattr(recommendation, "skill_focus", None) or core_loop.get("focus_skill") or "vocabulary"),
+            focus_target=getattr(recommendation, "target", None),
+            goal_label=str(getattr(recommendation, "goal_label", None) or "Finish one focused round cleanly"),
+            review_cadence=str(core_loop.get("review_cadence") or "light_review_then_new"),
+            recommended_session_count=int(core_loop.get("recommended_session_count") or 1),
+            review_window_minutes=int(getattr(recommendation, "review_window_minutes", None) or core_loop.get("review_window_minutes") or 30),
+            recent_improvement_score=core_loop.get("recent_improvement_score"),
         )
 
     def _ui_directives(self, retention, paywall, progress: dict, onboarding) -> dict:

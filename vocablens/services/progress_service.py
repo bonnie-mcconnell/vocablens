@@ -51,6 +51,13 @@ class ProgressService:
                 "momentum_score": round(float(getattr(engagement_state, "momentum_score", 0.0) or 0.0), 3),
                 "total_sessions": int(getattr(engagement_state, "total_sessions", 0) or 0),
             },
+            "core_loop": {
+                "focus_skill": self._focus_skill(skills),
+                "review_cadence": self._review_cadence(len(due)),
+                "recommended_session_count": min(3, max(1, (len(due) + 2) // 3)) if due else 1,
+                "review_window_minutes": self._review_window_minutes(len(due)),
+                "recent_improvement_score": round(float(getattr(engagement_state, "momentum_score", 0.0) or 0.0) * 100, 1),
+            },
         }
 
     def _accuracy_rate(self, events) -> float:
@@ -120,6 +127,25 @@ class ProgressService:
             "weekly_accuracy_rate_delta": round(current_week["accuracy_rate"] - previous_week["accuracy_rate"], 1),
             "fluency_score": round(float(skills.get("fluency", 0.5)) * 100, 1),
         }
+
+    def _focus_skill(self, skills: dict[str, float]) -> str:
+        if not skills:
+            return "vocabulary"
+        return min(skills.items(), key=lambda item: item[1])[0]
+
+    def _review_cadence(self, due_count: int) -> str:
+        if due_count >= 6:
+            return "review_now"
+        if due_count >= 2:
+            return "short_review_block"
+        return "light_review_then_new"
+
+    def _review_window_minutes(self, due_count: int) -> int:
+        if due_count >= 6:
+            return 5
+        if due_count >= 2:
+            return 15
+        return 30
 
     def _payload(self, event) -> dict:
         payload_json = getattr(event, "payload_json", None)

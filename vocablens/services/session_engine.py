@@ -39,6 +39,9 @@ class StructuredSession:
     mode: Literal["game_round"]
     weak_area: str
     lesson_target: str | None
+    goal_label: str
+    success_criteria: str
+    review_window_minutes: int
     phases: list[SessionPhase]
 
 
@@ -56,6 +59,9 @@ class SessionFeedback:
     wow_score: float
     xp_preview: int
     badges_preview: list[str]
+    progress_summary: str
+    recommended_next_step: str
+    review_window_minutes: int
 
 
 class SessionEngine:
@@ -148,6 +154,9 @@ class SessionEngine:
             mode="game_round",
             weak_area=weak_area,
             lesson_target=recommendation.target,
+            goal_label=str(getattr(recommendation, "goal_label", None) or self._goal_label(weak_area)),
+            success_criteria=self._success_criteria(core_prompt),
+            review_window_minutes=int(getattr(recommendation, "review_window_minutes", None) or 15),
             phases=phases,
         )
 
@@ -170,6 +179,9 @@ class SessionEngine:
             mode=str(payload.get("mode", "game_round")),
             weak_area=str(payload.get("weak_area", "vocabulary")),
             lesson_target=payload.get("lesson_target"),
+            goal_label=str(payload.get("goal_label", self._goal_label(str(payload.get("weak_area", "vocabulary"))))),
+            success_criteria=str(payload.get("success_criteria", "Hit the target once with a short correct answer.")),
+            review_window_minutes=int(payload.get("review_window_minutes", 15)),
             phases=phases,
         )
 
@@ -185,6 +197,7 @@ class SessionEngine:
         corrected_response = expected_answer or response
         is_correct = len(highlighted_mistakes) == 0 and bool(response)
         improvement_score = self._improvement_score(is_correct, accepted_keywords, normalized_response)
+        progress_summary = self._progress_summary(improvement_score, session.weak_area, highlighted_mistakes)
 
         wow = await self._wow_engine.score_session(
             user_id,
@@ -245,6 +258,9 @@ class SessionEngine:
             wow_score=wow.score,
             xp_preview=xp_preview,
             badges_preview=badges_preview,
+            progress_summary=progress_summary,
+            recommended_next_step=self._recommended_next_step(improvement_score, session),
+            review_window_minutes=session.review_window_minutes,
         )
 
     def _target_weak_area(self, recommendation, skills: dict[str, float], weak_clusters, mistakes) -> str:
@@ -345,6 +361,22 @@ class SessionEngine:
             "focus": weak_area,
         }
 
+    def _goal_label(self, weak_area: str) -> str:
+        if weak_area == "grammar":
+            return "Fix one grammar pattern cleanly"
+        if weak_area == "fluency":
+            return "Say one idea clearly without drifting"
+        return "Bring one target back into active memory"
+
+    def _success_criteria(self, prompt: SessionPrompt) -> str:
+        if prompt.mode == "rewrite":
+            return "Use the corrected form without carrying the original mistake forward."
+        if prompt.mode == "sentence":
+            return "Give one short sentence that uses the target naturally."
+        if prompt.mode == "review":
+            return "Recall the answer quickly without a full explanation."
+        return "Give one short correct answer with the target keyword."
+
     def _highlighted_mistakes(self, response: str, accepted_keywords: list[str], payload: dict[str, Any]) -> list[str]:
         if not response:
             return ["No answer submitted"]
@@ -375,7 +407,18 @@ class SessionEngine:
     def _win_message(self, improvement_score: float, wow_score: float, weak_area: str) -> str:
         percent = int(round(improvement_score * 100))
         wow_percent = int(round(wow_score * 100))
-        return f"You improved your {weak_area} round to {percent}% clarity. Wow score: {wow_percent}%."
+        return f"You brought {weak_area} to {percent}% for this round. Wow score: {wow_percent}%."
+
+    def _progress_summary(self, improvement_score: float, weak_area: str, mistakes: list[str]) -> str:
+        percent = int(round(improvement_score * 100))
+        if not mistakes:
+            return f"{weak_area.title()} landed cleanly at {percent}% for this round."
+        return f"{weak_area.title()} improved to {percent}%, with one correction path to repeat next."
+
+    def _recommended_next_step(self, improvement_score: float, session: StructuredSession) -> str:
+        if improvement_score >= 0.8:
+            return f"Move to the next {session.weak_area} target after a short review."
+        return f"Repeat one more {session.weak_area} round inside the next {session.review_window_minutes} minutes."
 
     def _phase(self, session: StructuredSession, name: SessionPhaseName) -> SessionPhase:
         for phase in session.phases:

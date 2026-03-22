@@ -283,6 +283,8 @@ def test_learning_engine_prioritizes_high_decay_due_reviews():
     assert recommendation.target == "adios"
     assert recommendation.due_items_count == 2
     assert recommendation.review_priority > 0.5
+    assert recommendation.goal_label == "Bring a due word back into active memory"
+    assert recommendation.review_window_minutes == 5
 
 
 def test_learning_engine_prioritizes_grammar_when_skill_is_weak():
@@ -298,6 +300,7 @@ def test_learning_engine_prioritizes_grammar_when_skill_is_weak():
     assert recommendation.action == "practice_grammar"
     assert recommendation.target == "grammar"
     assert recommendation.skill_focus == "grammar"
+    assert "grammar pattern" in recommendation.goal_label.lower()
 
 
 def test_learning_engine_uses_repeated_errors_for_conversation_drill():
@@ -324,6 +327,7 @@ def test_learning_engine_uses_repeated_errors_for_conversation_drill():
     assert recommendation.action == "conversation_drill"
     assert recommendation.target == "verb tense confusion"
     assert recommendation.lesson_difficulty == "hard"
+    assert recommendation.review_window_minutes == 20
 
 
 def test_learning_engine_prefers_weak_cluster_for_cluster_based_learning():
@@ -368,7 +372,7 @@ def test_learning_engine_uses_retention_state_to_prioritize_low_friction_review(
 
     assert recommendation.action == "review_word"
     assert recommendation.target == "bonjour"
-    assert "Retention state is at-risk" in recommendation.reason
+    assert "Retention is slipping" in recommendation.reason
 
 
 def test_update_knowledge_updates_decay_and_emits_event():

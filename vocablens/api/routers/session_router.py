@@ -23,6 +23,7 @@ def create_session_router() -> APIRouter:
                 "source": "session.start",
                 "mode": data["mode"],
                 "weak_area": data["weak_area"],
+                "goal_label": data.get("goal_label"),
             },
         )
 
@@ -47,6 +48,9 @@ def create_session_router() -> APIRouter:
             "wow_score": feedback.wow_score,
             "xp_preview": feedback.xp_preview,
             "badges_preview": feedback.badges_preview,
+            "progress_summary": feedback.progress_summary,
+            "recommended_next_step": feedback.recommended_next_step,
+            "review_window_minutes": feedback.review_window_minutes,
         }
         return APIResponse(
             data=data,

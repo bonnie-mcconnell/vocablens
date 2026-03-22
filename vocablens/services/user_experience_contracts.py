@@ -46,6 +46,16 @@ class DashboardProgress(BaseModel):
     skill_breakdown: SkillBreakdown
 
 
+class CoreLoopSnapshot(BaseModel):
+    focus_skill: str
+    focus_target: str | None = None
+    goal_label: str
+    review_cadence: str
+    recommended_session_count: int
+    review_window_minutes: int
+    recent_improvement_score: float | None = None
+
+
 class SubscriptionSnapshot(BaseModel):
     tier: str
     tutor_depth: str
@@ -121,6 +131,7 @@ class EmotionHooksSnapshot(BaseModel):
 
 class FrontendDashboardResponse(BaseModel):
     progress: DashboardProgress
+    core_loop: CoreLoopSnapshot
     subscription: SubscriptionSnapshot
     paywall: PaywallSnapshot
     skills: dict[str, float]
@@ -135,6 +146,7 @@ class FrontendDashboardResponse(BaseModel):
 
 class FrontendRecommendationsResponse(BaseModel):
     next_action: NextActionSnapshot
+    core_loop: CoreLoopSnapshot
     retention_actions: list[RetentionActionSnapshot]
     paywall: PaywallSnapshot
     ui: UiDirectivesSnapshot

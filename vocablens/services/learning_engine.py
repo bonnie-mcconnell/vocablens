@@ -27,6 +27,8 @@ class LearningRecommendation:
     review_priority: float = 0.0
     skill_focus: str | None = None
     due_items_count: int = 0
+    goal_label: str | None = None
+    review_window_minutes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -189,12 +191,6 @@ class LearningEngine:
             return None
         return await self._retention.assess_user(user_id)
 
-    def _decorate(self, recommendation: LearningRecommendation, adaptation: PersonalizationAdaptation):
-        recommendation.lesson_difficulty = adaptation.lesson_difficulty
-        recommendation.review_frequency_multiplier = adaptation.review_frequency_multiplier
-        recommendation.content_type = adaptation.content_type
-        return recommendation
-
     async def _personalization_level(self, user_id: int) -> str:
         if not self._subscription_service:
             return "premium"
@@ -234,6 +230,8 @@ class LearningEngine:
                     "review_priority": decorated.review_priority,
                     "skill_focus": decorated.skill_focus,
                     "due_items_count": decorated.due_items_count,
+                    "goal_label": decorated.goal_label,
+                    "review_window_minutes": decorated.review_window_minutes,
                 },
             )
         return decorated
@@ -282,6 +280,32 @@ class LearningEngine:
                 skill_focus="vocabulary",
             )
         return await self._finalize_recommendation(user_id, recommendation, adaptation)
+
+    def _decorate(self, recommendation: LearningRecommendation, adaptation: PersonalizationAdaptation):
+        recommendation.lesson_difficulty = adaptation.lesson_difficulty
+        recommendation.review_frequency_multiplier = adaptation.review_frequency_multiplier
+        recommendation.content_type = adaptation.content_type
+        recommendation.goal_label = recommendation.goal_label or self._goal_label(recommendation)
+        recommendation.review_window_minutes = recommendation.review_window_minutes or self._review_window_minutes(recommendation)
+        return recommendation
+
+    def _goal_label(self, recommendation: LearningRecommendation) -> str:
+        if recommendation.action == "review_word":
+            return "Bring a due word back into active memory"
+        if recommendation.action == "practice_grammar":
+            return "Fix one grammar pattern cleanly"
+        if recommendation.action == "conversation_drill":
+            return "Say one idea clearly without drift"
+        return "Add one useful word without losing review momentum"
+
+    def _review_window_minutes(self, recommendation: LearningRecommendation) -> int:
+        if recommendation.action == "review_word":
+            return 5
+        if recommendation.action == "practice_grammar":
+            return 15
+        if recommendation.action == "conversation_drill":
+            return 20
+        return 30
 
     def _review_multiplier(self, profile) -> float:
         preference = (getattr(profile, "difficulty_preference", "medium") or "medium").lower()

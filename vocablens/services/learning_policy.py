@@ -58,7 +58,7 @@ class LearningRecommendationPolicy:
             return recommendation_type(
                 "review_word",
                 prioritized_due[0].source_text,
-                f"Retention state is {retention.state}; bring back due material first",
+                f"Retention is slipping, so start with one due review that the learner can finish quickly",
                 review_priority=due_pressure,
                 due_items_count=len(prioritized_due),
             )
@@ -67,15 +67,14 @@ class LearningRecommendationPolicy:
             return recommendation_type(
                 "conversation_drill",
                 snapshot.repeated_patterns[0].pattern,
-                f"Retention state is {retention.state}; use a quick targeted drill",
+                "Retention is slipping, so use a short targeted drill instead of a heavier lesson",
                 skill_focus="fluency",
             )
 
         if prioritized_due and (due_pressure >= 0.4 or review_vs_new_bias >= 0.5):
             top_due = prioritized_due[0]
             reason = (
-                f"{len(prioritized_due)} items due with retention pressure {due_pressure:.2f}; "
-                f"'{top_due.source_text}' has the highest decay"
+                f"{len(prioritized_due)} review item(s) are due, and '{top_due.source_text}' is the one most likely to fade next"
             )
             return recommendation_type(
                 "review_word",
@@ -89,7 +88,7 @@ class LearningRecommendationPolicy:
             return recommendation_type(
                 "practice_grammar",
                 "grammar",
-                "Grammar skill below threshold",
+                "Grammar accuracy is the weakest part of the current learning state",
                 skill_focus="grammar",
             )
 
@@ -102,14 +101,14 @@ class LearningRecommendationPolicy:
             or any(p.category == "vocabulary" for p in (snapshot.patterns or []))
         ):
             target = None
-            reason = "Vocabulary coverage low in cluster"
+            reason = "Vocabulary coverage is thin in the next useful cluster"
             if snapshot.feature_level != "basic" and weak_areas:
                 target = weak_areas[0]
-                reason = f"'{target}' has stayed weak across recent work and should be reinforced next"
+                reason = f"'{target}' is still weak, so the next round should reinforce it directly"
             elif snapshot.feature_level != "basic" and snapshot.weak_clusters:
                 target = snapshot.weak_clusters[0]["cluster"]
                 related = ", ".join(snapshot.weak_clusters[0].get("words", [])[:3])
-                reason = f"Cluster '{target}' is underperforming; reinforce it with related words: {related or 'core examples'}"
+                reason = f"Cluster '{target}' is underperforming, so reinforce it with related words like {related or 'core examples'}"
             elif snapshot.sparse_cluster:
                 target = snapshot.sparse_cluster
             else:
@@ -126,7 +125,7 @@ class LearningRecommendationPolicy:
             return recommendation_type(
                 "conversation_drill",
                 top.pattern,
-                "Address repeated errors",
+                "A repeated error pattern is stable enough to target directly in a short drill",
                 skill_focus="fluency",
             )
 
@@ -134,7 +133,7 @@ class LearningRecommendationPolicy:
             return recommendation_type(
                 "conversation_drill",
                 None,
-                "Conversation experiment variant prioritizes fluency practice",
+                "This experiment variant is prioritizing guided fluency work",
                 skill_focus="fluency",
             )
 
@@ -142,14 +141,14 @@ class LearningRecommendationPolicy:
             return recommendation_type(
                 "conversation_drill",
                 None,
-                "Use a short guided drill to build fluency",
+                "Use a short guided drill to tighten fluency without opening full chat",
                 skill_focus="fluency",
             )
 
         return recommendation_type(
             "learn_new_word",
             snapshot.sparse_cluster or "general",
-            "Introduce one new item without losing review momentum",
+            "Introduce one new item while review pressure is still under control",
             skill_focus="vocabulary",
         )
 

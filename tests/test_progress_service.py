@@ -103,6 +103,8 @@ def test_progress_service_computes_metric_accuracy():
     assert progress["metrics"]["accuracy_rate"] == 70.0
     assert progress["metrics"]["response_speed_seconds"] == 30.0
     assert progress["metrics"]["fluency_score"] == 65.0
+    assert progress["core_loop"]["focus_skill"] == "fluency"
+    assert progress["core_loop"]["review_cadence"] == "light_review_then_new"
 
 
 def test_progress_service_aggregates_daily_weekly_and_trends_correctly():
@@ -141,3 +143,4 @@ def test_progress_service_aggregates_daily_weekly_and_trends_correctly():
     assert progress["trends"]["weekly_messages_sent_delta"] == 0
     assert progress["trends"]["weekly_accuracy_rate_delta"] == 40.0
     assert progress["skill_breakdown"]["fluency"] == 72.0
+    assert progress["core_loop"]["recommended_session_count"] == 1
