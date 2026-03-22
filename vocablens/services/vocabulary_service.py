@@ -6,12 +6,28 @@ from vocablens.domain.errors import NotFoundError
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 from vocablens.providers.translation.base import Translator
-from vocablens.services.word_extraction_service import WordExtractionService
-from vocablens.services.language_detection_service import LanguageDetectionService
-from vocablens.services.difficulty_service import DifficultyService
 from vocablens.services.event_service import EventService
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.learning_engine import LearningEngine, ReviewedKnowledge, SessionResult
+from vocablens.services.word_extraction_service import WordExtractionService
+
+from langdetect import detect
+
+
+def detect_language(text: str) -> str:
+    try:
+        return detect(text)
+    except Exception:
+        return "unknown"
+
+
+def score_word_difficulty(word: str) -> float:
+    length = len(word)
+    if length <= 4:
+        return 0.2
+    if length <= 7:
+        return 0.5
+    return 0.8
 
 
 class VocabularyService:
@@ -34,8 +50,6 @@ class VocabularyService:
         self._learning_engine = learning_engine
 
         self._srs = SpacedRepetitionService()
-        self._lang_detector = LanguageDetectionService()
-        self._difficulty = DifficultyService()
 
     # ------------------------------------------------
     # SINGLE WORD
@@ -50,7 +64,7 @@ class VocabularyService:
     ) -> VocabularyItem:
 
         if source_lang == "auto":
-            source_lang = self._lang_detector.detect(text)
+            source_lang = detect_language(text)
 
         translated = await self._translator.translate(
             text,
@@ -58,7 +72,7 @@ class VocabularyService:
             target_lang,
         )
 
-        difficulty = self._difficulty.score(text)
+        difficulty = score_word_difficulty(text)
         retention_rate, review_multiplier = await self._schedule_profile(user_id)
 
         item = VocabularyItem(
@@ -111,7 +125,7 @@ class VocabularyService:
     ):
 
         if not source_lang:
-            source_lang = self._lang_detector.detect(text)
+            source_lang = detect_language(text)
 
         words = self._extractor.extract_words(text)
 
@@ -154,7 +168,7 @@ class VocabularyService:
                 ):
                     continue
 
-            difficulty = self._difficulty.score(word)
+            difficulty = score_word_difficulty(word)
 
             item = VocabularyItem(
                 id=None,
@@ -225,7 +239,7 @@ class VocabularyService:
 
         quality = quality_map.get(rating, 3)
         response_accuracy = quality / 5.0
-        difficulty_score = self._difficulty.score(item.source_text)
+        difficulty_score = score_word_difficulty(item.source_text)
         mistake_frequency = self._mistake_frequency(item.source_text, patterns)
         review_multiplier = self._review_multiplier(profile)
 
