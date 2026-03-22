@@ -10,6 +10,7 @@ from vocablens.services.notification_decision_engine import NotificationDecision
 from vocablens.services.onboarding_flow_presenter import OnboardingFlowPresenter
 from vocablens.services.onboarding_flow_state_store import OnboardingFlowStateStore
 from vocablens.services.retention_engine import RetentionEngine
+from vocablens.services.user_experience_contracts import OnboardingMessaging, OnboardingResponse
 from vocablens.services.wow_engine import WowEngine, WowScore
 
 OnboardingStep = Literal[
@@ -186,13 +187,14 @@ class OnboardingFlowService:
     async def _build_response(self, user_id: int, state: dict) -> dict:
         lifecycle = await self._lifecycle.evaluate(user_id)
         view = self._presenter.build(state=state, lifecycle_stage=lifecycle.stage)
-        return {
-            "current_step": view.current_step,
-            "onboarding_state": view.onboarding_state,
-            "ui_directives": view.ui_directives,
-            "messaging": view.messaging,
-            "next_action": view.next_action,
-        }
+        response = OnboardingResponse(
+            current_step=view.current_step,
+            onboarding_state=view.onboarding_state,
+            ui_directives=view.ui_directives,
+            messaging=OnboardingMessaging(**view.messaging),
+            next_action=view.next_action,
+        )
+        return response.model_dump(mode="json")
 
     async def _persist_preferences(self, *, user_id: int, skill_level: str, learning_intent: str) -> None:
         difficulty = {

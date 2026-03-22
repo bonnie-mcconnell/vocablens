@@ -8,6 +8,27 @@ from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.subscription_service import SubscriptionService
+from vocablens.services.user_experience_contracts import (
+    DashboardProgress,
+    EmotionHooksSnapshot,
+    FrontendDashboardResponse,
+    FrontendRecommendationsResponse,
+    FrontendWeakAreasResponse,
+    NextActionSnapshot,
+    PaywallSnapshot,
+    ProgressMetrics,
+    ProgressPeriod,
+    ProgressTrends,
+    RetentionActionSnapshot,
+    RetentionSnapshot,
+    SessionConfigSnapshot,
+    SkillBreakdown,
+    SubscriptionSnapshot,
+    UiDirectivesSnapshot,
+    WeakAreaMistake,
+    WeakAreasSnapshot,
+    WeakSkillSnapshot,
+)
 
 
 class FrontendService:
@@ -43,7 +64,6 @@ class FrontendService:
             due = await uow.vocab.list_due(user_id)
             skills = await uow.skill_tracking.latest_scores(user_id)
             weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id)
-            profile = await uow.profiles.get_or_create(user_id)
             mistakes = await uow.mistake_patterns.top_patterns(user_id, limit=5)
             await uow.commit()
 
@@ -54,79 +74,58 @@ class FrontendService:
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
         decision = await self._global_decision.decide(user_id) if self._global_decision else None
         onboarding = await self._onboarding.plan(user_id) if self._onboarding else None
-        progress = await self._progress.build_dashboard(user_id) if self._progress else {
-            "vocabulary_total": len(vocab),
-            "due_reviews": len(due),
-            "metrics": {},
-            "daily": {},
-            "weekly": {},
-            "trends": {},
-            "skill_breakdown": {},
-        }
+        progress = await self._progress.build_dashboard(user_id) if self._progress else self._fallback_progress(vocab, due)
 
-        return {
-            "progress": {
-                "vocabulary_total": progress["vocabulary_total"],
-                "due_reviews": progress["due_reviews"],
-                "streak": retention.current_streak,
-                "session_frequency": retention.session_frequency,
-                "retention_state": retention.state,
-                "metrics": progress["metrics"],
-                "daily": progress["daily"],
-                "weekly": progress["weekly"],
-                "trends": progress["trends"],
-                "skill_breakdown": progress["skill_breakdown"],
-            },
-            "subscription": {
-                "tier": features.tier,
-                "tutor_depth": features.tutor_depth,
-                "explanation_quality": features.explanation_quality,
-                "personalization_level": features.personalization_level,
-                "trial_active": features.trial_active,
-                "trial_ends_at": features.trial_ends_at.isoformat() if getattr(features.trial_ends_at, "isoformat", None) else None,
-                "usage_percent": features.usage_percent,
-            },
-            "paywall": {
-                "show": paywall.show_paywall if paywall else False,
-                "type": paywall.paywall_type if paywall else None,
-                "reason": paywall.reason if paywall else None,
-                "usage_percent": paywall.usage_percent if paywall else features.usage_percent,
-                "allow_access": paywall.allow_access if paywall else True,
-                "trial_active": paywall.trial_active if paywall else features.trial_active,
-                "trial_ends_at": paywall.trial_ends_at.isoformat() if paywall and getattr(paywall.trial_ends_at, "isoformat", None) else None,
-            },
-            "skills": skills,
-            "next_action": {
-                "action": recommendation.action,
-                "target": recommendation.target,
-                "reason": recommendation.reason,
-                "difficulty": recommendation.lesson_difficulty,
-                "content_type": recommendation.content_type,
-            },
-            "retention": {
-                "state": retention.state,
-                "drop_off_risk": retention.drop_off_risk,
-                "actions": [
-                    {"kind": action.kind, "reason": action.reason, "target": action.target}
+        response = FrontendDashboardResponse(
+            progress=DashboardProgress(
+                vocabulary_total=progress["vocabulary_total"],
+                due_reviews=progress["due_reviews"],
+                streak=retention.current_streak,
+                session_frequency=retention.session_frequency,
+                retention_state=retention.state,
+                metrics=ProgressMetrics(**progress["metrics"]),
+                daily=ProgressPeriod(**progress["daily"]),
+                weekly=ProgressPeriod(**progress["weekly"]),
+                trends=ProgressTrends(**progress["trends"]),
+                skill_breakdown=SkillBreakdown(**progress["skill_breakdown"]),
+            ),
+            subscription=SubscriptionSnapshot(
+                tier=features.tier,
+                tutor_depth=features.tutor_depth,
+                explanation_quality=features.explanation_quality,
+                personalization_level=features.personalization_level,
+                trial_active=features.trial_active,
+                trial_ends_at=features.trial_ends_at.isoformat() if getattr(features.trial_ends_at, "isoformat", None) else None,
+                usage_percent=features.usage_percent,
+            ),
+            paywall=self._paywall_snapshot(paywall, features),
+            skills=skills,
+            next_action=self._next_action_snapshot(recommendation),
+            retention=RetentionSnapshot(
+                state=retention.state,
+                drop_off_risk=retention.drop_off_risk,
+                actions=[
+                    RetentionActionSnapshot(kind=action.kind, reason=action.reason, target=action.target)
                     for action in retention.suggested_actions
                 ],
-            },
-            "weak_areas": {
-                "clusters": weak_clusters,
-                "mistakes": [
-                    {
-                        "category": getattr(pattern, "category", None),
-                        "pattern": getattr(pattern, "pattern", None),
-                        "count": getattr(pattern, "count", None),
-                    }
+            ),
+            weak_areas=WeakAreasSnapshot(
+                clusters=weak_clusters,
+                mistakes=[
+                    WeakAreaMistake(
+                        category=getattr(pattern, "category", None),
+                        pattern=getattr(pattern, "pattern", None),
+                        count=getattr(pattern, "count", None),
+                    )
                     for pattern in mistakes
                 ],
-            },
-            "ui": self._ui_directives(retention, paywall, progress, onboarding),
-            "session_config": self._session_config(decision, recommendation),
-            "emotion_hooks": self._emotion_hooks(retention, paywall, progress, decision, onboarding),
-            "roadmap": roadmap,
-        }
+            ),
+            ui=UiDirectivesSnapshot(**self._ui_directives(retention, paywall, progress, onboarding)),
+            session_config=SessionConfigSnapshot(**self._session_config(decision, recommendation)),
+            emotion_hooks=EmotionHooksSnapshot(**self._emotion_hooks(retention, paywall, progress, onboarding)),
+            roadmap=roadmap,
+        )
+        return response.model_dump(mode="json")
 
     async def recommendations(self, user_id: int) -> dict:
         recommendation = await self._learning_engine.recommend(user_id)
@@ -134,53 +133,23 @@ class FrontendService:
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
         decision = await self._global_decision.decide(user_id) if self._global_decision else None
         onboarding = await self._onboarding.plan(user_id) if self._onboarding else None
-        return {
-            "next_action": {
-                "action": recommendation.action,
-                "target": recommendation.target,
-                "reason": recommendation.reason,
-                "difficulty": recommendation.lesson_difficulty,
-                "content_type": recommendation.content_type,
-            },
-            "retention_actions": [
-                {"kind": action.kind, "reason": action.reason, "target": action.target}
+
+        response = FrontendRecommendationsResponse(
+            next_action=self._next_action_snapshot(recommendation),
+            retention_actions=[
+                RetentionActionSnapshot(kind=action.kind, reason=action.reason, target=action.target)
                 for action in retention.suggested_actions
             ],
-            "paywall": {
-                "show": paywall.show_paywall if paywall else False,
-                "type": paywall.paywall_type if paywall else None,
-                "reason": paywall.reason if paywall else None,
-                "usage_percent": paywall.usage_percent if paywall else 0,
-                "trial_active": paywall.trial_active if paywall else False,
-            },
-            "ui": self._ui_directives(retention, paywall, {}, onboarding),
-            "session_config": self._session_config(decision, recommendation),
-            "emotion_hooks": self._emotion_hooks(retention, paywall, {}, decision, onboarding),
-        }
+            paywall=self._paywall_snapshot(paywall),
+            ui=UiDirectivesSnapshot(**self._ui_directives(retention, paywall, {}, onboarding)),
+            session_config=SessionConfigSnapshot(**self._session_config(decision, recommendation)),
+            emotion_hooks=EmotionHooksSnapshot(**self._emotion_hooks(retention, paywall, {}, onboarding)),
+        )
+        return response.model_dump(mode="json")
 
     async def paywall(self, user_id: int) -> dict:
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
-        if not paywall:
-            return {
-                "show": False,
-                "type": None,
-                "reason": None,
-                "usage_percent": 0,
-                "trial_active": False,
-                "allow_access": True,
-            }
-        return {
-            "show": paywall.show_paywall,
-            "type": paywall.paywall_type,
-            "reason": paywall.reason,
-            "usage_percent": paywall.usage_percent,
-            "request_usage_percent": paywall.request_usage_percent,
-            "token_usage_percent": paywall.token_usage_percent,
-            "trial_active": paywall.trial_active,
-            "trial_tier": paywall.trial_tier,
-            "trial_ends_at": paywall.trial_ends_at.isoformat() if getattr(paywall.trial_ends_at, "isoformat", None) else None,
-            "allow_access": paywall.allow_access,
-        }
+        return self._paywall_snapshot(paywall).model_dump(mode="json")
 
     async def weak_areas(self, user_id: int) -> dict:
         async with self._uow_factory() as uow:
@@ -190,18 +159,19 @@ class FrontendService:
             await uow.commit()
 
         sorted_skills = sorted(skills.items(), key=lambda item: item[1])
-        return {
-            "weak_skills": [{"skill": name, "score": score} for name, score in sorted_skills[:3]],
-            "weak_clusters": weak_clusters,
-            "mistake_patterns": [
-                {
-                    "category": getattr(pattern, "category", None),
-                    "pattern": getattr(pattern, "pattern", None),
-                    "count": getattr(pattern, "count", None),
-                }
+        response = FrontendWeakAreasResponse(
+            weak_skills=[WeakSkillSnapshot(skill=name, score=score) for name, score in sorted_skills[:3]],
+            weak_clusters=weak_clusters,
+            mistake_patterns=[
+                WeakAreaMistake(
+                    category=getattr(pattern, "category", None),
+                    pattern=getattr(pattern, "pattern", None),
+                    count=getattr(pattern, "count", None),
+                )
                 for pattern in mistakes
             ],
-        }
+        )
+        return response.model_dump(mode="json")
 
     def meta(self, *, source: str, difficulty: str | None = None, next_action: str | None = None) -> dict:
         meta = {
@@ -213,6 +183,50 @@ class FrontendService:
         if next_action:
             meta["next_action"] = next_action
         return meta
+
+    def _fallback_progress(self, vocab, due) -> dict:
+        return {
+            "vocabulary_total": len(vocab),
+            "due_reviews": len(due),
+            "metrics": {},
+            "daily": {},
+            "weekly": {},
+            "trends": {},
+            "skill_breakdown": {},
+        }
+
+    def _next_action_snapshot(self, recommendation) -> NextActionSnapshot:
+        return NextActionSnapshot(
+            action=recommendation.action,
+            target=recommendation.target,
+            reason=recommendation.reason,
+            difficulty=recommendation.lesson_difficulty,
+            content_type=recommendation.content_type,
+        )
+
+    def _paywall_snapshot(self, paywall, features=None) -> PaywallSnapshot:
+        if not paywall:
+            return PaywallSnapshot(
+                show=False,
+                type=None,
+                reason=None,
+                usage_percent=getattr(features, "usage_percent", 0) if features else 0,
+                allow_access=True,
+                trial_active=getattr(features, "trial_active", False) if features else False,
+                trial_ends_at=features.trial_ends_at.isoformat() if features and getattr(features.trial_ends_at, "isoformat", None) else None,
+            )
+        return PaywallSnapshot(
+            show=paywall.show_paywall,
+            type=paywall.paywall_type,
+            reason=paywall.reason,
+            usage_percent=paywall.usage_percent,
+            allow_access=paywall.allow_access,
+            trial_active=paywall.trial_active,
+            trial_ends_at=paywall.trial_ends_at.isoformat() if getattr(paywall.trial_ends_at, "isoformat", None) else None,
+            request_usage_percent=getattr(paywall, "request_usage_percent", None),
+            token_usage_percent=getattr(paywall, "token_usage_percent", None),
+            trial_tier=getattr(paywall, "trial_tier", None),
+        )
 
     def _ui_directives(self, retention, paywall, progress: dict, onboarding) -> dict:
         daily = progress.get("daily", {}) if progress else {}
@@ -235,13 +249,18 @@ class FrontendService:
         )
         session_type = getattr(decision, "session_type", "quick")
         session_length = 3 if session_type == "quick" else 8 if session_type == "deep" else 1
+        resolved_mode = (
+            "review" if getattr(recommendation, "action", None) == "review_word"
+            else "chat" if getattr(recommendation, "action", None) == "conversation_drill"
+            else mode
+        )
         return {
             "session_length": session_length,
             "difficulty": getattr(decision, "difficulty_level", getattr(recommendation, "lesson_difficulty", "medium")),
-            "mode": "review" if getattr(recommendation, "action", None) == "review_word" else "chat" if getattr(recommendation, "action", None) == "conversation_drill" else mode,
+            "mode": resolved_mode,
         }
 
-    def _emotion_hooks(self, retention, paywall, progress: dict, decision, onboarding) -> dict:
+    def _emotion_hooks(self, retention, paywall, progress: dict, onboarding) -> dict:
         daily = progress.get("daily", {}) if progress else {}
         progress_gain = int(daily.get("words_learned", 0) or 0) + int(daily.get("reviews_completed", 0) or 0)
         onboarding_stage = getattr(onboarding, "stage", None)
@@ -257,7 +276,7 @@ class FrontendService:
         urgency = (
             "Finish this quick session before your streak cools off."
             if retention.state in {"at-risk", "churned"}
-            else f"{getattr(paywall, 'usage_percent', 0)}% of today’s usage is already used."
+            else f"{getattr(paywall, 'usage_percent', 0)}% of today's usage is already used."
             if paywall and getattr(paywall, "show_paywall", False)
             else ""
         )
