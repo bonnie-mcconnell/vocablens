@@ -51,19 +51,14 @@ class ExperimentService:
 
     async def assign(self, user_id: int, experiment_key: str) -> str:
         definition = self._get_definition(experiment_key)
-        existing = await self.get_variant(user_id, experiment_key)
-        if existing is not None:
-            return existing
-
         assigned_at = utc_now()
-        variant = self._select_variant(user_id, definition)
-        created = await self._create_assignment(
+        variant, exposure_created = await self._ensure_assignment_and_exposure(
             user_id=user_id,
             experiment_key=experiment_key,
-            variant=variant,
+            variant=self._select_variant(user_id, definition),
             assigned_at=assigned_at,
         )
-        if created and self._events:
+        if exposure_created and self._events:
             await self._events.record(
                 event_type="experiment_exposure",
                 user_id=user_id,
@@ -81,33 +76,81 @@ class ExperimentService:
             await uow.commit()
         return assignment.variant if assignment else None
 
+    async def get_exposure(self, user_id: int, experiment_key: str):
+        async with self._uow_factory() as uow:
+            exposure = await uow.experiment_exposures.get(user_id, experiment_key)
+            await uow.commit()
+        return exposure
+
     def has_experiment(self, experiment_key: str) -> bool:
         return experiment_key in self._experiments
 
-    async def _create_assignment(
+    async def _ensure_assignment_and_exposure(
         self,
         *,
         user_id: int,
         experiment_key: str,
         variant: str,
         assigned_at: datetime,
-    ) -> bool:
+    ) -> tuple[str, bool]:
         try:
             async with self._uow_factory() as uow:
-                existing = await uow.experiment_assignments.get(user_id, experiment_key)
-                if existing is not None:
-                    await uow.commit()
-                    return False
-                await uow.experiment_assignments.create(
-                    user_id=user_id,
-                    experiment_key=experiment_key,
-                    variant=variant,
-                    assigned_at=assigned_at,
-                )
+                assignment = await uow.experiment_assignments.get(user_id, experiment_key)
+                exposure = await uow.experiment_exposures.get(user_id, experiment_key)
+                assigned_variant = variant
+                if assignment is None:
+                    await uow.experiment_assignments.create(
+                        user_id=user_id,
+                        experiment_key=experiment_key,
+                        variant=variant,
+                        assigned_at=assigned_at,
+                    )
+                else:
+                    assigned_variant = assignment.variant
+                exposure_created = False
+                if exposure is None:
+                    await uow.experiment_exposures.create(
+                        user_id=user_id,
+                        experiment_key=experiment_key,
+                        variant=assigned_variant,
+                        exposed_at=assigned_at,
+                    )
+                    exposure_created = True
                 await uow.commit()
-                return True
+                return assigned_variant, exposure_created
         except IntegrityError:
-            return False
+            return await self._recover_assignment_and_exposure(
+                user_id=user_id,
+                experiment_key=experiment_key,
+                assigned_at=assigned_at,
+            )
+
+    async def _recover_assignment_and_exposure(
+        self,
+        *,
+        user_id: int,
+        experiment_key: str,
+        assigned_at: datetime,
+    ) -> tuple[str, bool]:
+        async with self._uow_factory() as uow:
+            assignment = await uow.experiment_assignments.get(user_id, experiment_key)
+            if assignment is None:
+                raise RuntimeError(f"Experiment assignment missing after integrity failure for '{experiment_key}'")
+            exposure = await uow.experiment_exposures.get(user_id, experiment_key)
+            exposure_created = False
+            if exposure is None:
+                try:
+                    await uow.experiment_exposures.create(
+                        user_id=user_id,
+                        experiment_key=experiment_key,
+                        variant=assignment.variant,
+                        exposed_at=assigned_at,
+                    )
+                    exposure_created = True
+                except IntegrityError:
+                    exposure_created = False
+            await uow.commit()
+        return assignment.variant, exposure_created
 
     def _get_definition(self, experiment_key: str) -> ExperimentDefinition:
         try:

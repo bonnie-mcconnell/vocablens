@@ -92,9 +92,13 @@ class DecisionTraceService:
                 continue
             related_events.append(self._event_payload(event))
         related_events.sort(key=lambda item: (item["created_at"], item["id"]))
+        evaluation = self._session_evaluation_payload(
+            self._latest_trace(traces, trace_type="session_evaluation")
+        )
 
         return {
             "session": self._session_payload(session),
+            "evaluation": evaluation,
             "attempts": [self._attempt_payload(attempt) for attempt in attempts],
             "events": related_events,
             "traces": [self._trace_payload(trace) for trace in traces],
@@ -127,9 +131,17 @@ class DecisionTraceService:
             for trace in traces
             if str(trace.trace_type).startswith("onboarding_")
         ]
+        latest_transition = self._onboarding_transition_payload(
+            self._latest_trace(traces, trace_type="onboarding_transition")
+        )
+        paywall_entry = self._onboarding_paywall_payload(
+            self._latest_trace(traces, trace_type="onboarding_paywall_entry")
+        )
 
         return {
             "state": self._onboarding_state_payload(state),
+            "latest_transition": latest_transition,
+            "paywall_entry": paywall_entry,
             "events": related_events,
             "traces": onboarding_traces,
         }
@@ -263,6 +275,49 @@ class DecisionTraceService:
             "event_type": str(event.event_type),
             "payload": dict(getattr(event, "payload", {}) or {}),
             "created_at": event.created_at.isoformat(),
+        }
+
+    def _session_evaluation_payload(self, trace) -> dict[str, Any] | None:
+        if trace is None:
+            return None
+        outputs = dict(getattr(trace, "outputs", {}) or {})
+        return {
+            "trace_type": str(trace.trace_type),
+            "source": str(trace.source),
+            "is_correct": bool(outputs.get("is_correct", False)),
+            "improvement_score": float(outputs.get("improvement_score", 0.0)),
+            "highlighted_mistakes": list(outputs.get("highlighted_mistakes", [])),
+            "recommended_next_step": outputs.get("recommended_next_step"),
+            "reason": trace.reason,
+            "created_at": trace.created_at.isoformat(),
+        }
+
+    def _onboarding_transition_payload(self, trace) -> dict[str, Any] | None:
+        if trace is None:
+            return None
+        inputs = dict(getattr(trace, "inputs", {}) or {})
+        outputs = dict(getattr(trace, "outputs", {}) or {})
+        return {
+            "trace_type": str(trace.trace_type),
+            "source": str(trace.source),
+            "from_step": inputs.get("from_step"),
+            "to_step": outputs.get("to_step"),
+            "reason": trace.reason,
+            "created_at": trace.created_at.isoformat(),
+        }
+
+    def _onboarding_paywall_payload(self, trace) -> dict[str, Any] | None:
+        if trace is None:
+            return None
+        outputs = dict(getattr(trace, "outputs", {}) or {})
+        return {
+            "trace_type": str(trace.trace_type),
+            "source": str(trace.source),
+            "next_step": outputs.get("next_step"),
+            "paywall_strategy": outputs.get("paywall_strategy"),
+            "trial_recommended": bool(outputs.get("trial_recommended", False)),
+            "reason": trace.reason,
+            "created_at": trace.created_at.isoformat(),
         }
 
     def _onboarding_state_payload(self, state) -> dict[str, Any]:

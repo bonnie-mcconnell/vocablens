@@ -93,6 +93,19 @@ class ExperimentAssignmentRepository(Protocol):
     ) -> Any: ...
 
 
+class ExperimentExposureRepository(Protocol):
+    async def get(self, user_id: int, experiment_key: str) -> Optional[Any]: ...
+    async def list_all(self, experiment_key: str | None = None) -> List[Any]: ...
+    async def create(
+        self,
+        *,
+        user_id: int,
+        experiment_key: str,
+        variant: str,
+        exposed_at: datetime | None = None,
+    ) -> Any: ...
+
+
 class UserLearningStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> UserLearningState: ...
     async def update(

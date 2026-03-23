@@ -28,9 +28,30 @@ class FakeExperimentAssignmentsRepo:
         return SimpleNamespace(**self.assignments[(user_id, experiment_key)])
 
 
+class FakeExperimentExposuresRepo:
+    def __init__(self):
+        self.exposures = {}
+
+    async def get(self, user_id: int, experiment_key: str):
+        record = self.exposures.get((user_id, experiment_key))
+        if record is None:
+            return None
+        return SimpleNamespace(**record)
+
+    async def create(self, *, user_id: int, experiment_key: str, variant: str, exposed_at=None):
+        self.exposures[(user_id, experiment_key)] = {
+            "user_id": user_id,
+            "experiment_key": experiment_key,
+            "variant": variant,
+            "exposed_at": exposed_at,
+        }
+        return SimpleNamespace(**self.exposures[(user_id, experiment_key)])
+
+
 class FakeExperimentUOW:
-    def __init__(self, repo: FakeExperimentAssignmentsRepo):
+    def __init__(self, repo: FakeExperimentAssignmentsRepo, exposures: FakeExperimentExposuresRepo):
         self.experiment_assignments = repo
+        self.experiment_exposures = exposures
 
     async def __aenter__(self):
         return self
@@ -58,14 +79,15 @@ class FakeEventService:
 
 def _experiment_service(experiments: dict[str, dict[str, int]]):
     repo = FakeExperimentAssignmentsRepo()
+    exposures = FakeExperimentExposuresRepo()
     events = FakeEventService()
-    factory = lambda: FakeExperimentUOW(repo)
+    factory = lambda: FakeExperimentUOW(repo, exposures)
     service = ExperimentService(factory, events, experiments=experiments)
-    return service, repo, events
+    return service, repo, exposures, events
 
 
 def test_experiment_assignment_is_deterministic():
-    service, _, events = _experiment_service({"pricing_test": {"control": 50, "variant_a": 50}})
+    service, _, exposures, events = _experiment_service({"pricing_test": {"control": 50, "variant_a": 50}})
 
     first = run_async(service.assign(42, "pricing_test"))
     second = run_async(service.assign(42, "pricing_test"))
@@ -73,12 +95,13 @@ def test_experiment_assignment_is_deterministic():
 
     assert first == second
     assert stored == first
+    assert exposures.exposures[(42, "pricing_test")]["variant"] == first
     assert len(events.events) == 1
     assert events.events[0]["event_type"] == "experiment_exposure"
 
 
 def test_experiment_assignment_respects_weighted_distribution():
-    service, _, _ = _experiment_service({"pricing_test": {"control": 80, "variant_a": 20}})
+    service, _, _, _ = _experiment_service({"pricing_test": {"control": 80, "variant_a": 20}})
 
     counts = Counter(run_async(service.assign(user_id, "pricing_test")) for user_id in range(1, 10001))
 
@@ -90,17 +113,30 @@ def test_experiment_assignment_respects_weighted_distribution():
 
 
 def test_experiment_assignment_does_not_reassign_existing_users():
-    service, repo, events = _experiment_service({"pricing_test": {"control": 100}})
+    service, repo, exposures, events = _experiment_service({"pricing_test": {"control": 100}})
     run_async(repo.create(user_id=7, experiment_key="pricing_test", variant="variant_a"))
 
     variant = run_async(service.assign(7, "pricing_test"))
 
     assert variant == "variant_a"
-    assert len(events.events) == 0
+    assert exposures.exposures[(7, "pricing_test")]["variant"] == "variant_a"
+    assert len(events.events) == 1
+
+
+def test_experiment_assignment_backfills_missing_exposure_for_existing_assignment():
+    service, repo, exposures, events = _experiment_service({"pricing_test": {"control": 100}})
+    run_async(repo.create(user_id=9, experiment_key="pricing_test", variant="control"))
+
+    variant = run_async(service.assign(9, "pricing_test"))
+
+    assert variant == "control"
+    assert exposures.exposures[(9, "pricing_test")]["variant"] == "control"
+    assert len(events.events) == 1
 
 
 class FakeLearningUOW:
     def __init__(self):
+        self.learning_states = SimpleNamespace(get_or_create=self._get_or_create_learning_state)
         self.vocab = SimpleNamespace(
             list_due=self._list_due,
             list_all=self._list_all,
@@ -116,6 +152,7 @@ class FakeLearningUOW:
         )
         self.learning_events = SimpleNamespace(list_since=self._list_since)
         self.profiles = SimpleNamespace(get_or_create=self._get_or_create_profile)
+        self.decision_traces = SimpleNamespace(create=self._create_trace)
 
     async def __aenter__(self):
         return self
@@ -156,6 +193,12 @@ class FakeLearningUOW:
             retention_rate=0.8,
             content_preference="mixed",
         )
+
+    async def _get_or_create_learning_state(self, user_id: int):
+        return SimpleNamespace(skills={}, weak_areas=[])
+
+    async def _create_trace(self, **kwargs):
+        return SimpleNamespace(**kwargs)
 
 
 class FixedExperimentService:

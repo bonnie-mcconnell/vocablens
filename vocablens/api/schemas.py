@@ -269,8 +269,20 @@ class SessionEventDiagnosticsResponse(BaseModel):
     created_at: datetime
 
 
+class SessionEvaluationDiagnosticsResponse(BaseModel):
+    trace_type: str
+    source: str
+    is_correct: bool
+    improvement_score: float
+    highlighted_mistakes: list[str] = Field(default_factory=list)
+    recommended_next_step: str | None = None
+    reason: str | None = None
+    created_at: datetime
+
+
 class DecisionTraceDetailDataResponse(BaseModel):
     session: SessionDiagnosticsResponse
+    evaluation: SessionEvaluationDiagnosticsResponse | None = None
     attempts: list[SessionAttemptDiagnosticsResponse] = Field(default_factory=list)
     events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
     traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
@@ -298,8 +310,29 @@ class OnboardingDiagnosticsStateResponse(BaseModel):
     habit_lock_in: dict[str, Any] = Field(default_factory=dict)
 
 
+class OnboardingTransitionDiagnosticsResponse(BaseModel):
+    trace_type: str
+    source: str
+    from_step: str | None = None
+    to_step: str
+    reason: str | None = None
+    created_at: datetime
+
+
+class OnboardingPaywallEntryDiagnosticsResponse(BaseModel):
+    trace_type: str
+    source: str
+    next_step: str | None = None
+    paywall_strategy: str | None = None
+    trial_recommended: bool = False
+    reason: str | None = None
+    created_at: datetime
+
+
 class OnboardingDiagnosticsDataResponse(BaseModel):
     state: OnboardingDiagnosticsStateResponse
+    latest_transition: OnboardingTransitionDiagnosticsResponse | None = None
+    paywall_entry: OnboardingPaywallEntryDiagnosticsResponse | None = None
     events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
     traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
 

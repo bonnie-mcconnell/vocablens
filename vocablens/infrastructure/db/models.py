@@ -311,6 +311,20 @@ class ExperimentAssignmentORM(Base):
     assigned_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class ExperimentExposureORM(Base):
+    __tablename__ = "experiment_exposures"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "experiment_key", name="pk_experiment_exposures"),
+        Index("idx_experiment_exposures_variant", "experiment_key", "variant"),
+        Index("idx_experiment_exposures_exposed_at", "exposed_at"),
+    )
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    experiment_key = Column(String, nullable=False)
+    variant = Column(String, nullable=False)
+    exposed_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class UserLearningStateORM(Base):
     __tablename__ = "user_learning_states"
     __table_args__ = (

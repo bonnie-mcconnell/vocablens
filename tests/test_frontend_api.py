@@ -166,6 +166,16 @@ class FakeDecisionTraceService:
                 "last_evaluated_at": "2026-03-23T12:00:00",
                 "evaluation_count": 1,
             },
+            "evaluation": {
+                "trace_type": "session_evaluation",
+                "source": "session_engine",
+                "is_correct": False,
+                "improvement_score": 0.74,
+                "highlighted_mistakes": ["past_tense_irregular"],
+                "recommended_next_step": "retry_with_correction",
+                "reason": "Evaluated the stored structured session and completed canonical state projection.",
+                "created_at": "2026-03-23T12:00:00",
+            },
             "attempts": [
                 {
                     "id": 7,
@@ -214,6 +224,23 @@ class FakeDecisionTraceService:
                 "progress_illusion": {"xp_gain": 49, "relative_ranking_percentile": 79},
                 "paywall": {"show": True, "trial_recommended": True, "strategy": "high_intent:early:premium_anchor"},
                 "habit_lock_in": {},
+            },
+            "latest_transition": {
+                "trace_type": "onboarding_transition",
+                "source": "onboarding_flow_service",
+                "from_step": "progress_illusion",
+                "to_step": "soft_paywall",
+                "reason": "User completed the progress illusion step and qualified for the next onboarding step.",
+                "created_at": "2026-03-23T12:00:00",
+            },
+            "paywall_entry": {
+                "trace_type": "onboarding_paywall_entry",
+                "source": "onboarding_flow_service",
+                "next_step": "soft_paywall",
+                "paywall_strategy": "high_intent:early:premium_anchor",
+                "trial_recommended": True,
+                "reason": "Paywall shown after progress illusion because wow or engagement threshold qualified.",
+                "created_at": "2026-03-23T12:01:00",
             },
             "events": [
                 {
@@ -656,12 +683,16 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert detail.status_code == 200
     assert detail.json()["meta"]["source"] == "admin.decision_traces.detail"
     assert detail.json()["data"]["session"]["session_id"] == "sess_123"
+    assert detail.json()["data"]["evaluation"]["trace_type"] == "session_evaluation"
+    assert detail.json()["data"]["evaluation"]["recommended_next_step"] == "retry_with_correction"
     assert detail.json()["data"]["attempts"][0]["learner_response"] == "I goed there yesterday"
     assert detail.json()["data"]["events"][0]["event_type"] == "session_ended"
     assert detail.json()["data"]["traces"][0]["trace_type"] == "session_evaluation"
     assert onboarding.status_code == 200
     assert onboarding.json()["meta"]["source"] == "admin.onboarding.detail"
     assert onboarding.json()["data"]["state"]["current_step"] == "soft_paywall"
+    assert onboarding.json()["data"]["latest_transition"]["trace_type"] == "onboarding_transition"
+    assert onboarding.json()["data"]["paywall_entry"]["paywall_strategy"] == "high_intent:early:premium_anchor"
     assert onboarding.json()["data"]["events"][0]["event_type"] == "onboarding_state_updated"
     assert onboarding.json()["data"]["traces"][0]["trace_type"] == "onboarding_paywall_entry"
     assert lifecycle.status_code == 200
