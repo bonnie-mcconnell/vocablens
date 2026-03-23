@@ -372,3 +372,69 @@ class OnboardingNextAction:
     action: str
     target: Any
     reason: str
+
+
+@dataclass
+class OnboardingIdentityState:
+    motivation: str | None = None
+
+
+@dataclass
+class OnboardingPersonalizationState:
+    skill_level: str | None = None
+    daily_goal: int | None = None
+    learning_intent: str | None = None
+
+
+@dataclass
+class OnboardingProgressIllusionState:
+    xp_gain: int = 0
+    initial_streak: int = 0
+    relative_ranking_percentile: int = 0
+    reward: dict[str, Any] = field(default_factory=dict)
+    identity: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class OnboardingPaywallState:
+    show: bool = False
+    type: str | None = None
+    reason: str | None = None
+    usage_percent: int = 0
+    allow_access: bool = True
+    trial_recommended: bool = False
+    trial_days: int | None = None
+    wow_score: float = 0.0
+    strategy: str | None = None
+    trial_started: bool = False
+
+
+@dataclass
+class OnboardingScheduledNotificationState:
+    should_send: bool
+    send_at: str | None
+    channel: str | None
+    reason: str
+
+
+@dataclass
+class OnboardingHabitLockInState:
+    preferred_time_of_day: int | None = None
+    preferred_channel: str | None = None
+    frequency_limit: int | None = None
+    scheduled_notification: OnboardingScheduledNotificationState | None = None
+    ritual: dict[str, Any] = field(default_factory=dict)
+    pressure: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class OnboardingFlowState:
+    current_step: str
+    steps_completed: list[str] = field(default_factory=list)
+    identity: OnboardingIdentityState = field(default_factory=OnboardingIdentityState)
+    personalization: OnboardingPersonalizationState = field(default_factory=OnboardingPersonalizationState)
+    wow: OnboardingWowPayload = field(default_factory=lambda: OnboardingWowPayload(score=0.0, qualifies=False, triggered=False, understood_percent=0.0))
+    early_success_score: float = 0.0
+    progress_illusion: OnboardingProgressIllusionState = field(default_factory=OnboardingProgressIllusionState)
+    paywall: OnboardingPaywallState = field(default_factory=OnboardingPaywallState)
+    habit_lock_in: OnboardingHabitLockInState = field(default_factory=OnboardingHabitLockInState)

@@ -10,6 +10,16 @@ from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.onboarding_flow_presenter import OnboardingFlowPresenter
 from vocablens.services.onboarding_flow_state_store import OnboardingFlowStateStore
+from vocablens.services.report_models import (
+    OnboardingFlowState,
+    OnboardingHabitLockInState,
+    OnboardingIdentityState,
+    OnboardingPaywallState,
+    OnboardingPersonalizationState,
+    OnboardingProgressIllusionState,
+    OnboardingScheduledNotificationState,
+    OnboardingWowPayload,
+)
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.user_experience_contracts import OnboardingMessaging, OnboardingResponse
 from vocablens.services.wow_engine import WowEngine, WowScore
@@ -54,7 +64,8 @@ class OnboardingFlowService:
         return await self._build_response(user_id, state)
 
     async def current_state(self, user_id: int) -> dict | None:
-        return await self._state_store.load(user_id)
+        state = await self._state_store.load(user_id)
+        return asdict(state) if state is not None else None
 
     async def next(self, user_id: int, payload: dict | None = None) -> dict:
         payload = dict(payload or {})
@@ -68,24 +79,24 @@ class OnboardingFlowService:
             "soft_paywall": self._handle_soft_paywall,
             "habit_lock_in": self._handle_habit_lock_in,
         }
-        handler = step_handlers.get(state["current_step"])
+        handler = step_handlers.get(state.current_step)
         if handler:
             await handler(user_id, state, payload)
 
         await self._state_store.save(user_id, state, event_type="onboarding_state_updated")
-        if state["current_step"] == "completed":
+        if state.current_step == "completed":
             await self._state_store.save(user_id, state, event_type="onboarding_completed")
         return await self._build_response(user_id, state)
 
-    async def _handle_identity_selection(self, user_id: int, state: dict, payload: dict) -> None:
+    async def _handle_identity_selection(self, user_id: int, state: OnboardingFlowState, payload: dict) -> None:
         motivation = str(payload.get("motivation") or "").strip().lower()
         if not motivation:
             return
-        state["identity"] = {"motivation": motivation}
-        state["steps_completed"].append("identity_selection")
-        state["current_step"] = "personalization"
+        state.identity = OnboardingIdentityState(motivation=motivation)
+        state.steps_completed.append("identity_selection")
+        state.current_step = "personalization"
 
-    async def _handle_personalization(self, user_id: int, state: dict, payload: dict) -> None:
+    async def _handle_personalization(self, user_id: int, state: OnboardingFlowState, payload: dict) -> None:
         updates = {
             "skill_level": str(payload.get("skill_level") or "").strip().lower() or None,
             "daily_goal": int(payload.get("daily_goal") or 0) or None,
@@ -93,68 +104,71 @@ class OnboardingFlowService:
         }
         if not all(updates.values()):
             return
-        state["personalization"] = updates
+        state.personalization = OnboardingPersonalizationState(**updates)
         await self._persist_preferences(
             user_id=user_id,
             skill_level=updates["skill_level"],
             learning_intent=updates["learning_intent"],
         )
-        state["steps_completed"].append("personalization")
-        state["current_step"] = "instant_wow_moment"
+        state.steps_completed.append("personalization")
+        state.current_step = "instant_wow_moment"
 
-    async def _handle_instant_wow_moment(self, user_id: int, state: dict, payload: dict) -> None:
+    async def _handle_instant_wow_moment(self, user_id: int, state: OnboardingFlowState, payload: dict) -> None:
         session_snapshot = dict(payload.get("session_snapshot") or {})
         wow = await self._score_wow(user_id, session_snapshot)
         understood_percent = round(wow.current_accuracy * 100, 1)
-        state["wow"] = {
-            "score": wow.score,
-            "qualifies": wow.qualifies,
-            "understood_percent": understood_percent,
-            "triggers": wow.triggers,
-            "session_snapshot": session_snapshot,
-        }
-        state["early_success_score"] = max(understood_percent, round(wow.score * 100, 1))
+        state.wow = OnboardingWowPayload(
+            score=wow.score,
+            qualifies=wow.qualifies,
+            triggered=False,
+            understood_percent=understood_percent,
+            triggers=wow.triggers,
+            session_snapshot=session_snapshot,
+        )
+        state.early_success_score = max(understood_percent, round(wow.score * 100, 1))
         if wow.qualifies or understood_percent >= 70.0:
-            state["steps_completed"].append("instant_wow_moment")
-            state["current_step"] = "progress_illusion"
+            state.steps_completed.append("instant_wow_moment")
+            state.current_step = "progress_illusion"
 
-    async def _handle_progress_illusion(self, user_id: int, state: dict, payload: dict) -> None:
+    async def _handle_progress_illusion(self, user_id: int, state: OnboardingFlowState, payload: dict) -> None:
         addiction = await self._addiction.execute(user_id)
         lifecycle = await self._lifecycle.evaluate(user_id)
-        wow_score = float(state.get("wow", {}).get("score", 0.0) or 0.0)
+        wow_score = float(state.wow.score or 0.0)
         paywall = await self._paywall.evaluate(user_id, wow_score=wow_score)
-        state["progress_illusion"] = {
-            "xp_gain": 40 + int(addiction.reward.get("bonus_xp", 0) or 0),
-            "initial_streak": max(1, addiction.ritual.get("streak_anchor", 1) - 1),
-            "relative_ranking_percentile": self._ranking_percentile(
+        reward = self._as_payload(addiction.reward)
+        ritual = self._as_payload(addiction.ritual)
+        state.progress_illusion = OnboardingProgressIllusionState(
+            xp_gain=40 + int(reward.get("bonus_xp", 0) or 0),
+            initial_streak=max(1, int(ritual.get("streak_anchor", 1) or 1) - 1),
+            relative_ranking_percentile=self._ranking_percentile(
                 wow_score=wow_score,
                 lifecycle_stage=lifecycle.stage,
                 addiction=addiction,
             ),
-            "reward": addiction.reward,
-            "identity": addiction.identity,
-        }
-        state["steps_completed"].append("progress_illusion")
-        state["paywall"] = self._paywall_payload(paywall)
+            reward=reward,
+            identity=self._as_payload(addiction.identity),
+        )
+        state.steps_completed.append("progress_illusion")
+        state.paywall = self._paywall_payload(paywall)
         should_show_paywall = (
             paywall.show_paywall
             and paywall.allow_access
             and (wow_score >= 0.65 or self._engagement_threshold_met(state))
         )
-        state["current_step"] = "soft_paywall" if should_show_paywall else "habit_lock_in"
+        state.current_step = "soft_paywall" if should_show_paywall else "habit_lock_in"
 
-    async def _handle_soft_paywall(self, user_id: int, state: dict, payload: dict) -> None:
+    async def _handle_soft_paywall(self, user_id: int, state: OnboardingFlowState, payload: dict) -> None:
         accepted_trial = bool(payload.get("accept_trial"))
         skipped = bool(payload.get("skip_paywall"))
-        paywall = state.get("paywall", {})
-        if accepted_trial and paywall.get("trial_recommended"):
-            await self._paywall.start_trial(user_id, paywall.get("trial_days"))
-            paywall["trial_started"] = True
-        if accepted_trial or skipped or not paywall.get("show"):
-            state["steps_completed"].append("soft_paywall")
-            state["current_step"] = "habit_lock_in"
+        paywall = state.paywall
+        if accepted_trial and paywall.trial_recommended:
+            await self._paywall.start_trial(user_id, paywall.trial_days)
+            state.paywall = OnboardingPaywallState(**(asdict(paywall) | {"trial_started": True}))
+        if accepted_trial or skipped or not paywall.show:
+            state.steps_completed.append("soft_paywall")
+            state.current_step = "habit_lock_in"
 
-    async def _handle_habit_lock_in(self, user_id: int, state: dict, payload: dict) -> None:
+    async def _handle_habit_lock_in(self, user_id: int, state: OnboardingFlowState, payload: dict) -> None:
         preferred_time = payload.get("preferred_time_of_day")
         if preferred_time is None:
             return
@@ -169,28 +183,29 @@ class OnboardingFlowService:
         retention = await self._retention.assess_user(user_id)
         notification = await self._notifications.decide(user_id, retention)
         addiction = await self._addiction.execute(user_id)
-        state["habit_lock_in"] = {
-            "preferred_time_of_day": int(preferred_time),
-            "preferred_channel": preferred_channel,
-            "frequency_limit": frequency_limit,
-            "scheduled_notification": {
-                "should_send": notification.should_send,
-                "send_at": notification.send_at.isoformat(),
-                "channel": notification.channel,
-                "reason": notification.reason,
-            },
-            "ritual": addiction.ritual,
-            "pressure": addiction.pressure,
-        }
-        state["steps_completed"].append("habit_lock_in")
-        state["current_step"] = "completed"
+        state.habit_lock_in = OnboardingHabitLockInState(
+            preferred_time_of_day=int(preferred_time),
+            preferred_channel=preferred_channel,
+            frequency_limit=frequency_limit,
+            scheduled_notification=OnboardingScheduledNotificationState(
+                should_send=notification.should_send,
+                send_at=notification.send_at.isoformat(),
+                channel=notification.channel,
+                reason=notification.reason,
+            ),
+            ritual=self._as_payload(addiction.ritual),
+            pressure=self._as_payload(addiction.pressure),
+        )
+        state.steps_completed.append("habit_lock_in")
+        state.current_step = "completed"
 
-    async def _build_response(self, user_id: int, state: dict) -> dict:
+    async def _build_response(self, user_id: int, state: OnboardingFlowState) -> dict:
         lifecycle = await self._lifecycle.evaluate(user_id)
-        view = self._presenter.build(state=state, lifecycle_stage=lifecycle.stage)
+        serialized_state = asdict(state)
+        view = self._presenter.build(state=serialized_state, lifecycle_stage=lifecycle.stage)
         response = OnboardingResponse(
             current_step=view.current_step,
-            onboarding_state=view.onboarding_state,
+            onboarding_state=serialized_state,
             ui_directives=asdict(view.ui_directives) if is_dataclass(view.ui_directives) else view.ui_directives,
             messaging=OnboardingMessaging(**(asdict(view.messaging) if is_dataclass(view.messaging) else view.messaging)),
             next_action=asdict(view.next_action) if is_dataclass(view.next_action) else view.next_action,
@@ -241,8 +256,8 @@ class OnboardingFlowService:
             reply_length=int(session_snapshot.get("reply_length", 0) or 0),
         )
 
-    def _engagement_threshold_met(self, state: dict) -> bool:
-        snapshot = state.get("wow", {}).get("session_snapshot", {}) or {}
+    def _engagement_threshold_met(self, state: OnboardingFlowState) -> bool:
+        snapshot = state.wow.session_snapshot or {}
         return (
             int(snapshot.get("session_turn_count", 0) or 0) >= 4
             or int(snapshot.get("correction_feedback_count", 0) or 0) >= 2
@@ -252,20 +267,28 @@ class OnboardingFlowService:
     def _ranking_percentile(self, *, wow_score: float, lifecycle_stage: str, addiction) -> int:
         base = 52
         base += int(wow_score * 25)
-        base += int(addiction.reward.get("progress_increase", 0) or 0) * 3
+        reward = self._as_payload(addiction.reward)
+        base += int(reward.get("progress_increase", 0) or 0) * 3
         if lifecycle_stage in {"new_user", "activating"}:
             base += 6
         return max(51, min(99, base))
 
-    def _paywall_payload(self, paywall) -> dict:
-        return {
-            "show": bool(getattr(paywall, "show_paywall", False)),
-            "type": getattr(paywall, "paywall_type", None),
-            "reason": getattr(paywall, "reason", None),
-            "usage_percent": getattr(paywall, "usage_percent", 0),
-            "allow_access": getattr(paywall, "allow_access", True),
-            "trial_recommended": getattr(paywall, "trial_recommended", False),
-            "trial_days": getattr(paywall, "trial_days", None),
-            "wow_score": getattr(paywall, "wow_score", 0.0),
-            "strategy": getattr(paywall, "strategy", None),
-        }
+    def _paywall_payload(self, paywall) -> OnboardingPaywallState:
+        return OnboardingPaywallState(
+            show=bool(getattr(paywall, "show_paywall", False)),
+            type=getattr(paywall, "paywall_type", None),
+            reason=getattr(paywall, "reason", None),
+            usage_percent=getattr(paywall, "usage_percent", 0),
+            allow_access=getattr(paywall, "allow_access", True),
+            trial_recommended=getattr(paywall, "trial_recommended", False),
+            trial_days=getattr(paywall, "trial_days", None),
+            wow_score=getattr(paywall, "wow_score", 0.0),
+            strategy=getattr(paywall, "strategy", None),
+        )
+
+    def _as_payload(self, value) -> dict:
+        if is_dataclass(value):
+            return asdict(value)
+        if isinstance(value, dict):
+            return dict(value)
+        return {}
