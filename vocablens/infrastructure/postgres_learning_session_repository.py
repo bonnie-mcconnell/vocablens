@@ -91,6 +91,13 @@ class PostgresLearningSessionRepository:
         row = result.scalar_one_or_none()
         return _map_session(row) if row is not None else None
 
+    async def get_by_session_id(self, session_id: str) -> LearningSession | None:
+        result = await self.session.execute(
+            select(LearningSessionORM).where(LearningSessionORM.session_id == session_id)
+        )
+        row = result.scalar_one_or_none()
+        return _map_session(row) if row is not None else None
+
     async def mark_completed(self, *, user_id: int, session_id: str, completed_at) -> LearningSession:
         await self.session.execute(
             update(LearningSessionORM)
@@ -156,3 +163,11 @@ class PostgresLearningSessionRepository:
             .returning(LearningSessionAttemptORM)
         )
         return _map_attempt(result.scalar_one())
+
+    async def list_attempts(self, *, session_id: str) -> list[LearningSessionAttempt]:
+        result = await self.session.execute(
+            select(LearningSessionAttemptORM)
+            .where(LearningSessionAttemptORM.session_id == session_id)
+            .order_by(LearningSessionAttemptORM.created_at.asc(), LearningSessionAttemptORM.id.asc())
+        )
+        return [_map_attempt(row) for row in result.scalars().all()]

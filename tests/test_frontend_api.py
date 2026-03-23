@@ -146,6 +146,62 @@ class FakeDecisionTraceService:
             ]
         }
 
+    async def session_detail(self, reference_id: str):
+        return {
+            "session": {
+                "session_id": reference_id,
+                "user_id": 1,
+                "status": "completed",
+                "duration_seconds": 220,
+                "mode": "game_round",
+                "weak_area": "grammar",
+                "lesson_target": "past tense",
+                "goal_label": "Fix one grammar pattern cleanly",
+                "success_criteria": "Use the corrected form.",
+                "review_window_minutes": 15,
+                "session_payload": {"phases": [{"name": "warmup"}, {"name": "core_challenge"}]},
+                "created_at": "2026-03-23T11:58:00",
+                "expires_at": "2026-03-23T12:13:00",
+                "completed_at": "2026-03-23T12:00:00",
+                "last_evaluated_at": "2026-03-23T12:00:00",
+                "evaluation_count": 1,
+            },
+            "attempts": [
+                {
+                    "id": 7,
+                    "session_id": reference_id,
+                    "user_id": 1,
+                    "learner_response": "I goed there yesterday",
+                    "is_correct": False,
+                    "improvement_score": 0.74,
+                    "feedback_payload": {"corrected_response": "I went there yesterday."},
+                    "created_at": "2026-03-23T12:00:00",
+                }
+            ],
+            "events": [
+                {
+                    "id": 21,
+                    "event_type": "session_ended",
+                    "payload": {"session_id": reference_id, "improvement_score": 0.74},
+                    "created_at": "2026-03-23T12:00:00",
+                }
+            ],
+            "traces": [
+                {
+                    "id": 3,
+                    "user_id": 1,
+                    "trace_type": "session_evaluation",
+                    "source": "session_engine",
+                    "reference_id": reference_id,
+                    "policy_version": "v1",
+                    "inputs": {"learner_response": "I goed there yesterday"},
+                    "outputs": {"improvement_score": 0.74},
+                    "reason": "Evaluated the stored structured session and completed canonical state projection.",
+                    "created_at": "2026-03-23T12:00:00",
+                }
+            ],
+        }
+
 
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
@@ -193,6 +249,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/decision-traces?user_id=1&trace_type=session_evaluation&reference_id=sess_123&limit=25",
         headers={"X-Admin-Token": "secret"},
     )
+    detail = client.get(
+        "/admin/decision-traces/sess_123",
+        headers={"X-Admin-Token": "secret"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -211,6 +271,12 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert traces.json()["meta"]["source"] == "admin.decision_traces"
     assert traces.json()["meta"]["filters"]["trace_type"] == "session_evaluation"
     assert traces.json()["data"]["traces"][0]["reference_id"] == "sess_123"
+    assert detail.status_code == 200
+    assert detail.json()["meta"]["source"] == "admin.decision_traces.detail"
+    assert detail.json()["data"]["session"]["session_id"] == "sess_123"
+    assert detail.json()["data"]["attempts"][0]["learner_response"] == "I goed there yesterday"
+    assert detail.json()["data"]["events"][0]["event_type"] == "session_ended"
+    assert detail.json()["data"]["traces"][0]["trace_type"] == "session_evaluation"
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():

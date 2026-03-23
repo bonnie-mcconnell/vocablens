@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from fastapi import HTTPException
 
 from vocablens.api.dependencies import (
     get_admin_token,
@@ -8,6 +9,7 @@ from vocablens.api.dependencies import (
     get_subscription_service,
 )
 from vocablens.api.schemas import APIResponse
+from vocablens.domain.errors import NotFoundError
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.decision_trace_service import DecisionTraceService
 from vocablens.services.experiment_results_service import ExperimentResultsService
@@ -87,6 +89,24 @@ def create_admin_router() -> APIRouter:
                     "reference_id": reference_id,
                     "limit": limit,
                 },
+            },
+        )
+
+    @router.get("/decision-traces/{reference_id}", response_model=APIResponse)
+    async def decision_trace_detail(
+        reference_id: str,
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.session_detail(reference_id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return APIResponse(
+            data=detail,
+            meta={
+                "source": "admin.decision_traces.detail",
+                "reference_id": reference_id,
             },
         )
 
