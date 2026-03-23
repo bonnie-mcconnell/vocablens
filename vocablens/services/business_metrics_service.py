@@ -3,7 +3,17 @@ from __future__ import annotations
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.conversion_funnel_service import ConversionFunnelService
-from vocablens.services.report_models import RetentionCohort, RetentionReport
+from vocablens.services.report_models import (
+    BusinessFunnelSummary,
+    BusinessMetricsDashboard,
+    FunnelStageMetrics,
+    RetentionCohort,
+    RetentionCurvePoint,
+    RetentionReport,
+    RetentionVisualization,
+    RetentionVisualizationCurve,
+    RevenueMetrics,
+)
 
 
 TIER_MONTHLY_PRICES = {
@@ -24,7 +34,7 @@ class BusinessMetricsService:
         self._analytics = analytics_service
         self._funnel = conversion_funnel_service
 
-    async def dashboard(self) -> dict:
+    async def dashboard(self) -> BusinessMetricsDashboard:
         async with self._uow_factory() as uow:
             users = await uow.users.list_all()
             await uow.commit()
@@ -34,16 +44,19 @@ class BusinessMetricsService:
         funnel = await self._funnel.metrics()
         retention = await self._analytics.retention_report()
 
-        return {
-            "revenue": {
+        return BusinessMetricsDashboard(
+            revenue=RevenueMetrics(
+                pricing_assumptions=TIER_MONTHLY_PRICES,
                 **revenue,
-                "pricing_assumptions": TIER_MONTHLY_PRICES,
-            },
-            "funnel": {
-                "conversion_per_stage": funnel["stages"],
-            },
-            "retention_visualization": self._retention_visualization(retention),
-        }
+            ),
+            funnel=BusinessFunnelSummary(
+                conversion_per_stage=[
+                    row if isinstance(row, FunnelStageMetrics) else FunnelStageMetrics(**row)
+                    for row in (funnel.stages if hasattr(funnel, "stages") else funnel.get("stages", []))
+                ],
+            ),
+            retention_visualization=self._retention_visualization(retention),
+        )
 
     async def _subscriptions_by_user(self, users) -> list:
         rows = []
@@ -86,7 +99,7 @@ class BusinessMetricsService:
         churn_proxy = active_trials / max(1, len(subscriptions))
         return round(max(0.05, churn_proxy), 4)
 
-    def _retention_visualization(self, retention: RetentionReport | dict) -> dict:
+    def _retention_visualization(self, retention: RetentionReport | dict) -> RetentionVisualization:
         if isinstance(retention, RetentionReport):
             cohorts = retention.cohorts
             churn_rate = retention.churn_rate
@@ -94,26 +107,26 @@ class BusinessMetricsService:
             cohorts = retention.get("cohorts", [])
             churn_rate = retention.get("churn_rate", 0.0)
 
-        return {
-            "curves": [
-                {
-                    "cohort_date": row.cohort_date if isinstance(row, RetentionCohort) else row["cohort_date"],
-                    "points": [
-                        {
-                            "day": 1,
-                            "retention": row.retention_curve.d1 if isinstance(row, RetentionCohort) else row["retention_curve"]["d1"],
-                        },
-                        {
-                            "day": 7,
-                            "retention": row.retention_curve.d7 if isinstance(row, RetentionCohort) else row["retention_curve"]["d7"],
-                        },
-                        {
-                            "day": 30,
-                            "retention": row.retention_curve.d30 if isinstance(row, RetentionCohort) else row["retention_curve"]["d30"],
-                        },
+        return RetentionVisualization(
+            curves=[
+                RetentionVisualizationCurve(
+                    cohort_date=row.cohort_date if isinstance(row, RetentionCohort) else row["cohort_date"],
+                    points=[
+                        RetentionCurvePoint(
+                            day=1,
+                            retention=row.retention_curve.d1 if isinstance(row, RetentionCohort) else row["retention_curve"]["d1"],
+                        ),
+                        RetentionCurvePoint(
+                            day=7,
+                            retention=row.retention_curve.d7 if isinstance(row, RetentionCohort) else row["retention_curve"]["d7"],
+                        ),
+                        RetentionCurvePoint(
+                            day=30,
+                            retention=row.retention_curve.d30 if isinstance(row, RetentionCohort) else row["retention_curve"]["d30"],
+                        ),
                     ],
-                }
+                )
                 for row in cohorts
             ],
-            "churn_rate": churn_rate,
-        }
+            churn_rate=churn_rate,
+        )

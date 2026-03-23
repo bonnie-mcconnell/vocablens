@@ -10,6 +10,10 @@ from vocablens.services.adaptive_paywall_policy import AdaptivePaywallPolicy
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.paywall_service import PaywallDecision, PaywallService
+from vocablens.services.report_models import (
+    AdaptivePaywallConversionReport,
+    AdaptivePaywallStrategyMetrics,
+)
 
 
 @dataclass(frozen=True)
@@ -230,7 +234,7 @@ class AdaptivePaywallService(PaywallService):
             duration_days = (await self._variant_bundle(user_id))["trial_days"]
         await super().start_trial(user_id, duration_days)
 
-    async def conversion_metrics(self) -> dict:
+    async def conversion_metrics(self) -> AdaptivePaywallConversionReport:
         async with self._uow_factory() as uow:
             events = await uow.events.list_since(
                 utc_now() - timedelta(days=90),
@@ -265,19 +269,19 @@ class AdaptivePaywallService(PaywallService):
             strategy = self._payload(latest_view).get("strategy") or "default"
             strategy_stats[strategy]["upgrades"] += 1
 
-        strategies = []
+        strategies: list[AdaptivePaywallStrategyMetrics] = []
         for strategy, counts in sorted(strategy_stats.items()):
             views = counts["views"]
             upgrades = counts["upgrades"]
             strategies.append(
-                {
-                    "strategy": strategy,
-                    "views": views,
-                    "upgrades": upgrades,
-                    "conversion_rate": round((upgrades / max(1, views)) * 100, 1),
-                }
+                AdaptivePaywallStrategyMetrics(
+                    strategy=strategy,
+                    views=views,
+                    upgrades=upgrades,
+                    conversion_rate=round((upgrades / max(1, views)) * 100, 1),
+                )
             )
-        return {"strategies": strategies}
+        return AdaptivePaywallConversionReport(strategies=strategies)
 
     async def _variant_bundle(self, user_id: int) -> dict[str, object]:
         trigger_variant = await self._assign_variant(

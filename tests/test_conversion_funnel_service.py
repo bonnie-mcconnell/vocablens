@@ -138,10 +138,10 @@ def test_conversion_funnel_service_reports_stage_metrics():
 
     metrics = run_async(service.metrics())
 
-    awareness = next(row for row in metrics["stages"] if row["stage"] == "awareness")
-    conversion = next(row for row in metrics["stages"] if row["stage"] == "conversion")
+    awareness = next(row for row in metrics.stages if row.stage == "awareness")
+    conversion = next(row for row in metrics.stages if row.stage == "conversion")
 
-    assert awareness["users"] == 2
-    assert awareness["conversion_rate"] == 50.0
-    assert conversion["users"] == 1
-    assert metrics["retention_summary"]["cohorts"][0]["d1_retention"] == 60.0
+    assert awareness.users == 2
+    assert awareness.conversion_rate == 50.0
+    assert conversion.users == 1
+    assert metrics.retention_summary["cohorts"][0]["d1_retention"] == 60.0

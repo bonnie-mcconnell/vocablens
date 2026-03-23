@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 
 from vocablens.services.business_metrics_service import BusinessMetricsService
 from vocablens.services.conversion_funnel_service import ConversionFunnelService
@@ -171,6 +171,8 @@ class ContentEngine:
         if self._business is None:
             return []
         dashboard = await self._business.dashboard()
+        if is_dataclass(dashboard):
+            dashboard = asdict(dashboard)
         revenue = dashboard.get("revenue", {})
         stages = dashboard.get("funnel", {}).get("conversion_per_stage", [])
         retention_curves = dashboard.get("retention_visualization", {}).get("curves", [])

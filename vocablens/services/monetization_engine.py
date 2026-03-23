@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
@@ -55,6 +55,8 @@ class MonetizationEngine:
         lifecycle = await self._lifecycle.evaluate(user_id)
         onboarding_state = await self._onboarding_flow.current_state(user_id)
         business_metrics = await self._business_metrics.dashboard()
+        if is_dataclass(business_metrics):
+            business_metrics = asdict(business_metrics)
         learning_state, engagement_state, progress_state = await self._state_snapshot(user_id)
 
         onboarding_step = onboarding_state.get("current_step") if onboarding_state else None

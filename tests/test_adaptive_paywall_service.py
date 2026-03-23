@@ -235,15 +235,15 @@ def test_adaptive_paywall_service_reports_conversion_rate_per_strategy():
 
     report = run_async(service.conversion_metrics())
 
-    high_intent = next(row for row in report["strategies"] if row["strategy"] == "high_intent:early:value_anchor")
-    low_engagement = next(row for row in report["strategies"] if row["strategy"] == "low_engagement:late:standard")
+    high_intent = next(row for row in report.strategies if row.strategy == "high_intent:early:value_anchor")
+    low_engagement = next(row for row in report.strategies if row.strategy == "low_engagement:late:standard")
 
-    assert high_intent["views"] == 1
-    assert high_intent["upgrades"] == 1
-    assert high_intent["conversion_rate"] == 100.0
-    assert low_engagement["views"] == 1
-    assert low_engagement["upgrades"] == 0
-    assert low_engagement["conversion_rate"] == 0.0
+    assert high_intent.views == 1
+    assert high_intent.upgrades == 1
+    assert high_intent.conversion_rate == 100.0
+    assert low_engagement.views == 1
+    assert low_engagement.upgrades == 0
+    assert low_engagement.conversion_rate == 0.0
 
 
 def test_adaptive_paywall_service_uses_wow_score_for_trial_and_upsell_recommendations():

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
 
@@ -10,6 +10,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.paywall_service import PaywallService
+from vocablens.services.report_models import FunnelMetricsReport, FunnelStageMetrics
 
 FunnelStage = Literal[
     "awareness",
@@ -81,7 +82,7 @@ class ConversionFunnelService:
             experiment_variant=experiment_variant,
         )
 
-    async def metrics(self) -> dict:
+    async def metrics(self) -> FunnelMetricsReport:
         async with self._uow_factory() as uow:
             users = await uow.users.list_all()
             events = await uow.events.list_since(utc_now() - timedelta(days=90), limit=50000)
@@ -115,24 +116,22 @@ class ConversionFunnelService:
         retention_summary = None
         if self._analytics:
             retention_summary = await self._analytics.retention_report()
-            if is_dataclass(retention_summary):
-                retention_summary = asdict(retention_summary)
 
-        return {
-            "stages": [
-                {
-                    "stage": stage,
-                    "users": stage_counts[stage],
-                    "conversion_rate": round((stage_conversions[stage] / max(1, stage_counts[stage])) * 100, 1),
-                    "drop_off_rate": round(
+        return FunnelMetricsReport(
+            stages=[
+                FunnelStageMetrics(
+                    stage=stage,
+                    users=stage_counts[stage],
+                    conversion_rate=round((stage_conversions[stage] / max(1, stage_counts[stage])) * 100, 1),
+                    drop_off_rate=round(
                         100.0 - ((stage_progressions[stage] / max(1, stage_counts[stage])) * 100),
                         1,
                     ) if stage != FUNNEL_ORDER[-1] else 0.0,
-                }
+                )
                 for stage in FUNNEL_ORDER
             ],
-            "retention_summary": retention_summary,
-        }
+            retention_summary=retention_summary,
+        )
 
     def _completed_stages(self, events, subscription, paywall) -> list[FunnelStage]:
         completed: list[FunnelStage] = []

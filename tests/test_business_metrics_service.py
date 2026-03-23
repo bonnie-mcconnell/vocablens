@@ -81,10 +81,10 @@ def test_business_metrics_service_builds_revenue_funnel_and_retention_dashboard(
 
     dashboard = run_async(service.dashboard())
 
-    assert dashboard["revenue"]["mrr"] == 70.0
-    assert dashboard["revenue"]["arpu"] == 35.0
-    assert dashboard["revenue"]["arpu_all_users"] == 23.33
-    assert dashboard["revenue"]["ltv"] > 0
-    assert dashboard["funnel"]["conversion_per_stage"][0]["stage"] == "awareness"
-    assert dashboard["retention_visualization"]["curves"][0]["points"][1]["day"] == 7
-    assert dashboard["retention_visualization"]["curves"][0]["points"][1]["retention"] == 40.0
+    assert dashboard.revenue.mrr == 70.0
+    assert dashboard.revenue.arpu == 35.0
+    assert dashboard.revenue.arpu_all_users == 23.33
+    assert dashboard.revenue.ltv > 0
+    assert dashboard.funnel.conversion_per_stage[0].stage == "awareness"
+    assert dashboard.retention_visualization.curves[0].points[1].day == 7
+    assert dashboard.retention_visualization.curves[0].points[1].retention == 40.0

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -91,3 +92,70 @@ class ExperimentResult:
 @dataclass(frozen=True)
 class ExperimentResultsReport:
     experiments: list[ExperimentResult] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class AdaptivePaywallStrategyMetrics:
+    strategy: str
+    views: int
+    upgrades: int
+    conversion_rate: float
+
+
+@dataclass(frozen=True)
+class AdaptivePaywallConversionReport:
+    strategies: list[AdaptivePaywallStrategyMetrics] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class FunnelStageMetrics:
+    stage: str
+    users: int
+    conversion_rate: float
+    drop_off_rate: float
+
+
+@dataclass(frozen=True)
+class FunnelMetricsReport:
+    stages: list[FunnelStageMetrics] = field(default_factory=list)
+    retention_summary: RetentionReport | dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class RevenueMetrics:
+    mrr: float
+    arpu: float
+    arpu_all_users: float
+    ltv: float
+    paying_users: int
+    pricing_assumptions: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BusinessFunnelSummary:
+    conversion_per_stage: list[FunnelStageMetrics] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RetentionCurvePoint:
+    day: int
+    retention: float
+
+
+@dataclass(frozen=True)
+class RetentionVisualizationCurve:
+    cohort_date: str
+    points: list[RetentionCurvePoint] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RetentionVisualization:
+    curves: list[RetentionVisualizationCurve] = field(default_factory=list)
+    churn_rate: float = 0.0
+
+
+@dataclass(frozen=True)
+class BusinessMetricsDashboard:
+    revenue: RevenueMetrics
+    funnel: BusinessFunnelSummary
+    retention_visualization: RetentionVisualization
