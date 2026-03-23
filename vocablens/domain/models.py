@@ -67,3 +67,35 @@ class UserProgressState:
     level: int
     milestones: list[int]
     updated_at: datetime
+
+
+@dataclass(slots=True)
+class LearningSession:
+    session_id: str
+    user_id: int
+    status: str
+    duration_seconds: int
+    mode: str
+    weak_area: str
+    lesson_target: Optional[str]
+    goal_label: str
+    success_criteria: str
+    review_window_minutes: int
+    session_payload: dict
+    created_at: datetime
+    expires_at: datetime
+    completed_at: Optional[datetime]
+    last_evaluated_at: Optional[datetime]
+    evaluation_count: int
+
+
+@dataclass(slots=True)
+class LearningSessionAttempt:
+    id: int
+    session_id: str
+    user_id: int
+    learner_response: str
+    is_correct: bool
+    improvement_score: float
+    feedback_payload: dict
+    created_at: datetime

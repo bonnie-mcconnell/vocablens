@@ -373,3 +373,59 @@ class UserProgressStateORM(Base):
     level = Column(Integer, default=1, nullable=False)
     milestones = Column(JSON, nullable=False, default=list)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class LearningSessionORM(Base):
+    __tablename__ = "learning_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'completed', 'expired', 'cancelled')",
+            name="ck_learning_sessions_status_valid",
+        ),
+        CheckConstraint("evaluation_count >= 0", name="ck_learning_sessions_evaluation_count_nonnegative"),
+        CheckConstraint(
+            "review_window_minutes >= 1",
+            name="ck_learning_sessions_review_window_minutes_positive",
+        ),
+        Index("idx_learning_sessions_user_status", "user_id", "status"),
+        Index("idx_learning_sessions_user_created", "user_id", "created_at"),
+        Index("idx_learning_sessions_expires_at", "expires_at"),
+    )
+
+    session_id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String, default="active", nullable=False)
+    duration_seconds = Column(Integer, nullable=False)
+    mode = Column(String, nullable=False)
+    weak_area = Column(String, nullable=False)
+    lesson_target = Column(String)
+    goal_label = Column(String, nullable=False)
+    success_criteria = Column(Text, nullable=False)
+    review_window_minutes = Column(Integer, nullable=False)
+    session_payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime)
+    last_evaluated_at = Column(DateTime)
+    evaluation_count = Column(Integer, default=0, nullable=False)
+
+
+class LearningSessionAttemptORM(Base):
+    __tablename__ = "learning_session_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "improvement_score >= 0 AND improvement_score <= 1",
+            name="ck_learning_session_attempts_improvement_score_range",
+        ),
+        Index("idx_learning_session_attempts_session", "session_id", "created_at"),
+        Index("idx_learning_session_attempts_user", "user_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(String, ForeignKey("learning_sessions.session_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    learner_response = Column(Text, nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+    improvement_score = Column(Float, nullable=False)
+    feedback_payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)

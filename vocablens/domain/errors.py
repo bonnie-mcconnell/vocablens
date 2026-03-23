@@ -16,3 +16,7 @@ class PersistenceError(VocabLensError):
 
 class NotFoundError(Exception):
     pass
+
+
+class ConflictError(VocabLensError):
+    pass

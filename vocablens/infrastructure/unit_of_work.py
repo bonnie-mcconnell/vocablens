@@ -20,6 +20,7 @@ from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
 from vocablens.infrastructure.postgres_event_repository import PostgresEventRepository
+from vocablens.infrastructure.postgres_learning_session_repository import PostgresLearningSessionRepository
 from vocablens.infrastructure.postgres_user_learning_state_repository import PostgresUserLearningStateRepository
 from vocablens.infrastructure.postgres_user_engagement_state_repository import PostgresUserEngagementStateRepository
 from vocablens.infrastructure.postgres_user_progress_state_repository import PostgresUserProgressStateRepository
@@ -49,6 +50,7 @@ class UnitOfWork:
         self._profiles: Optional[PostgresUserProfileRepository] = None
         self._notification_deliveries: Optional[PostgresNotificationDeliveryRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
+        self._learning_sessions: Optional[PostgresLearningSessionRepository] = None
         self._learning_states: Optional[PostgresUserLearningStateRepository] = None
         self._engagement_states: Optional[PostgresUserEngagementStateRepository] = None
         self._progress_states: Optional[PostgresUserProgressStateRepository] = None
@@ -191,6 +193,14 @@ class UnitOfWork:
         if self._experiment_assignments is None:
             self._experiment_assignments = PostgresExperimentAssignmentRepository(self.session)
         return self._experiment_assignments
+
+    @property
+    def learning_sessions(self) -> PostgresLearningSessionRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._learning_sessions is None:
+            self._learning_sessions = PostgresLearningSessionRepository(self.session)
+        return self._learning_sessions
 
     @property
     def learning_states(self) -> PostgresUserLearningStateRepository:

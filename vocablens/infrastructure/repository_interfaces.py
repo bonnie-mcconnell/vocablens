@@ -1,7 +1,14 @@
 from typing import Protocol, List, Optional, Any, Dict
 from datetime import datetime
 
-from vocablens.domain.models import VocabularyItem, UserLearningState, UserEngagementState, UserProgressState
+from vocablens.domain.models import (
+    LearningSession,
+    LearningSessionAttempt,
+    UserEngagementState,
+    UserLearningState,
+    UserProgressState,
+    VocabularyItem,
+)
 from vocablens.domain.user import User
 
 
@@ -126,3 +133,39 @@ class UserProgressStateRepository(Protocol):
         level: int | None = None,
         milestones: List[int] | None = None,
     ) -> UserProgressState: ...
+
+
+class LearningSessionRepository(Protocol):
+    async def create(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        duration_seconds: int,
+        mode: str,
+        weak_area: str,
+        lesson_target: str | None,
+        goal_label: str,
+        success_criteria: str,
+        review_window_minutes: int,
+        session_payload: Dict[str, Any],
+        expires_at: datetime,
+    ) -> LearningSession: ...
+    async def get(self, *, user_id: int, session_id: str) -> Optional[LearningSession]: ...
+    async def mark_completed(
+        self,
+        *,
+        user_id: int,
+        session_id: str,
+        completed_at: datetime,
+    ) -> LearningSession: ...
+    async def record_attempt(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        learner_response: str,
+        is_correct: bool,
+        improvement_score: float,
+        feedback_payload: Dict[str, Any],
+    ) -> LearningSessionAttempt: ...
