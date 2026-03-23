@@ -70,6 +70,134 @@ class APIResponse(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
+class ConversionMetricsDataResponse(BaseModel):
+    conversion_metrics: dict[str, int] = Field(default_factory=dict)
+
+
+class ConversionMetricsMetaResponse(BaseModel):
+    source: Literal["admin.conversions"]
+
+
+class ConversionMetricsResponse(BaseModel):
+    data: ConversionMetricsDataResponse
+    meta: ConversionMetricsMetaResponse
+
+
+class RetentionCurveResponse(BaseModel):
+    d1: float = 0.0
+    d7: float = 0.0
+    d30: float = 0.0
+
+
+class RetentionCohortResponse(BaseModel):
+    cohort_date: str
+    size: int = 0
+    d1_retention: float = 0.0
+    d7_retention: float = 0.0
+    d30_retention: float = 0.0
+    retention_curve: RetentionCurveResponse = Field(default_factory=RetentionCurveResponse)
+
+
+class RetentionReportResponse(BaseModel):
+    cohorts: list[RetentionCohortResponse] = Field(default_factory=list)
+    churn_rate: float = 0.0
+
+
+class RetentionAnalyticsDataResponse(BaseModel):
+    retention: RetentionReportResponse
+
+
+class RetentionAnalyticsMetaResponse(BaseModel):
+    source: Literal["admin.analytics.retention"]
+
+
+class RetentionAnalyticsResponse(BaseModel):
+    data: RetentionAnalyticsDataResponse
+    meta: RetentionAnalyticsMetaResponse
+
+
+class UsageEngagementDistributionResponse(BaseModel):
+    low: int = 0
+    medium: int = 0
+    high: int = 0
+
+
+class UsageReportResponse(BaseModel):
+    dau: int = 0
+    mau: int = 0
+    dau_mau_ratio: float = 0.0
+    avg_session_length_seconds: float = 0.0
+    sessions_per_user: float = 0.0
+    engagement_distribution: UsageEngagementDistributionResponse = Field(
+        default_factory=UsageEngagementDistributionResponse
+    )
+
+
+class UsageAnalyticsDataResponse(BaseModel):
+    usage: UsageReportResponse
+
+
+class UsageAnalyticsMetaResponse(BaseModel):
+    source: Literal["admin.analytics.usage"]
+
+
+class UsageAnalyticsResponse(BaseModel):
+    data: UsageAnalyticsDataResponse
+    meta: UsageAnalyticsMetaResponse
+
+
+class ExperimentVariantEngagementResponse(BaseModel):
+    sessions_per_user: float = 0.0
+    messages_per_user: float = 0.0
+    learning_actions_per_user: float = 0.0
+
+
+class ExperimentVariantResultResponse(BaseModel):
+    experiment_key: str | None = None
+    variant: str
+    users: int = 0
+    retention_rate: float = 0.0
+    conversion_rate: float = 0.0
+    engagement: ExperimentVariantEngagementResponse = Field(default_factory=ExperimentVariantEngagementResponse)
+
+
+class ExperimentSignificanceResponse(BaseModel):
+    z_score: float = 0.0
+    is_significant: bool = False
+
+
+class ExperimentComparisonResponse(BaseModel):
+    baseline_variant: str
+    candidate_variant: str
+    retention_lift: float = 0.0
+    conversion_lift: float = 0.0
+    retention_significance: ExperimentSignificanceResponse = Field(default_factory=ExperimentSignificanceResponse)
+    conversion_significance: ExperimentSignificanceResponse = Field(default_factory=ExperimentSignificanceResponse)
+
+
+class ExperimentResultItemResponse(BaseModel):
+    experiment_key: str
+    variants: list[ExperimentVariantResultResponse] = Field(default_factory=list)
+    comparisons: list[ExperimentComparisonResponse] = Field(default_factory=list)
+
+
+class ExperimentResultsPayloadResponse(BaseModel):
+    experiments: list[ExperimentResultItemResponse] = Field(default_factory=list)
+
+
+class ExperimentResultsDataResponse(BaseModel):
+    experiment_results: ExperimentResultsPayloadResponse
+
+
+class ExperimentResultsMetaResponse(BaseModel):
+    source: Literal["admin.experiments.results"]
+
+
+class ExperimentResultsResponse(BaseModel):
+    data: ExperimentResultsDataResponse
+    meta: ExperimentResultsMetaResponse
+
+
 class DecisionTraceRecordResponse(BaseModel):
     id: int
     user_id: int
