@@ -15,6 +15,8 @@ from vocablens.api.schemas import (
     DecisionTraceDetailResponse,
     DecisionTraceListResponse,
     ExperimentResultsResponse,
+    LifecycleDiagnosticsResponse,
+    MonetizationDiagnosticsResponse,
     OnboardingDiagnosticsResponse,
     RetentionAnalyticsResponse,
     UsageAnalyticsResponse,
@@ -143,6 +145,44 @@ def create_admin_router() -> APIRouter:
             "meta": {
                 "source": "admin.onboarding.detail",
                 "user_id": user_id,
+            },
+        }
+
+    @router.get("/lifecycle/{user_id}", response_model=LifecycleDiagnosticsResponse)
+    async def lifecycle_detail(
+        user_id: int,
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.lifecycle_detail(user_id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.lifecycle.detail",
+                "user_id": user_id,
+            },
+        }
+
+    @router.get("/monetization/{user_id}", response_model=MonetizationDiagnosticsResponse)
+    async def monetization_detail(
+        user_id: int,
+        geography: str | None = Query(default=None, min_length=2, max_length=16),
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.monetization_detail(user_id, geography=geography)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.monetization.detail",
+                "user_id": user_id,
+                "geography": geography,
             },
         }
 

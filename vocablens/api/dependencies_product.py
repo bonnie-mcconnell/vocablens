@@ -93,10 +93,6 @@ def get_experiment_results_service(uow_factory=Depends(get_uow_factory)) -> Expe
     return ExperimentResultsService(uow_factory)
 
 
-def get_decision_trace_service(uow_factory=Depends(get_uow_factory)) -> DecisionTraceService:
-    return DecisionTraceService(uow_factory)
-
-
 async def get_experiment_service(
     uow_factory=Depends(get_uow_factory),
     learning_events=Depends(get_learning_event_service),
@@ -127,6 +123,13 @@ def get_business_metrics_service(
     conversion_funnel_service=Depends(get_conversion_funnel_service),
 ) -> BusinessMetricsService:
     return BusinessMetricsService(uow_factory, analytics_service, conversion_funnel_service)
+
+
+def get_decision_trace_service(
+    uow_factory=Depends(get_uow_factory),
+    business_metrics_service=Depends(get_business_metrics_service),
+) -> DecisionTraceService:
+    return DecisionTraceService(uow_factory, business_metrics_service)
 
 
 def get_subscription_service(

@@ -239,6 +239,300 @@ class FakeDecisionTraceService:
             ],
         }
 
+    async def lifecycle_detail(self, user_id: int):
+        return {
+            "onboarding_state": {
+                "current_step": "soft_paywall",
+                "steps_completed": ["identity_selection", "personalization", "instant_wow_moment", "progress_illusion"],
+                "identity": {"motivation": "travel"},
+                "personalization": {"skill_level": "beginner", "daily_goal": 10, "learning_intent": "conversation"},
+                "wow": {"score": 0.84, "qualifies": True, "triggered": True, "understood_percent": 81.0},
+                "early_success_score": 84.0,
+                "progress_illusion": {"xp_gain": 49, "relative_ranking_percentile": 79},
+                "paywall": {"show": True, "trial_recommended": True, "strategy": "high_intent:early:premium_anchor"},
+                "habit_lock_in": {},
+            },
+            "learning_state": {
+                "user_id": user_id,
+                "skills": {"grammar": 0.62, "fluency": 0.58},
+                "weak_areas": ["grammar"],
+                "mastery_percent": 41.0,
+                "accuracy_rate": 78.0,
+                "response_speed_seconds": 13.2,
+                "updated_at": "2026-03-23T12:05:00",
+            },
+            "engagement_state": {
+                "user_id": user_id,
+                "current_streak": 2,
+                "longest_streak": 2,
+                "momentum_score": 0.61,
+                "total_sessions": 3,
+                "sessions_last_3_days": 3,
+                "last_session_at": "2026-03-23T12:04:00",
+                "shields_used_this_week": 0,
+                "daily_mission_completed_at": None,
+                "interaction_stats": {"lessons_completed": 2},
+                "updated_at": "2026-03-23T12:05:00",
+            },
+            "profile": {
+                "user_id": user_id,
+                "learning_speed": 1.0,
+                "retention_rate": 0.82,
+                "difficulty_preference": "easy",
+                "content_preference": "conversation",
+                "last_active_at": "2026-03-23T12:04:00",
+                "session_frequency": 3.4,
+                "current_streak": 2,
+                "longest_streak": 2,
+                "drop_off_risk": 0.21,
+                "preferred_channel": "push",
+                "preferred_time_of_day": 18,
+                "frequency_limit": 2,
+                "updated_at": "2026-03-23T12:05:00",
+            },
+            "retention": {
+                "state": "active",
+                "drop_off_risk": 0.21,
+                "session_frequency": 3.4,
+                "current_streak": 2,
+                "longest_streak": 2,
+                "last_active_at": "2026-03-23T12:04:00",
+                "is_high_engagement": False,
+                "suggested_actions": [{"kind": "streak_nudge", "reason": "Current streak is 2 day(s); keep it going", "target": None}],
+            },
+            "lifecycle": {
+                "stage": "activating",
+                "reasons": ["user is building toward activation"],
+                "actions": [{"type": "wow_moment_push", "message": "Guide the user toward a clean success around grammar.", "target": None}],
+                "paywall": {"show": True, "type": "soft_paywall", "reason": "wow moment reached", "usage_percent": 34, "allow_access": True},
+            },
+            "adaptive_paywall": {
+                "show_paywall": True,
+                "paywall_type": "soft_paywall",
+                "reason": "wow moment reached",
+                "usage_percent": 34,
+                "request_usage_percent": 22,
+                "token_usage_percent": 34,
+                "usage_requests": 22,
+                "usage_tokens": 17000,
+                "request_limit": 100,
+                "token_limit": 50000,
+                "sessions_seen": 3,
+                "wow_moment_triggered": True,
+                "trial_active": False,
+                "trial_tier": None,
+                "trial_ends_at": None,
+                "allow_access": True,
+                "user_segment": "high_intent",
+                "strategy": "high_intent:early:premium_anchor",
+                "trigger_variant": "early",
+                "pricing_variant": "premium_anchor",
+                "trial_days": 5,
+                "wow_score": 0.84,
+                "trial_recommended": True,
+                "upsell_recommended": True,
+            },
+            "events": [
+                {
+                    "id": 41,
+                    "event_type": "paywall_viewed",
+                    "payload": {"strategy": "high_intent:early:premium_anchor"},
+                    "created_at": "2026-03-23T12:01:00",
+                }
+            ],
+            "traces": [
+                {
+                    "id": 8,
+                    "user_id": user_id,
+                    "trace_type": "onboarding_paywall_entry",
+                    "source": "onboarding_flow_service",
+                    "reference_id": f"onboarding:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {"wow_score": 0.84, "lifecycle_stage": "new_user"},
+                    "outputs": {"next_step": "soft_paywall", "trial_recommended": True},
+                    "reason": "Paywall shown after progress illusion because wow or engagement threshold qualified.",
+                    "created_at": "2026-03-23T12:01:00",
+                }
+            ],
+        }
+
+    async def monetization_detail(self, user_id: int, *, geography: str | None = None):
+        return {
+            "onboarding_state": {
+                "current_step": "soft_paywall",
+                "steps_completed": ["identity_selection", "personalization", "instant_wow_moment", "progress_illusion"],
+                "identity": {"motivation": "travel"},
+                "personalization": {"skill_level": "beginner", "daily_goal": 10, "learning_intent": "conversation"},
+                "wow": {"score": 0.84, "qualifies": True, "triggered": True, "understood_percent": 81.0},
+                "early_success_score": 84.0,
+                "progress_illusion": {"xp_gain": 49, "relative_ranking_percentile": 79},
+                "paywall": {"show": True, "trial_recommended": True, "strategy": "high_intent:early:premium_anchor"},
+                "habit_lock_in": {},
+            },
+            "learning_state": {
+                "user_id": user_id,
+                "skills": {"grammar": 0.62, "fluency": 0.58},
+                "weak_areas": ["grammar"],
+                "mastery_percent": 41.0,
+                "accuracy_rate": 78.0,
+                "response_speed_seconds": 13.2,
+                "updated_at": "2026-03-23T12:05:00",
+            },
+            "engagement_state": {
+                "user_id": user_id,
+                "current_streak": 2,
+                "longest_streak": 2,
+                "momentum_score": 0.61,
+                "total_sessions": 3,
+                "sessions_last_3_days": 3,
+                "last_session_at": "2026-03-23T12:04:00",
+                "shields_used_this_week": 0,
+                "daily_mission_completed_at": None,
+                "interaction_stats": {"lessons_completed": 2},
+                "updated_at": "2026-03-23T12:05:00",
+            },
+            "progress_state": {
+                "user_id": user_id,
+                "xp": 49,
+                "level": 2,
+                "milestones": [1],
+                "updated_at": "2026-03-23T12:05:00",
+            },
+            "profile": {
+                "user_id": user_id,
+                "learning_speed": 1.0,
+                "retention_rate": 0.82,
+                "difficulty_preference": "easy",
+                "content_preference": "conversation",
+                "last_active_at": "2026-03-23T12:04:00",
+                "session_frequency": 3.4,
+                "current_streak": 2,
+                "longest_streak": 2,
+                "drop_off_risk": 0.21,
+                "preferred_channel": "push",
+                "preferred_time_of_day": 18,
+                "frequency_limit": 2,
+                "updated_at": "2026-03-23T12:05:00",
+            },
+            "subscription": {
+                "user_id": user_id,
+                "tier": "free",
+                "request_limit": 100,
+                "token_limit": 50000,
+                "renewed_at": "2026-03-23T10:00:00",
+                "trial_started_at": None,
+                "trial_ends_at": None,
+                "trial_tier": None,
+                "created_at": "2026-03-20T10:00:00",
+            },
+            "experiments": {
+                "paywall_trigger_timing": "early",
+                "paywall_pricing_messaging": "premium_anchor",
+                "paywall_trial_length": "trial_5d",
+            },
+            "retention": {
+                "state": "active",
+                "drop_off_risk": 0.21,
+                "session_frequency": 3.4,
+                "current_streak": 2,
+                "longest_streak": 2,
+                "last_active_at": "2026-03-23T12:04:00",
+                "is_high_engagement": False,
+                "suggested_actions": [{"kind": "streak_nudge", "reason": "Current streak is 2 day(s); keep it going", "target": None}],
+            },
+            "lifecycle": {
+                "stage": "activating",
+                "reasons": ["user is building toward activation"],
+                "actions": [{"type": "wow_moment_push", "message": "Guide the user toward a clean success around grammar.", "target": None}],
+                "paywall": {"show": True, "type": "soft_paywall", "reason": "wow moment reached", "usage_percent": 34, "allow_access": True},
+            },
+            "adaptive_paywall": {
+                "show_paywall": True,
+                "paywall_type": "soft_paywall",
+                "reason": "wow moment reached",
+                "usage_percent": 34,
+                "request_usage_percent": 22,
+                "token_usage_percent": 34,
+                "usage_requests": 22,
+                "usage_tokens": 17000,
+                "request_limit": 100,
+                "token_limit": 50000,
+                "sessions_seen": 3,
+                "wow_moment_triggered": True,
+                "trial_active": False,
+                "trial_tier": None,
+                "trial_ends_at": None,
+                "allow_access": True,
+                "user_segment": "high_intent",
+                "strategy": "high_intent:early:premium_anchor",
+                "trigger_variant": "early",
+                "pricing_variant": "premium_anchor",
+                "trial_days": 5,
+                "wow_score": 0.84,
+                "trial_recommended": True,
+                "upsell_recommended": True,
+            },
+            "monetization": {
+                "show_paywall": True,
+                "paywall_type": "soft_paywall",
+                "offer_type": "trial",
+                "pricing": {
+                    "geography": geography or "global",
+                    "monthly_price": 20.0,
+                    "discounted_monthly_price": 18.0,
+                    "discount_percent": 10,
+                    "annual_price": 180.0,
+                    "annual_monthly_equivalent": 15.0,
+                    "annual_savings_percent": 25,
+                    "pricing_variant": "premium_anchor",
+                    "annual_anchor_message": "Monthly is 20.00; annual works out to 15.00 per month.",
+                    "business_context": {"ltv": 320.0, "mrr": 1800.0},
+                },
+                "trigger": {
+                    "show_now": True,
+                    "trigger_variant": "early",
+                    "trigger_reason": "wow moment reached",
+                    "lifecycle_stage": "activating",
+                    "onboarding_step": "soft_paywall",
+                    "timing_policy": "adaptive_paywall",
+                },
+                "value_display": {
+                    "show_locked_progress": True,
+                    "locked_progress_percent": 41,
+                    "locked_features": ["Unlimited tutor rounds", "Full adaptive review queue"],
+                    "highlight": "Keep the progress you have already built.",
+                    "usage_percent": 34,
+                },
+                "strategy": "high_intent:early:premium_anchor:trial:global",
+                "lifecycle_stage": "activating",
+                "onboarding_step": "soft_paywall",
+                "user_segment": "high_intent",
+                "trial_days": 5,
+            },
+            "events": [
+                {
+                    "id": 41,
+                    "event_type": "paywall_viewed",
+                    "payload": {"strategy": "high_intent:early:premium_anchor"},
+                    "created_at": "2026-03-23T12:01:00",
+                }
+            ],
+            "traces": [
+                {
+                    "id": 8,
+                    "user_id": user_id,
+                    "trace_type": "onboarding_paywall_entry",
+                    "source": "onboarding_flow_service",
+                    "reference_id": f"onboarding:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {"wow_score": 0.84, "lifecycle_stage": "new_user"},
+                    "outputs": {"next_step": "soft_paywall", "trial_recommended": True},
+                    "reason": "Paywall shown after progress illusion because wow or engagement threshold qualified.",
+                    "created_at": "2026-03-23T12:01:00",
+                }
+            ],
+        }
+
 
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
@@ -294,6 +588,14 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/onboarding/1",
         headers={"X-Admin-Token": "secret"},
     )
+    lifecycle = client.get(
+        "/admin/lifecycle/1",
+        headers={"X-Admin-Token": "secret"},
+    )
+    monetization = client.get(
+        "/admin/monetization/1?geography=us",
+        headers={"X-Admin-Token": "secret"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -323,6 +625,17 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert onboarding.json()["data"]["state"]["current_step"] == "soft_paywall"
     assert onboarding.json()["data"]["events"][0]["event_type"] == "onboarding_state_updated"
     assert onboarding.json()["data"]["traces"][0]["trace_type"] == "onboarding_paywall_entry"
+    assert lifecycle.status_code == 200
+    assert lifecycle.json()["meta"]["source"] == "admin.lifecycle.detail"
+    assert lifecycle.json()["data"]["lifecycle"]["stage"] == "activating"
+    assert lifecycle.json()["data"]["adaptive_paywall"]["strategy"] == "high_intent:early:premium_anchor"
+    assert lifecycle.json()["data"]["events"][0]["event_type"] == "paywall_viewed"
+    assert monetization.status_code == 200
+    assert monetization.json()["meta"]["source"] == "admin.monetization.detail"
+    assert monetization.json()["meta"]["geography"] == "us"
+    assert monetization.json()["data"]["monetization"]["offer_type"] == "trial"
+    assert monetization.json()["data"]["monetization"]["pricing"]["geography"] == "us"
+    assert monetization.json()["data"]["experiments"]["paywall_trigger_timing"] == "early"
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():

@@ -314,6 +314,230 @@ class OnboardingDiagnosticsResponse(BaseModel):
     meta: OnboardingDiagnosticsMetaResponse
 
 
+class UserLearningStateDiagnosticsResponse(BaseModel):
+    user_id: int
+    skills: dict[str, float] = Field(default_factory=dict)
+    weak_areas: list[str] = Field(default_factory=list)
+    mastery_percent: float = 0.0
+    accuracy_rate: float = 0.0
+    response_speed_seconds: float = 0.0
+    updated_at: datetime | None = None
+
+
+class UserEngagementStateDiagnosticsResponse(BaseModel):
+    user_id: int
+    current_streak: int = 0
+    longest_streak: int = 0
+    momentum_score: float = 0.0
+    total_sessions: int = 0
+    sessions_last_3_days: int = 0
+    last_session_at: datetime | None = None
+    shields_used_this_week: int = 0
+    daily_mission_completed_at: datetime | None = None
+    interaction_stats: dict[str, int] = Field(default_factory=dict)
+    updated_at: datetime | None = None
+
+
+class UserProgressStateDiagnosticsResponse(BaseModel):
+    user_id: int
+    xp: int = 0
+    level: int = 1
+    milestones: list[int] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
+class UserProfileDiagnosticsResponse(BaseModel):
+    user_id: int
+    learning_speed: float = 0.0
+    retention_rate: float = 0.0
+    difficulty_preference: str | None = None
+    content_preference: str | None = None
+    last_active_at: datetime | None = None
+    session_frequency: float = 0.0
+    current_streak: int = 0
+    longest_streak: int = 0
+    drop_off_risk: float = 0.0
+    preferred_channel: str | None = None
+    preferred_time_of_day: int = 0
+    frequency_limit: int = 0
+    updated_at: datetime | None = None
+
+
+class SubscriptionDiagnosticsResponse(BaseModel):
+    user_id: int
+    tier: str
+    request_limit: int = 0
+    token_limit: int = 0
+    renewed_at: datetime | None = None
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    trial_tier: str | None = None
+    created_at: datetime | None = None
+
+
+class RetentionSuggestedActionResponse(BaseModel):
+    kind: str
+    reason: str
+    target: str | None = None
+
+
+class RetentionDiagnosticsResponse(BaseModel):
+    state: str
+    drop_off_risk: float = 0.0
+    session_frequency: float = 0.0
+    current_streak: int = 0
+    longest_streak: int = 0
+    last_active_at: datetime | None = None
+    is_high_engagement: bool = False
+    suggested_actions: list[RetentionSuggestedActionResponse] = Field(default_factory=list)
+
+
+class LifecycleActionDiagnosticsResponse(BaseModel):
+    type: str
+    message: str
+    target: str | None = None
+
+
+class LifecyclePaywallDiagnosticsResponse(BaseModel):
+    show: bool
+    type: str | None = None
+    reason: str | None = None
+    usage_percent: int = 0
+    allow_access: bool = True
+
+
+class LifecycleDecisionDiagnosticsResponse(BaseModel):
+    stage: str
+    reasons: list[str] = Field(default_factory=list)
+    actions: list[LifecycleActionDiagnosticsResponse] = Field(default_factory=list)
+    paywall: LifecyclePaywallDiagnosticsResponse
+
+
+class AdaptivePaywallDiagnosticsResponse(BaseModel):
+    show_paywall: bool
+    paywall_type: str | None = None
+    reason: str | None = None
+    usage_percent: int = 0
+    request_usage_percent: int = 0
+    token_usage_percent: int = 0
+    usage_requests: int = 0
+    usage_tokens: int = 0
+    request_limit: int = 0
+    token_limit: int = 0
+    sessions_seen: int = 0
+    wow_moment_triggered: bool = False
+    trial_active: bool = False
+    trial_tier: str | None = None
+    trial_ends_at: datetime | None = None
+    allow_access: bool = True
+    user_segment: str
+    strategy: str
+    trigger_variant: str
+    pricing_variant: str
+    trial_days: int = 0
+    wow_score: float = 0.0
+    trial_recommended: bool = False
+    upsell_recommended: bool = False
+
+
+class MonetizationPricingBusinessContextResponse(BaseModel):
+    ltv: float = 0.0
+    mrr: float = 0.0
+
+
+class MonetizationPricingDiagnosticsResponse(BaseModel):
+    geography: str
+    monthly_price: float
+    discounted_monthly_price: float
+    discount_percent: int
+    annual_price: float
+    annual_monthly_equivalent: float
+    annual_savings_percent: int
+    pricing_variant: str
+    annual_anchor_message: str
+    business_context: MonetizationPricingBusinessContextResponse
+
+
+class MonetizationTriggerDiagnosticsResponse(BaseModel):
+    show_now: bool
+    trigger_variant: str
+    trigger_reason: str | None = None
+    lifecycle_stage: str
+    onboarding_step: str | None = None
+    timing_policy: str
+
+
+class MonetizationValueDisplayDiagnosticsResponse(BaseModel):
+    show_locked_progress: bool
+    locked_progress_percent: int = 0
+    locked_features: list[str] = Field(default_factory=list)
+    highlight: str = ""
+    usage_percent: int = 0
+
+
+class MonetizationDecisionDiagnosticsResponse(BaseModel):
+    show_paywall: bool
+    paywall_type: str | None = None
+    offer_type: str
+    pricing: MonetizationPricingDiagnosticsResponse
+    trigger: MonetizationTriggerDiagnosticsResponse
+    value_display: MonetizationValueDisplayDiagnosticsResponse
+    strategy: str
+    lifecycle_stage: str
+    onboarding_step: str | None = None
+    user_segment: str
+    trial_days: int | None = None
+
+
+class LifecycleDiagnosticsDataResponse(BaseModel):
+    onboarding_state: OnboardingDiagnosticsStateResponse | None = None
+    learning_state: UserLearningStateDiagnosticsResponse | None = None
+    engagement_state: UserEngagementStateDiagnosticsResponse | None = None
+    profile: UserProfileDiagnosticsResponse | None = None
+    retention: RetentionDiagnosticsResponse
+    lifecycle: LifecycleDecisionDiagnosticsResponse
+    adaptive_paywall: AdaptivePaywallDiagnosticsResponse
+    events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
+    traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class LifecycleDiagnosticsMetaResponse(BaseModel):
+    source: Literal["admin.lifecycle.detail"]
+    user_id: int
+
+
+class LifecycleDiagnosticsResponse(BaseModel):
+    data: LifecycleDiagnosticsDataResponse
+    meta: LifecycleDiagnosticsMetaResponse
+
+
+class MonetizationDiagnosticsDataResponse(BaseModel):
+    onboarding_state: OnboardingDiagnosticsStateResponse | None = None
+    learning_state: UserLearningStateDiagnosticsResponse | None = None
+    engagement_state: UserEngagementStateDiagnosticsResponse | None = None
+    progress_state: UserProgressStateDiagnosticsResponse | None = None
+    profile: UserProfileDiagnosticsResponse | None = None
+    subscription: SubscriptionDiagnosticsResponse | None = None
+    experiments: dict[str, str] = Field(default_factory=dict)
+    retention: RetentionDiagnosticsResponse
+    lifecycle: LifecycleDecisionDiagnosticsResponse
+    adaptive_paywall: AdaptivePaywallDiagnosticsResponse
+    monetization: MonetizationDecisionDiagnosticsResponse
+    events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
+    traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class MonetizationDiagnosticsMetaResponse(BaseModel):
+    source: Literal["admin.monetization.detail"]
+    user_id: int
+    geography: str | None = None
+
+
+class MonetizationDiagnosticsResponse(BaseModel):
+    data: MonetizationDiagnosticsDataResponse
+    meta: MonetizationDiagnosticsMetaResponse
+
+
 class OnboardingStartRequest(BaseModel):
     pass
 
