@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Literal
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
@@ -66,7 +66,7 @@ class LifecycleService:
         actions.extend(await self._onboarding_actions(user_id, stage))
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
 
-        return LifecyclePlan(
+        plan = LifecyclePlan(
             stage=stage,
             reasons=reasons,
             actions=actions,
@@ -79,6 +79,16 @@ class LifecycleService:
             ),
             notification=notification,
         )
+        await self._record_decision_trace(
+            user_id=user_id,
+            plan=plan,
+            retention=retention,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
+            paywall=paywall,
+            source="lifecycle_service.evaluate",
+        )
+        return plan
 
     async def _state_snapshot(self, user_id: int):
         async with self._uow_factory() as uow:
@@ -137,7 +147,7 @@ class LifecycleService:
         actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
-        return LifecyclePlan(
+        plan = LifecyclePlan(
             stage=stage,
             reasons=reasons,
             actions=actions,
@@ -150,6 +160,17 @@ class LifecycleService:
             ),
             notification=notification,
         )
+        await self._record_decision_trace(
+            user_id=user_id,
+            plan=plan,
+            retention=retention,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
+            paywall=paywall,
+            source="lifecycle_service.global_decision",
+            global_reason=decision.reason,
+        )
+        return plan
 
     async def _onboarding_actions(self, user_id: int, stage: LifecycleStage) -> list[LifecycleAction]:
         if not self._onboarding or stage not in {"new_user", "activating"}:
@@ -161,3 +182,61 @@ class LifecycleService:
             else LifecycleAction(type=step.type, message=step.message)
             for step in plan.guided_flow
         ]
+
+    async def _record_decision_trace(
+        self,
+        *,
+        user_id: int,
+        plan: LifecyclePlan,
+        retention: RetentionAssessment,
+        learning_state,
+        engagement_state,
+        paywall,
+        source: str,
+        global_reason: str | None = None,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="lifecycle_decision",
+                source=source,
+                reference_id=f"lifecycle:{user_id}",
+                policy_version="v1",
+                inputs={
+                    "retention": {
+                        "state": retention.state,
+                        "drop_off_risk": round(float(retention.drop_off_risk or 0.0), 3),
+                        "session_frequency": round(float(retention.session_frequency or 0.0), 3),
+                        "current_streak": int(retention.current_streak or 0),
+                        "is_high_engagement": bool(retention.is_high_engagement),
+                        "suggested_action_types": [action.kind for action in retention.suggested_actions],
+                    },
+                    "learning_state": {
+                        "weak_areas": list(getattr(learning_state, "weak_areas", []) or []),
+                        "mastery_percent": round(float(getattr(learning_state, "mastery_percent", 0.0) or 0.0), 2),
+                        "skills": dict(getattr(learning_state, "skills", {}) or {}),
+                    },
+                    "engagement_state": {
+                        "total_sessions": int(getattr(engagement_state, "total_sessions", 0) or 0),
+                        "momentum_score": round(float(getattr(engagement_state, "momentum_score", 0.0) or 0.0), 3),
+                        "sessions_last_3_days": int(getattr(engagement_state, "sessions_last_3_days", 0) or 0),
+                    },
+                    "paywall": {
+                        "show_paywall": bool(getattr(paywall, "show_paywall", False)),
+                        "paywall_type": getattr(paywall, "paywall_type", None),
+                        "reason": getattr(paywall, "reason", None),
+                        "usage_percent": int(getattr(paywall, "usage_percent", 0) or 0),
+                        "allow_access": bool(getattr(paywall, "allow_access", True)),
+                    },
+                    "global_reason": global_reason,
+                },
+                outputs={
+                    "stage": plan.stage,
+                    "reasons": list(plan.reasons),
+                    "action_types": [action.type for action in plan.actions],
+                    "paywall": asdict(plan.paywall),
+                    "notification": asdict(plan.notification),
+                },
+                reason=plan.reasons[0] if plan.reasons else global_reason,
+            )
+            await uow.commit()

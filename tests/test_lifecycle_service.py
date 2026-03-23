@@ -29,6 +29,7 @@ class FakeUOW:
     def __init__(self, learning_state, engagement_state):
         self.learning_states = FakeLearningStates(learning_state)
         self.engagement_states = FakeEngagementStates(engagement_state)
+        self.decision_traces = FakeDecisionTraces()
 
     async def __aenter__(self):
         return self
@@ -38,6 +39,15 @@ class FakeUOW:
 
     async def commit(self):
         return None
+
+
+class FakeDecisionTraces:
+    def __init__(self):
+        self.created = []
+
+    async def create(self, **kwargs):
+        self.created.append(kwargs)
+        return SimpleNamespace(**kwargs)
 
 
 class FakeProgressService:
@@ -132,14 +142,15 @@ def _service(
         mastery_percent=float(progress["metrics"]["vocabulary_mastery_percent"]),
     )
     engagement_state = SimpleNamespace(total_sessions=sessions)
+    uow = FakeUOW(learning_state, engagement_state)
     service = LifecycleService(
-        lambda: FakeUOW(learning_state, engagement_state),
+        lambda: uow,
         FakeRetentionEngine(assessment),
         FakeProgressService(progress),
         notifier,
         FakePaywallService(paywall),
     )
-    return service, notifier
+    return service, notifier, uow
 
 
 @pytest.mark.parametrize(
@@ -153,7 +164,7 @@ def _service(
     ],
 )
 def test_lifecycle_service_classifies_users_correctly(sessions, assessment, progress, expected_stage):
-    service, _ = _service(
+    service, _, _ = _service(
         sessions=sessions,
         assessment=assessment,
         progress=progress,
@@ -166,12 +177,12 @@ def test_lifecycle_service_classifies_users_correctly(sessions, assessment, prog
 
 
 def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
-    new_user_service, new_user_notifier = _service(
+    new_user_service, new_user_notifier, new_user_uow = _service(
         sessions=1,
         assessment=_assessment(),
         progress=_progress(accuracy=82.0, mastery=15.0, fluency=64.0),
     )
-    activating_service, activating_notifier = _service(
+    activating_service, activating_notifier, activating_uow = _service(
         sessions=3,
         assessment=_assessment(),
         progress=_progress(accuracy=63.0, mastery=25.0, fluency=57.0),
@@ -182,9 +193,12 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
 
     assert [action.type for action in new_user_plan.actions] == ["onboarding_nudge", "quick_start_path"]
     assert new_user_notifier.calls == [(1, "active")]
+    assert new_user_uow.decision_traces.created[0]["trace_type"] == "lifecycle_decision"
+    assert new_user_uow.decision_traces.created[0]["reference_id"] == "lifecycle:1"
     assert activating_plan.actions[0].type == "wow_moment_push"
     assert "mastery at 25.0%" in activating_plan.actions[1].message
     assert activating_notifier.calls == [(2, "active")]
+    assert activating_uow.decision_traces.created[0]["outputs"]["stage"] == "activating"
 
 
 def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
@@ -196,7 +210,7 @@ def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
             RetentionAction(kind="streak_nudge", reason="Keep the streak alive"),
         ],
     )
-    service, notifier = _service(
+    service, notifier, uow = _service(
         sessions=5,
         assessment=assessment,
         progress=_progress(accuracy=78.0, mastery=42.0, fluency=71.0),
@@ -213,6 +227,11 @@ def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
     assert plan.notification.should_send is True
     assert plan.notification.category == "retention:review_reminder"
     assert notifier.calls == [(7, "at-risk")]
+    assert uow.decision_traces.created[0]["inputs"]["retention"]["suggested_action_types"] == [
+        "review_reminder",
+        "quick_session",
+        "streak_nudge",
+    ]
 
 
 def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_notification():
@@ -223,7 +242,7 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
         usage_percent=82,
         allow_access=True,
     )
-    service, notifier = _service(
+    service, notifier, uow = _service(
         sessions=7,
         assessment=_assessment(is_high_engagement=True),
         progress=_progress(accuracy=91.0, mastery=68.0, fluency=84.0),
@@ -237,3 +256,5 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
     assert plan.paywall.usage_percent == 82
     assert plan.notification.should_send is False
     assert notifier.calls == []
+    assert uow.decision_traces.created[0]["outputs"]["paywall"]["type"] == "soft_paywall"
+    assert uow.decision_traces.created[0]["reason"] == "user shows strong engagement and progress"

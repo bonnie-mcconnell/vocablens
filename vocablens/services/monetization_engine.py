@@ -84,7 +84,7 @@ class MonetizationEngine:
             offer_type = "none"
 
         strategy = self._policy.strategy(paywall=paywall, offer_type=offer_type, geography=geography_code)
-        return MonetizationDecision(
+        decision = MonetizationDecision(
             show_paywall=show_paywall,
             paywall_type=paywall.paywall_type if show_paywall else None,
             offer_type=offer_type,
@@ -109,6 +109,19 @@ class MonetizationEngine:
             user_segment=paywall.user_segment,
             trial_days=paywall.trial_days if offer_type == "trial" else None,
         )
+        await self._record_decision_trace(
+            user_id=user_id,
+            geography=geography_code,
+            wow_score=wow_score,
+            paywall=paywall,
+            lifecycle=lifecycle,
+            onboarding_state=onboarding_state,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
+            progress_state=progress_state,
+            decision=decision,
+        )
+        return decision
 
     async def _state_snapshot(self, user_id: int):
         async with self._uow_factory() as uow:
@@ -117,3 +130,66 @@ class MonetizationEngine:
             progress_state = await uow.progress_states.get_or_create(user_id)
             await uow.commit()
         return learning_state, engagement_state, progress_state
+
+    async def _record_decision_trace(
+        self,
+        *,
+        user_id: int,
+        geography: str,
+        wow_score: float | None,
+        paywall,
+        lifecycle,
+        onboarding_state: dict | None,
+        learning_state,
+        engagement_state,
+        progress_state,
+        decision: MonetizationDecision,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="monetization_decision",
+                source="monetization_engine.evaluate",
+                reference_id=f"monetization:{user_id}",
+                policy_version="v1",
+                inputs={
+                    "geography": geography,
+                    "wow_score": None if wow_score is None else round(float(wow_score), 3),
+                    "paywall": {
+                        "show_paywall": bool(getattr(paywall, "show_paywall", False)),
+                        "paywall_type": getattr(paywall, "paywall_type", None),
+                        "reason": getattr(paywall, "reason", None),
+                        "usage_percent": int(getattr(paywall, "usage_percent", 0) or 0),
+                        "user_segment": getattr(paywall, "user_segment", None),
+                        "strategy": getattr(paywall, "strategy", None),
+                        "trigger_variant": getattr(paywall, "trigger_variant", None),
+                        "pricing_variant": getattr(paywall, "pricing_variant", None),
+                        "trial_days": getattr(paywall, "trial_days", None),
+                        "trial_recommended": bool(getattr(paywall, "trial_recommended", False)),
+                        "trial_active": bool(getattr(paywall, "trial_active", False)),
+                    },
+                    "lifecycle": {
+                        "stage": getattr(lifecycle, "stage", None),
+                        "reasons": list(getattr(lifecycle, "reasons", []) or []),
+                    },
+                    "onboarding_state": {
+                        "current_step": onboarding_state.get("current_step") if onboarding_state else None,
+                        "paywall": dict(onboarding_state.get("paywall", {}) or {}) if onboarding_state else {},
+                        "progress_illusion": dict(onboarding_state.get("progress_illusion", {}) or {}) if onboarding_state else {},
+                    },
+                    "learning_state": {
+                        "mastery_percent": round(float(getattr(learning_state, "mastery_percent", 0.0) or 0.0), 2),
+                        "weak_areas": list(getattr(learning_state, "weak_areas", []) or []),
+                    },
+                    "engagement_state": {
+                        "momentum_score": round(float(getattr(engagement_state, "momentum_score", 0.0) or 0.0), 3),
+                    },
+                    "progress_state": {
+                        "xp": int(getattr(progress_state, "xp", 0) or 0),
+                        "level": int(getattr(progress_state, "level", 1) or 1),
+                    },
+                },
+                outputs=decision.as_dict(),
+                reason=decision.trigger.trigger_reason or decision.strategy,
+            )
+            await uow.commit()
