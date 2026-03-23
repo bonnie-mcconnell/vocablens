@@ -5,6 +5,7 @@ from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
     get_current_user,
+    get_decision_trace_service,
     get_experiment_results_service,
     get_frontend_service,
     get_onboarding_flow_service,
@@ -119,6 +120,33 @@ class FakeOnboardingFlowService:
         }
 
 
+class FakeDecisionTraceService:
+    async def list_recent(
+        self,
+        *,
+        user_id: int | None = None,
+        trace_type: str | None = None,
+        reference_id: str | None = None,
+        limit: int = 100,
+    ):
+        return {
+            "traces": [
+                {
+                    "id": 1,
+                    "user_id": user_id or 1,
+                    "trace_type": trace_type or "session_evaluation",
+                    "source": "session_engine",
+                    "reference_id": reference_id or "sess_123",
+                    "policy_version": "v1",
+                    "inputs": {"lesson_target": "past tense"},
+                    "outputs": {"is_correct": False, "improvement_score": 0.74},
+                    "reason": "Evaluated the stored structured session and completed canonical state projection.",
+                    "created_at": "2026-03-23T12:00:00",
+                }
+            ]
+        }
+
+
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: make_user()
@@ -154,12 +182,17 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_subscription_service] = lambda: FakeSubscriptionService()
     app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
     app.dependency_overrides[get_experiment_results_service] = lambda: FakeExperimentResultsService()
+    app.dependency_overrides[get_decision_trace_service] = lambda: FakeDecisionTraceService()
     client = TestClient(app)
 
     response = client.get("/admin/reports/conversions", headers={"X-Admin-Token": "secret"})
     retention = client.get("/admin/analytics/retention", headers={"X-Admin-Token": "secret"})
     usage = client.get("/admin/analytics/usage", headers={"X-Admin-Token": "secret"})
     experiments = client.get("/admin/experiments/results?experiment_key=paywall_offer", headers={"X-Admin-Token": "secret"})
+    traces = client.get(
+        "/admin/decision-traces?user_id=1&trace_type=session_evaluation&reference_id=sess_123&limit=25",
+        headers={"X-Admin-Token": "secret"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -174,6 +207,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert experiments.status_code == 200
     assert experiments.json()["meta"]["source"] == "admin.experiments.results"
     assert experiments.json()["data"]["experiment_results"]["experiments"][0]["experiment_key"] == "paywall_offer"
+    assert traces.status_code == 200
+    assert traces.json()["meta"]["source"] == "admin.decision_traces"
+    assert traces.json()["meta"]["filters"]["trace_type"] == "session_evaluation"
+    assert traces.json()["data"]["traces"][0]["reference_id"] == "sess_123"
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():

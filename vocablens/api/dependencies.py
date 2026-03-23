@@ -43,6 +43,7 @@ from vocablens.api.dependencies_product import (
     get_business_metrics_service,
     get_conversion_funnel_service,
     get_daily_loop_service,
+    get_decision_trace_service,
     get_event_service,
     get_experiment_results_service,
     get_experiment_service,

@@ -13,6 +13,7 @@ from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.business_metrics_service import BusinessMetricsService
 from vocablens.services.conversion_funnel_service import ConversionFunnelService
 from vocablens.services.daily_loop_service import DailyLoopService
+from vocablens.services.decision_trace_service import DecisionTraceService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
@@ -90,6 +91,10 @@ def get_analytics_service(uow_factory=Depends(get_uow_factory)) -> AnalyticsServ
 
 def get_experiment_results_service(uow_factory=Depends(get_uow_factory)) -> ExperimentResultsService:
     return ExperimentResultsService(uow_factory)
+
+
+def get_decision_trace_service(uow_factory=Depends(get_uow_factory)) -> DecisionTraceService:
+    return DecisionTraceService(uow_factory)
 
 
 async def get_experiment_service(

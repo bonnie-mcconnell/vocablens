@@ -3,11 +3,13 @@ from fastapi import APIRouter, Depends, Query
 from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
+    get_decision_trace_service,
     get_experiment_results_service,
     get_subscription_service,
 )
 from vocablens.api.schemas import APIResponse
 from vocablens.services.analytics_service import AnalyticsService
+from vocablens.services.decision_trace_service import DecisionTraceService
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.subscription_service import SubscriptionService
 
@@ -58,6 +60,34 @@ def create_admin_router() -> APIRouter:
         return APIResponse(
             data={"experiment_results": results},
             meta={"source": "admin.experiments.results"},
+        )
+
+    @router.get("/decision-traces", response_model=APIResponse)
+    async def decision_traces(
+        user_id: int | None = Query(default=None, ge=1),
+        trace_type: str | None = Query(default=None, min_length=3, max_length=64),
+        reference_id: str | None = Query(default=None, min_length=3, max_length=128),
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        traces = await service.list_recent(
+            user_id=user_id,
+            trace_type=trace_type,
+            reference_id=reference_id,
+            limit=limit,
+        )
+        return APIResponse(
+            data=traces,
+            meta={
+                "source": "admin.decision_traces",
+                "filters": {
+                    "user_id": user_id,
+                    "trace_type": trace_type,
+                    "reference_id": reference_id,
+                    "limit": limit,
+                },
+            },
         )
 
     return router

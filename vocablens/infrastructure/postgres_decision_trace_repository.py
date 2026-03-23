@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vocablens.domain.models import DecisionTrace
@@ -53,3 +53,24 @@ class PostgresDecisionTraceRepository:
             .returning(DecisionTraceORM)
         )
         return _map_row(result.scalar_one())
+
+    async def list_recent(
+        self,
+        *,
+        user_id: int | None = None,
+        trace_type: str | None = None,
+        reference_id: str | None = None,
+        limit: int = 100,
+    ) -> list[DecisionTrace]:
+        query = select(DecisionTraceORM).order_by(
+            DecisionTraceORM.created_at.desc(),
+            DecisionTraceORM.id.desc(),
+        ).limit(limit)
+        if user_id is not None:
+            query = query.where(DecisionTraceORM.user_id == user_id)
+        if trace_type:
+            query = query.where(DecisionTraceORM.trace_type == trace_type)
+        if reference_id:
+            query = query.where(DecisionTraceORM.reference_id == reference_id)
+        result = await self.session.execute(query)
+        return [_map_row(row) for row in result.scalars().all()]
