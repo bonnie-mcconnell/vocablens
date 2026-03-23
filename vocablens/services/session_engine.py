@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Literal
+from uuid import uuid4
 
+from vocablens.core.time import utc_now
+from vocablens.domain.errors import ConflictError, NotFoundError
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.event_service import EventService
 from vocablens.services.gamification_service import GamificationService
 from vocablens.services.learning_engine import LearningEngine, ReviewedKnowledge, SessionResult
 from vocablens.services.wow_engine import WowEngine
@@ -76,11 +81,54 @@ class SessionEngine:
         learning_engine: LearningEngine,
         wow_engine: WowEngine,
         gamification_service: GamificationService | None = None,
+        event_service: EventService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning_engine = learning_engine
         self._wow_engine = wow_engine
         self._gamification = gamification_service
+        self._event_service = event_service
+
+    async def start_session(self, user_id: int) -> dict[str, Any]:
+        session = await self.build_session(user_id)
+        payload = self.to_payload(session)
+        session_id = uuid4().hex
+        created_at = utc_now()
+        expires_at = created_at + timedelta(minutes=max(5, session.review_window_minutes))
+
+        async with self._uow_factory() as uow:
+            await uow.learning_sessions.create(
+                session_id=session_id,
+                user_id=user_id,
+                duration_seconds=session.duration_seconds,
+                mode=session.mode,
+                weak_area=session.weak_area,
+                lesson_target=session.lesson_target,
+                goal_label=session.goal_label,
+                success_criteria=session.success_criteria,
+                review_window_minutes=session.review_window_minutes,
+                session_payload=payload,
+                expires_at=expires_at,
+            )
+            await uow.commit()
+
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id=user_id,
+                event_type="session_started",
+                payload={
+                    "source": "session_engine",
+                    "session_id": session_id,
+                    "weak_area": session.weak_area,
+                    "goal_label": session.goal_label,
+                },
+            )
+
+        response = dict(payload)
+        response["session_id"] = session_id
+        response["status"] = "active"
+        response["expires_at"] = expires_at.isoformat()
+        return response
 
     async def build_session(self, user_id: int) -> StructuredSession:
         recommendation = await self._learning_engine.get_next_lesson(user_id)
@@ -160,8 +208,63 @@ class SessionEngine:
             phases=phases,
         )
 
+    async def evaluate_session(self, user_id: int, session_id: str, learner_response: str) -> SessionFeedback:
+        now = utc_now()
+        async with self._uow_factory() as uow:
+            stored_session = await uow.learning_sessions.get(user_id=user_id, session_id=session_id)
+            if stored_session is None:
+                raise NotFoundError("Session not found")
+            if stored_session.status == "completed":
+                raise ConflictError("Session already completed")
+            if stored_session.expires_at <= now:
+                await uow.learning_sessions.mark_expired(
+                    user_id=user_id,
+                    session_id=session_id,
+                    expired_at=now,
+                )
+                await uow.commit()
+                raise ConflictError("Session expired")
+
+        session = self.from_payload(stored_session.session_payload)
+        feedback = await self.evaluate_response(user_id, session, learner_response)
+        feedback_payload = self.feedback_to_payload(feedback)
+
+        async with self._uow_factory() as uow:
+            await uow.learning_sessions.record_attempt(
+                session_id=session_id,
+                user_id=user_id,
+                learner_response=learner_response,
+                is_correct=feedback.is_correct,
+                improvement_score=feedback.improvement_score,
+                feedback_payload=feedback_payload,
+            )
+            await uow.learning_sessions.mark_completed(
+                user_id=user_id,
+                session_id=session_id,
+                completed_at=utc_now(),
+            )
+            await uow.commit()
+
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id=user_id,
+                event_type="session_ended",
+                payload={
+                    "source": "session_engine",
+                    "session_id": session_id,
+                    "weak_area": feedback.targeted_weak_area,
+                    "is_correct": feedback.is_correct,
+                    "improvement_score": feedback.improvement_score,
+                },
+            )
+
+        return feedback
+
     def to_payload(self, session: StructuredSession) -> dict[str, Any]:
         return asdict(session)
+
+    def feedback_to_payload(self, feedback: SessionFeedback) -> dict[str, Any]:
+        return asdict(feedback)
 
     def from_payload(self, payload: dict[str, Any]) -> StructuredSession:
         phases = [

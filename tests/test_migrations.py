@@ -36,6 +36,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "events" in tables
     assert "vocabulary" in tables
     assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
+    assert {"learning_sessions", "learning_session_attempts"} <= tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -168,6 +169,43 @@ def test_upgrade_downgrade_upgrade_round_trip():
     progress_state_fks = inspector.get_foreign_keys("user_progress_states")
     assert any(fk["referred_table"] == "users" for fk in progress_state_fks)
 
+    learning_session_columns = {col["name"] for col in inspector.get_columns("learning_sessions")}
+    assert {
+        "session_id",
+        "user_id",
+        "status",
+        "duration_seconds",
+        "mode",
+        "weak_area",
+        "session_payload",
+        "expires_at",
+        "evaluation_count",
+    } <= learning_session_columns
+    learning_session_indexes = {idx["name"] for idx in inspector.get_indexes("learning_sessions")}
+    assert "idx_learning_sessions_user_status" in learning_session_indexes
+    assert "idx_learning_sessions_user_created" in learning_session_indexes
+    assert "idx_learning_sessions_expires_at" in learning_session_indexes
+    learning_session_fks = inspector.get_foreign_keys("learning_sessions")
+    assert any(fk["referred_table"] == "users" for fk in learning_session_fks)
+
+    learning_attempt_columns = {col["name"] for col in inspector.get_columns("learning_session_attempts")}
+    assert {
+        "id",
+        "session_id",
+        "user_id",
+        "learner_response",
+        "is_correct",
+        "improvement_score",
+        "feedback_payload",
+        "created_at",
+    } <= learning_attempt_columns
+    learning_attempt_indexes = {idx["name"] for idx in inspector.get_indexes("learning_session_attempts")}
+    assert "idx_learning_session_attempts_session" in learning_attempt_indexes
+    assert "idx_learning_session_attempts_user" in learning_attempt_indexes
+    learning_attempt_fks = inspector.get_foreign_keys("learning_session_attempts")
+    assert any(fk["referred_table"] == "learning_sessions" for fk in learning_attempt_fks)
+    assert any(fk["referred_table"] == "users" for fk in learning_attempt_fks)
+
     command.downgrade(config, "20260317_0001")
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
@@ -182,6 +220,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "user_learning_states" not in tables
     assert "user_engagement_states" not in tables
     assert "user_progress_states" not in tables
+    assert "learning_sessions" not in tables
+    assert "learning_session_attempts" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -191,6 +231,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_assignments" in tables
     assert "events" in tables
     assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
+    assert {"learning_sessions", "learning_session_attempts"} <= tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

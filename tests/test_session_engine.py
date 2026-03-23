@@ -10,10 +10,21 @@ class FakeUOW:
         self.skill_tracking = SimpleNamespace(latest_scores=self._latest_scores)
         self.knowledge_graph = SimpleNamespace(get_weak_clusters=self._get_weak_clusters)
         self.mistake_patterns = SimpleNamespace(top_patterns=self._top_patterns)
+        self.learning_sessions = SimpleNamespace(
+            create=self._create_session,
+            get=self._get_session,
+            record_attempt=self._record_attempt,
+            mark_completed=self._mark_completed,
+            mark_expired=self._mark_expired,
+        )
         self._due_items = due_items or []
         self._skills = skills or {"grammar": 0.4, "vocabulary": 0.7, "fluency": 0.8}
         self._weak_clusters = weak_clusters or []
         self._mistakes = mistakes or []
+        self.created_sessions = {}
+        self.attempts = []
+        self.completed_sessions = []
+        self.expired_sessions = []
 
     async def __aenter__(self):
         return self
@@ -35,6 +46,37 @@ class FakeUOW:
 
     async def _top_patterns(self, user_id: int, limit: int = 3):
         return self._mistakes[:limit]
+
+    async def _create_session(self, **kwargs):
+        record = SimpleNamespace(**kwargs, status="active", completed_at=None, last_evaluated_at=None, evaluation_count=0)
+        self.created_sessions[kwargs["session_id"]] = record
+        return record
+
+    async def _get_session(self, *, user_id: int, session_id: str):
+        session = self.created_sessions.get(session_id)
+        if session is None or session.user_id != user_id:
+            return None
+        return session
+
+    async def _record_attempt(self, **kwargs):
+        self.attempts.append(kwargs)
+        return SimpleNamespace(id=len(self.attempts), created_at=None, **kwargs)
+
+    async def _mark_completed(self, *, user_id: int, session_id: str, completed_at):
+        session = self.created_sessions[session_id]
+        session.status = "completed"
+        session.completed_at = completed_at
+        session.last_evaluated_at = completed_at
+        session.evaluation_count += 1
+        self.completed_sessions.append(session_id)
+        return session
+
+    async def _mark_expired(self, *, user_id: int, session_id: str, expired_at):
+        session = self.created_sessions[session_id]
+        session.status = "expired"
+        session.last_evaluated_at = expired_at
+        self.expired_sessions.append(session_id)
+        return session
 
 
 class FakeLearningEngine:
@@ -165,3 +207,30 @@ def test_session_engine_feedback_loop_returns_correction_reinforcement_and_win()
     assert "next" in feedback.recommended_next_step.lower() or "repeat" in feedback.recommended_next_step.lower()
     assert feedback.xp_preview == 145
     assert len(learning_engine.update_calls) == 1
+
+
+def test_session_engine_persists_server_owned_session_and_evaluates_by_session_id():
+    due_item = SimpleNamespace(id=12, source_text="hola", translated_text="hello")
+    recommendation = SimpleNamespace(
+        action="practice_grammar",
+        target="grammar",
+        reason="Grammar skill below threshold",
+        skill_focus="grammar",
+    )
+    uow = FakeUOW(due_items=[due_item])
+    learning_engine = FakeLearningEngine(recommendation)
+    engine = SessionEngine(
+        _factory_for(uow),
+        learning_engine,
+        FakeWowEngine(),
+        FakeGamificationService(),
+    )
+
+    started = run_async(engine.start_session(1))
+    feedback = run_async(engine.evaluate_session(1, started["session_id"], "I goed there yesterday"))
+
+    assert started["status"] == "active"
+    assert started["session_id"] in uow.created_sessions
+    assert uow.attempts[0]["session_id"] == started["session_id"]
+    assert started["session_id"] in uow.completed_sessions
+    assert feedback.corrected_response == "I went there yesterday."

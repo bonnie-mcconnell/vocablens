@@ -92,5 +92,5 @@ class SessionStartRequest(BaseModel):
 
 
 class SessionEvaluateRequest(BaseModel):
-    session: dict[str, Any]
+    session_id: str = Field(..., min_length=8, max_length=128)
     learner_response: str = Field(..., min_length=1, max_length=500)

@@ -274,8 +274,15 @@ def get_session_engine(
     learning_engine=Depends(get_learning_engine),
     wow_engine=Depends(get_wow_engine),
     gamification_service=Depends(get_gamification_service),
+    event_service=Depends(get_event_service),
 ) -> SessionEngine:
-    return SessionEngine(uow_factory, learning_engine, wow_engine, gamification_service)
+    return SessionEngine(
+        uow_factory,
+        learning_engine,
+        wow_engine,
+        gamification_service,
+        event_service,
+    )
 
 
 def get_daily_loop_service(

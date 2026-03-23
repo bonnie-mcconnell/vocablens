@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from vocablens.api.dependencies import get_current_user, get_session_engine
 from vocablens.api.schemas import APIResponse, SessionEvaluateRequest, SessionStartRequest
+from vocablens.domain.errors import ConflictError, NotFoundError
 from vocablens.domain.user import User
 from vocablens.services.session_engine import SessionEngine
 
@@ -15,8 +16,7 @@ def create_session_router() -> APIRouter:
         user: User = Depends(get_current_user),
         service: SessionEngine = Depends(get_session_engine),
     ):
-        session = await service.build_session(user.id)
-        data = service.to_payload(session)
+        data = await service.start_session(user.id)
         return APIResponse(
             data=data,
             meta={
@@ -33,25 +33,14 @@ def create_session_router() -> APIRouter:
         user: User = Depends(get_current_user),
         service: SessionEngine = Depends(get_session_engine),
     ):
-        session = service.from_payload(request.session)
-        feedback = await service.evaluate_response(user.id, session, request.learner_response)
-        data = {
-            "structured": feedback.structured,
-            "targeted_weak_area": feedback.targeted_weak_area,
-            "is_correct": feedback.is_correct,
-            "improvement_score": feedback.improvement_score,
-            "corrected_response": feedback.corrected_response,
-            "highlighted_mistakes": feedback.highlighted_mistakes,
-            "reinforcement_prompt": feedback.reinforcement_prompt,
-            "variation_prompt": feedback.variation_prompt,
-            "win_message": feedback.win_message,
-            "wow_score": feedback.wow_score,
-            "xp_preview": feedback.xp_preview,
-            "badges_preview": feedback.badges_preview,
-            "progress_summary": feedback.progress_summary,
-            "recommended_next_step": feedback.recommended_next_step,
-            "review_window_minutes": feedback.review_window_minutes,
-        }
+        try:
+            feedback = await service.evaluate_session(user.id, request.session_id, request.learner_response)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+        data = service.feedback_to_payload(feedback)
         return APIResponse(
             data=data,
             meta={
