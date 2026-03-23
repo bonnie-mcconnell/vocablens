@@ -87,9 +87,16 @@ class DecisionTraceListDataResponse(BaseModel):
     traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
 
 
+class DecisionTraceListFiltersResponse(BaseModel):
+    user_id: int | None = None
+    trace_type: str | None = None
+    reference_id: str | None = None
+    limit: int
+
+
 class DecisionTraceListMetaResponse(BaseModel):
     source: Literal["admin.decision_traces"]
-    filters: dict[str, Any] = Field(default_factory=dict)
+    filters: DecisionTraceListFiltersResponse
 
 
 class DecisionTraceListResponse(BaseModel):
