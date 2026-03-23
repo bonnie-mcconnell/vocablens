@@ -70,6 +70,87 @@ class APIResponse(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
+class DecisionTraceRecordResponse(BaseModel):
+    id: int
+    user_id: int
+    trace_type: str
+    source: str
+    reference_id: str | None = None
+    policy_version: str
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+    created_at: datetime
+
+
+class DecisionTraceListDataResponse(BaseModel):
+    traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class DecisionTraceListMetaResponse(BaseModel):
+    source: Literal["admin.decision_traces"]
+    filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class DecisionTraceListResponse(BaseModel):
+    data: DecisionTraceListDataResponse
+    meta: DecisionTraceListMetaResponse
+
+
+class SessionDiagnosticsResponse(BaseModel):
+    session_id: str
+    user_id: int
+    status: str
+    duration_seconds: int
+    mode: str
+    weak_area: str
+    lesson_target: str | None = None
+    goal_label: str
+    success_criteria: str
+    review_window_minutes: int
+    session_payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    expires_at: datetime
+    completed_at: datetime | None = None
+    last_evaluated_at: datetime | None = None
+    evaluation_count: int
+
+
+class SessionAttemptDiagnosticsResponse(BaseModel):
+    id: int
+    session_id: str
+    user_id: int
+    learner_response: str
+    is_correct: bool
+    improvement_score: float
+    feedback_payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class SessionEventDiagnosticsResponse(BaseModel):
+    id: int
+    event_type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class DecisionTraceDetailDataResponse(BaseModel):
+    session: SessionDiagnosticsResponse
+    attempts: list[SessionAttemptDiagnosticsResponse] = Field(default_factory=list)
+    events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
+    traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class DecisionTraceDetailMetaResponse(BaseModel):
+    source: Literal["admin.decision_traces.detail"]
+    reference_id: str
+
+
+class DecisionTraceDetailResponse(BaseModel):
+    data: DecisionTraceDetailDataResponse
+    meta: DecisionTraceDetailMetaResponse
+
+
 class OnboardingStartRequest(BaseModel):
     pass
 

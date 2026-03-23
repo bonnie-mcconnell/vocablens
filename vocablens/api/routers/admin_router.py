@@ -9,6 +9,10 @@ from vocablens.api.dependencies import (
     get_subscription_service,
 )
 from vocablens.api.schemas import APIResponse
+from vocablens.api.schemas import (
+    DecisionTraceDetailResponse,
+    DecisionTraceListResponse,
+)
 from vocablens.domain.errors import NotFoundError
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.decision_trace_service import DecisionTraceService
@@ -64,7 +68,7 @@ def create_admin_router() -> APIRouter:
             meta={"source": "admin.experiments.results"},
         )
 
-    @router.get("/decision-traces", response_model=APIResponse)
+    @router.get("/decision-traces", response_model=DecisionTraceListResponse)
     async def decision_traces(
         user_id: int | None = Query(default=None, ge=1),
         trace_type: str | None = Query(default=None, min_length=3, max_length=64),
@@ -79,9 +83,9 @@ def create_admin_router() -> APIRouter:
             reference_id=reference_id,
             limit=limit,
         )
-        return APIResponse(
-            data=traces,
-            meta={
+        return {
+            "data": traces,
+            "meta": {
                 "source": "admin.decision_traces",
                 "filters": {
                     "user_id": user_id,
@@ -90,9 +94,9 @@ def create_admin_router() -> APIRouter:
                     "limit": limit,
                 },
             },
-        )
+        }
 
-    @router.get("/decision-traces/{reference_id}", response_model=APIResponse)
+    @router.get("/decision-traces/{reference_id}", response_model=DecisionTraceDetailResponse)
     async def decision_trace_detail(
         reference_id: str,
         _: str = Depends(get_admin_token),
@@ -102,12 +106,12 @@ def create_admin_router() -> APIRouter:
             detail = await service.session_detail(reference_id)
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-        return APIResponse(
-            data=detail,
-            meta={
+        return {
+            "data": detail,
+            "meta": {
                 "source": "admin.decision_traces.detail",
                 "reference_id": reference_id,
             },
-        )
+        }
 
     return router
