@@ -16,7 +16,7 @@ def test_onboarding_flow_presenter_builds_step_specific_view():
     view = presenter.build(state=state, lifecycle_stage="activating")
 
     assert view.current_step == "soft_paywall"
-    assert view.ui_directives["show_paywall"] is True
-    assert view.ui_directives["show_trial_offer"] is True
-    assert view.messaging["urgency_message"].startswith("Lifecycle stage:")
-    assert view.next_action["action"] == "offer_trial"
+    assert view.ui_directives.show_paywall is True
+    assert view.ui_directives.show_trial_offer is True
+    assert view.messaging.urgency_message.startswith("Lifecycle stage:")
+    assert view.next_action.action == "offer_trial"

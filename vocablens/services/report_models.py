@@ -314,3 +314,61 @@ class RitualHook:
     daily_ritual_hour: int
     daily_ritual_message: str
     streak_anchor: int
+
+
+@dataclass(frozen=True)
+class OnboardingGuidedStep:
+    type: str
+    message: str
+
+
+@dataclass(frozen=True)
+class OnboardingFirstWin:
+    ensure_success: bool
+    target_accuracy: float
+    message: str
+
+
+@dataclass(frozen=True)
+class OnboardingWowPayload:
+    score: float
+    qualifies: bool
+    triggered: bool
+    understood_percent: float | None = None
+    triggers: dict[str, bool] = field(default_factory=dict)
+    session_snapshot: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class OnboardingHabitHook:
+    show_streak_starting: bool
+    show_progress_jump: bool
+    engagement_action: str
+    message: str
+
+
+@dataclass(frozen=True)
+class OnboardingUiDirectives:
+    show_identity_picker: bool
+    show_personalization_form: bool
+    show_wow_meter: bool
+    show_progress_boost: bool
+    show_streak_animation: bool
+    show_relative_ranking: bool
+    show_paywall: bool
+    show_trial_offer: bool
+    show_notification_scheduler: bool
+
+
+@dataclass(frozen=True)
+class OnboardingFlowMessageSet:
+    encouragement_message: str
+    urgency_message: str
+    reward_message: str
+
+
+@dataclass(frozen=True)
+class OnboardingNextAction:
+    action: str
+    target: Any
+    reason: str

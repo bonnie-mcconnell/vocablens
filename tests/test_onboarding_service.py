@@ -160,9 +160,9 @@ def test_onboarding_service_progresses_from_start_to_guided_and_first_success():
     assert start_plan.goals_prompt is not None
     assert start_plan.recommended_difficulty == "easy"
     assert guided_plan.stage == "guided_learning"
-    assert guided_plan.guided_flow[0]["type"] == "goal_capture"
+    assert guided_plan.guided_flow[0].type == "goal_capture"
     assert success_plan.stage == "first_success"
-    assert success_plan.first_win["ensure_success"] is True
+    assert success_plan.first_win.ensure_success is True
 
 
 def test_onboarding_service_triggers_wow_moment_and_habit_hook():
@@ -216,9 +216,9 @@ def test_onboarding_service_triggers_wow_moment_and_habit_hook():
     )
 
     assert wow_plan.stage == "wow_moment"
-    assert wow_plan.wow["triggered"] is True
+    assert wow_plan.wow.triggered is True
     assert habit_plan.stage == "habit_hook"
-    assert habit_plan.habit_hook["show_streak_starting"] is True
+    assert habit_plan.habit_hook.show_streak_starting is True
     assert wow_engine.calls
 
 

@@ -6,6 +6,12 @@ from typing import Literal
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.progress_service import ProgressService
+from vocablens.services.report_models import (
+    OnboardingFirstWin,
+    OnboardingGuidedStep,
+    OnboardingHabitHook,
+    OnboardingWowPayload,
+)
 from vocablens.services.wow_engine import WowEngine, WowScore
 
 OnboardingStage = Literal[
@@ -23,10 +29,10 @@ class OnboardingPlan:
     goals_prompt: str | None
     recommended_difficulty: str
     primary_action: str
-    guided_flow: list[dict]
-    first_win: dict
-    wow: dict
-    habit_hook: dict
+    guided_flow: list[OnboardingGuidedStep]
+    first_win: OnboardingFirstWin
+    wow: OnboardingWowPayload
+    habit_hook: OnboardingHabitHook
 
 
 class OnboardingService:
@@ -72,11 +78,11 @@ class OnboardingService:
             primary_action=decision.primary_action,
             guided_flow=guided_flow,
             first_win=first_win,
-            wow={
-                "score": wow.score,
-                "qualifies": wow.qualifies,
-                "triggered": stage in {"wow_moment", "habit_hook"},
-            },
+            wow=OnboardingWowPayload(
+                score=wow.score,
+                qualifies=wow.qualifies,
+                triggered=stage in {"wow_moment", "habit_hook"},
+            ),
             habit_hook=habit_hook,
         )
 
@@ -137,37 +143,37 @@ class OnboardingService:
             return "medium"
         return base_difficulty
 
-    def _guided_flow(self, goals: list[str] | None, difficulty: str, primary_action: str) -> list[dict]:
+    def _guided_flow(self, goals: list[str] | None, difficulty: str, primary_action: str) -> list[OnboardingGuidedStep]:
         chosen_goal = goals[0] if goals else "conversation"
         return [
-            {
-                "type": "goal_capture",
-                "message": f"Start with a {chosen_goal}-oriented path.",
-            },
-            {
-                "type": "adaptive_difficulty",
-                "message": f"Set first session difficulty to {difficulty}.",
-            },
-            {
-                "type": "early_success_path",
-                "message": f"Open with a {primary_action} step designed to land an early correct answer.",
-            },
+            OnboardingGuidedStep(
+                type="goal_capture",
+                message=f"Start with a {chosen_goal}-oriented path.",
+            ),
+            OnboardingGuidedStep(
+                type="adaptive_difficulty",
+                message=f"Set first session difficulty to {difficulty}.",
+            ),
+            OnboardingGuidedStep(
+                type="early_success_path",
+                message=f"Open with a {primary_action} step designed to land an early correct answer.",
+            ),
         ]
 
-    def _first_win(self, progress: dict, primary_action: str) -> dict:
+    def _first_win(self, progress: dict, primary_action: str) -> OnboardingFirstWin:
         accuracy = float(progress.get("metrics", {}).get("accuracy_rate", 0.0) or 0.0)
-        return {
-            "ensure_success": True,
-            "target_accuracy": max(70.0, accuracy),
-            "message": f"Serve a guided {primary_action} step so the user gets something right quickly.",
-        }
+        return OnboardingFirstWin(
+            ensure_success=True,
+            target_accuracy=max(70.0, accuracy),
+            message=f"Serve a guided {primary_action} step so the user gets something right quickly.",
+        )
 
-    def _habit_hook(self, progress: dict, engagement_action: str, wow: WowScore) -> dict:
+    def _habit_hook(self, progress: dict, engagement_action: str, wow: WowScore) -> OnboardingHabitHook:
         daily = progress.get("daily", {})
         progress_jump = int(daily.get("words_learned", 0) or 0) + int(daily.get("reviews_completed", 0) or 0)
-        return {
-            "show_streak_starting": wow.qualifies,
-            "show_progress_jump": progress_jump > 0 or wow.qualifies,
-            "engagement_action": engagement_action,
-            "message": "Show the streak starting and make the first progress jump visible.",
-        }
+        return OnboardingHabitHook(
+            show_streak_starting=wow.qualifies,
+            show_progress_jump=progress_jump > 0 or wow.qualifies,
+            engagement_action=engagement_action,
+            message="Show the streak starting and make the first progress jump visible.",
+        )

@@ -156,8 +156,8 @@ class LifecycleService:
             return []
         plan = await self._onboarding.plan(user_id)
         return [
-            LifecycleAction(type="goal_capture", message=step["message"])
-            if step["type"] == "goal_capture"
-            else LifecycleAction(type=step["type"], message=step["message"])
+            LifecycleAction(type="goal_capture", message=step.message)
+            if step.type == "goal_capture"
+            else LifecycleAction(type=step.type, message=step.message)
             for step in plan.guided_flow
         ]

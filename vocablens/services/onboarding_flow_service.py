@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 from typing import Literal
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
@@ -190,9 +191,9 @@ class OnboardingFlowService:
         response = OnboardingResponse(
             current_step=view.current_step,
             onboarding_state=view.onboarding_state,
-            ui_directives=view.ui_directives,
-            messaging=OnboardingMessaging(**view.messaging),
-            next_action=view.next_action,
+            ui_directives=asdict(view.ui_directives) if is_dataclass(view.ui_directives) else view.ui_directives,
+            messaging=OnboardingMessaging(**(asdict(view.messaging) if is_dataclass(view.messaging) else view.messaging)),
+            next_action=asdict(view.next_action) if is_dataclass(view.next_action) else view.next_action,
         )
         return response.model_dump(mode="json")
 
