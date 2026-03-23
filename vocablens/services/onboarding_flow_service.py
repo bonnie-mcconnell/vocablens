@@ -61,6 +61,14 @@ class OnboardingFlowService:
         if state is None:
             state = self._state_store.default_state()
             await self._state_store.save(user_id, state, event_type="onboarding_started")
+            await self._record_transition_trace(
+                user_id=user_id,
+                from_step=None,
+                to_step=state.current_step,
+                reason="Initialized a fresh onboarding flow.",
+                inputs={"source": "start"},
+                outputs={"steps_completed": list(state.steps_completed)},
+            )
         return await self._build_response(user_id, state)
 
     async def current_state(self, user_id: int) -> dict | None:
@@ -70,6 +78,7 @@ class OnboardingFlowService:
     async def next(self, user_id: int, payload: dict | None = None) -> dict:
         payload = dict(payload or {})
         state = await self._state_store.load(user_id) or self._state_store.default_state()
+        previous_step = state.current_step
 
         step_handlers = {
             "identity_selection": self._handle_identity_selection,
@@ -84,6 +93,15 @@ class OnboardingFlowService:
             await handler(user_id, state, payload)
 
         await self._state_store.save(user_id, state, event_type="onboarding_state_updated")
+        if state.current_step != previous_step:
+            await self._record_transition_trace(
+                user_id=user_id,
+                from_step=previous_step,
+                to_step=state.current_step,
+                reason=self._transition_reason(previous_step, state),
+                inputs=self._transition_inputs(previous_step, payload),
+                outputs={"steps_completed": list(state.steps_completed)},
+            )
         if state.current_step == "completed":
             await self._state_store.save(user_id, state, event_type="onboarding_completed")
         return await self._build_response(user_id, state)
@@ -155,6 +173,13 @@ class OnboardingFlowService:
             and paywall.allow_access
             and (wow_score >= 0.65 or self._engagement_threshold_met(state))
         )
+        if should_show_paywall:
+            await self._record_paywall_trace(
+                user_id=user_id,
+                state=state,
+                lifecycle_stage=lifecycle.stage,
+                reason="Paywall shown after progress illusion because wow or engagement threshold qualified.",
+            )
         state.current_step = "soft_paywall" if should_show_paywall else "habit_lock_in"
 
     async def _handle_soft_paywall(self, user_id: int, state: OnboardingFlowState, payload: dict) -> None:
@@ -292,3 +317,102 @@ class OnboardingFlowService:
         if isinstance(value, dict):
             return dict(value)
         return {}
+
+    async def _record_transition_trace(
+        self,
+        *,
+        user_id: int,
+        from_step: str | None,
+        to_step: str,
+        reason: str,
+        inputs: dict,
+        outputs: dict,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="onboarding_transition",
+                source="onboarding_flow_service",
+                reference_id=f"onboarding:{user_id}",
+                policy_version="v1",
+                inputs={
+                    "from_step": from_step,
+                    **inputs,
+                },
+                outputs={
+                    "to_step": to_step,
+                    **outputs,
+                },
+                reason=reason,
+            )
+            await uow.commit()
+
+    async def _record_paywall_trace(
+        self,
+        *,
+        user_id: int,
+        state: OnboardingFlowState,
+        lifecycle_stage: str,
+        reason: str,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="onboarding_paywall_entry",
+                source="onboarding_flow_service",
+                reference_id=f"onboarding:{user_id}",
+                policy_version="v1",
+                inputs={
+                    "current_step": state.current_step,
+                    "wow_score": state.wow.score,
+                    "understood_percent": state.wow.understood_percent,
+                    "lifecycle_stage": lifecycle_stage,
+                    "paywall": asdict(state.paywall),
+                },
+                outputs={
+                    "next_step": "soft_paywall",
+                    "paywall_strategy": state.paywall.strategy,
+                    "trial_recommended": state.paywall.trial_recommended,
+                },
+                reason=reason,
+            )
+            await uow.commit()
+
+    def _transition_reason(self, previous_step: str, state: OnboardingFlowState) -> str:
+        if previous_step == "identity_selection":
+            return "User selected an onboarding motivation."
+        if previous_step == "personalization":
+            return "User completed onboarding preferences."
+        if previous_step == "instant_wow_moment":
+            return "Wow or comprehension threshold qualified the user for progression."
+        if previous_step == "progress_illusion":
+            return "Progress illusion finished and next step was chosen from paywall eligibility."
+        if previous_step == "soft_paywall":
+            return "User cleared the paywall step by accepting, skipping, or bypassing it."
+        if previous_step == "habit_lock_in":
+            return "User locked in reminder preferences and completed onboarding."
+        return "Onboarding step advanced."
+
+    def _transition_inputs(self, previous_step: str, payload: dict) -> dict:
+        if previous_step == "identity_selection":
+            return {"motivation": payload.get("motivation")}
+        if previous_step == "personalization":
+            return {
+                "skill_level": payload.get("skill_level"),
+                "daily_goal": payload.get("daily_goal"),
+                "learning_intent": payload.get("learning_intent"),
+            }
+        if previous_step == "instant_wow_moment":
+            return {"session_snapshot": dict(payload.get("session_snapshot") or {})}
+        if previous_step == "soft_paywall":
+            return {
+                "accept_trial": bool(payload.get("accept_trial")),
+                "skip_paywall": bool(payload.get("skip_paywall")),
+            }
+        if previous_step == "habit_lock_in":
+            return {
+                "preferred_time_of_day": payload.get("preferred_time_of_day"),
+                "preferred_channel": payload.get("preferred_channel"),
+                "frequency_limit": payload.get("frequency_limit"),
+            }
+        return dict(payload)

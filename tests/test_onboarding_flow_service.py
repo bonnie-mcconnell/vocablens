@@ -62,11 +62,27 @@ class FakeOnboardingStatesRepo:
         return state
 
 
+class FakeDecisionTracesRepo:
+    def __init__(self):
+        self.rows = []
+
+    async def create(self, **kwargs):
+        self.rows.append(kwargs)
+        return SimpleNamespace(**kwargs)
+
+
 class FakeUOW:
-    def __init__(self, events_repo: FakeEventsRepo, profiles_repo: FakeProfilesRepo, onboarding_states_repo: FakeOnboardingStatesRepo):
+    def __init__(
+        self,
+        events_repo: FakeEventsRepo,
+        profiles_repo: FakeProfilesRepo,
+        onboarding_states_repo: FakeOnboardingStatesRepo,
+        decision_traces_repo: FakeDecisionTracesRepo,
+    ):
         self.events = events_repo
         self.profiles = profiles_repo
         self.onboarding_states = onboarding_states_repo
+        self.decision_traces = decision_traces_repo
 
     async def __aenter__(self):
         return self
@@ -172,6 +188,7 @@ def _service(*, wow_score=0.82, qualifies=True, paywall=None):
     events_repo = FakeEventsRepo()
     profiles_repo = FakeProfilesRepo()
     onboarding_states_repo = FakeOnboardingStatesRepo()
+    decision_traces_repo = FakeDecisionTracesRepo()
     paywall = paywall or SimpleNamespace(
         show_paywall=True,
         paywall_type="soft_paywall",
@@ -184,7 +201,7 @@ def _service(*, wow_score=0.82, qualifies=True, paywall=None):
         strategy="high_intent:early:premium_anchor",
     )
     service = OnboardingFlowService(
-        lambda: FakeUOW(events_repo, profiles_repo, onboarding_states_repo),
+        lambda: FakeUOW(events_repo, profiles_repo, onboarding_states_repo, decision_traces_repo),
         FakeWowEngine(_wow(wow_score, qualifies, 0.81)),
         FakeAddictionEngine(),
         FakeLifecycleService(),
@@ -192,11 +209,11 @@ def _service(*, wow_score=0.82, qualifies=True, paywall=None):
         FakeNotificationDecisionEngine(),
         FakeRetentionEngine(),
     )
-    return service, events_repo, profiles_repo
+    return service, events_repo, profiles_repo, decision_traces_repo
 
 
 def test_onboarding_flow_service_transitions_through_identity_and_personalization():
-    service, _, profiles = _service()
+    service, _, profiles, traces = _service()
 
     start = run_async(service.start(1))
     after_identity = run_async(service.next(1, {"motivation": "travel"}))
@@ -212,10 +229,12 @@ def test_onboarding_flow_service_transitions_through_identity_and_personalizatio
     assert after_personalization["current_step"] == "instant_wow_moment"
     assert profiles.profiles[1].difficulty_preference == "easy"
     assert profiles.profiles[1].content_preference == "conversation"
+    assert traces.rows[0]["trace_type"] == "onboarding_transition"
+    assert traces.rows[0]["outputs"]["to_step"] == "identity_selection"
 
 
 def test_onboarding_flow_service_triggers_wow_and_advances_to_progress_illusion():
-    service, _, _ = _service(wow_score=0.84, qualifies=True)
+    service, _, _, traces = _service(wow_score=0.84, qualifies=True)
     run_async(service.start(2))
     run_async(service.next(2, {"motivation": "fluency"}))
     run_async(service.next(2, {"skill_level": "intermediate", "daily_goal": 15, "learning_intent": "conversation"}))
@@ -240,10 +259,11 @@ def test_onboarding_flow_service_triggers_wow_and_advances_to_progress_illusion(
     assert response["onboarding_state"]["wow"]["qualifies"] is True
     assert response["onboarding_state"]["wow"]["understood_percent"] == 81.0
     assert response["messaging"]["encouragement_message"].startswith("You picked up")
+    assert any(row["trace_type"] == "onboarding_transition" and row["outputs"]["to_step"] == "progress_illusion" for row in traces.rows)
 
 
 def test_onboarding_flow_service_times_soft_paywall_after_progress_illusion_only():
-    service, _, _ = _service(wow_score=0.88, qualifies=True)
+    service, _, _, traces = _service(wow_score=0.88, qualifies=True)
     run_async(service.start(3))
     run_async(service.next(3, {"motivation": "confidence"}))
     run_async(service.next(3, {"skill_level": "beginner", "daily_goal": 5, "learning_intent": "grammar"}))
@@ -268,10 +288,11 @@ def test_onboarding_flow_service_times_soft_paywall_after_progress_illusion_only
     assert response["current_step"] == "soft_paywall"
     assert response["ui_directives"]["show_paywall"] is True
     assert response["onboarding_state"]["paywall"]["trial_recommended"] is True
+    assert any(row["trace_type"] == "onboarding_paywall_entry" for row in traces.rows)
 
 
 def test_onboarding_flow_service_locks_habit_and_schedules_notification():
-    service, _, profiles = _service(wow_score=0.86, qualifies=True)
+    service, _, profiles, traces = _service(wow_score=0.86, qualifies=True)
     run_async(service.start(4))
     run_async(service.next(4, {"motivation": "travel"}))
     run_async(service.next(4, {"skill_level": "beginner", "daily_goal": 12, "learning_intent": "conversation"}))
@@ -309,3 +330,4 @@ def test_onboarding_flow_service_locks_habit_and_schedules_notification():
     assert response["onboarding_state"]["habit_lock_in"]["scheduled_notification"]["should_send"] is True
     assert profiles.profiles[4].preferred_time_of_day == 19
     assert response["ui_directives"]["show_streak_animation"] is True
+    assert any(row["trace_type"] == "onboarding_transition" and row["outputs"]["to_step"] == "completed" for row in traces.rows)
