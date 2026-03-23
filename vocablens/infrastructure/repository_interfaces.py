@@ -106,6 +106,21 @@ class ExperimentExposureRepository(Protocol):
     ) -> Any: ...
 
 
+class ExperimentRegistryRepository(Protocol):
+    async def get(self, experiment_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        experiment_key: str,
+        status: str,
+        rollout_percentage: int,
+        is_killed: bool,
+        description: str | None,
+        variants: List[Dict[str, Any]],
+    ) -> Any: ...
+
+
 class UserLearningStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> UserLearningState: ...
     async def update(

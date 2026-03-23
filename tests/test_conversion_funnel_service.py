@@ -71,7 +71,7 @@ class FixedExperimentService:
     def __init__(self, variants):
         self.variants = variants
 
-    def has_experiment(self, experiment_key: str) -> bool:
+    async def has_experiment(self, experiment_key: str) -> bool:
         return experiment_key in self.variants
 
     async def assign(self, user_id: int, experiment_key: str) -> str:

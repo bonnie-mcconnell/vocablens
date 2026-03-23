@@ -257,6 +257,6 @@ class RetentionEngine:
         return actions[:4]
 
     async def _retention_variant(self, user_id: int) -> str | None:
-        if not self._experiments or not self._experiments.has_experiment("retention_nudges"):
+        if not self._experiments or not await self._experiments.has_experiment("retention_nudges"):
             return None
         return await self._experiments.assign(user_id, "retention_nudges")

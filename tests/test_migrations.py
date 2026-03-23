@@ -40,6 +40,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"learning_sessions", "learning_session_attempts"} <= tables
     assert "decision_traces" in tables
     assert "experiment_exposures" in tables
+    assert "experiment_registries" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -122,6 +123,22 @@ def test_upgrade_downgrade_upgrade_round_trip():
 
     experiment_exposure_fks = inspector.get_foreign_keys("experiment_exposures")
     assert any(fk["referred_table"] == "users" for fk in experiment_exposure_fks)
+
+    experiment_registry_indexes = {idx["name"] for idx in inspector.get_indexes("experiment_registries")}
+    assert "idx_experiment_registries_status" in experiment_registry_indexes
+    assert "idx_experiment_registries_updated_at" in experiment_registry_indexes
+
+    experiment_registry_columns = {col["name"] for col in inspector.get_columns("experiment_registries")}
+    assert {
+        "experiment_key",
+        "status",
+        "rollout_percentage",
+        "is_killed",
+        "description",
+        "variants",
+        "created_at",
+        "updated_at",
+    } <= experiment_registry_columns
 
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
@@ -279,6 +296,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "learning_session_attempts" not in tables
     assert "decision_traces" not in tables
     assert "experiment_exposures" not in tables
+    assert "experiment_registries" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -292,6 +310,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"learning_sessions", "learning_session_attempts"} <= tables
     assert "decision_traces" in tables
     assert "experiment_exposures" in tables
+    assert "experiment_registries" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

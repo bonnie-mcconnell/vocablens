@@ -325,6 +325,31 @@ class ExperimentExposureORM(Base):
     exposed_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class ExperimentRegistryORM(Base):
+    __tablename__ = "experiment_registries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'active', 'paused', 'archived')",
+            name="ck_experiment_registries_status_valid",
+        ),
+        CheckConstraint(
+            "rollout_percentage >= 0 AND rollout_percentage <= 100",
+            name="ck_experiment_registries_rollout_percentage_range",
+        ),
+        Index("idx_experiment_registries_status", "status"),
+        Index("idx_experiment_registries_updated_at", "updated_at"),
+    )
+
+    experiment_key = Column(String, primary_key=True)
+    status = Column(String, nullable=False, default="draft")
+    rollout_percentage = Column(Integer, nullable=False, default=100)
+    is_killed = Column(Boolean, nullable=False, default=False)
+    description = Column(Text)
+    variants = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class UserLearningStateORM(Base):
     __tablename__ = "user_learning_states"
     __table_args__ = (

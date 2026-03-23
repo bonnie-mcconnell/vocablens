@@ -95,7 +95,7 @@ class FixedExperimentService:
     def __init__(self, assignments):
         self.assignments = assignments
 
-    def has_experiment(self, experiment_key: str) -> bool:
+    async def has_experiment(self, experiment_key: str) -> bool:
         return experiment_key in self.assignments
 
     async def assign(self, user_id: int, experiment_key: str) -> str:

@@ -278,7 +278,7 @@ class LearningEngine:
         return features.personalization_level
 
     async def _learning_variant(self, user_id: int) -> str | None:
-        if not self._experiments or not self._experiments.has_experiment("learning_strategy"):
+        if not self._experiments or not await self._experiments.has_experiment("learning_strategy"):
             return None
         return await self._experiments.assign(user_id, "learning_strategy")
 

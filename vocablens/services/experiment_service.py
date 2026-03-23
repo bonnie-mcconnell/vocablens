@@ -21,17 +21,10 @@ class ExperimentVariant:
 @dataclass(frozen=True)
 class ExperimentDefinition:
     key: str
+    status: str
+    rollout_percentage: int
+    is_killed: bool
     variants: tuple[ExperimentVariant, ...]
-
-
-DEFAULT_EXPERIMENTS = {
-    "learning_strategy": {"control": 100},
-    "retention_nudges": {"control": 100},
-    "paywall_offer": {"control": 100},
-    "paywall_trigger_timing": {"control": 100},
-    "paywall_trial_length": {"control": 100},
-    "paywall_pricing_messaging": {"control": 100},
-}
 
 
 class ExperimentService:
@@ -43,15 +36,19 @@ class ExperimentService:
     ):
         self._uow_factory = uow_factory
         self._events = event_service
-        source = experiments or DEFAULT_EXPERIMENTS
-        self._experiments = {
+        source = experiments or {}
+        self._experiment_overrides = {
             key: self._coerce_definition(key, definition)
             for key, definition in source.items()
         }
 
     async def assign(self, user_id: int, experiment_key: str) -> str:
-        definition = self._get_definition(experiment_key)
+        definition = await self._get_definition(experiment_key)
         assigned_at = utc_now()
+        if not self._is_assignable(definition):
+            raise KeyError(f"Experiment '{experiment_key}' is not assignable")
+        if not self._is_in_rollout(user_id, definition):
+            return self._baseline_variant(definition)
         variant, exposure_created = await self._ensure_assignment_and_exposure(
             user_id=user_id,
             experiment_key=experiment_key,
@@ -82,8 +79,12 @@ class ExperimentService:
             await uow.commit()
         return exposure
 
-    def has_experiment(self, experiment_key: str) -> bool:
-        return experiment_key in self._experiments
+    async def has_experiment(self, experiment_key: str) -> bool:
+        try:
+            definition = await self._get_definition(experiment_key)
+        except KeyError:
+            return False
+        return self._is_assignable(definition)
 
     async def _ensure_assignment_and_exposure(
         self,
@@ -152,11 +153,16 @@ class ExperimentService:
             await uow.commit()
         return assignment.variant, exposure_created
 
-    def _get_definition(self, experiment_key: str) -> ExperimentDefinition:
-        try:
-            return self._experiments[experiment_key]
-        except KeyError as exc:
-            raise KeyError(f"Unknown experiment '{experiment_key}'") from exc
+    async def _get_definition(self, experiment_key: str) -> ExperimentDefinition:
+        override = self._experiment_overrides.get(experiment_key)
+        if override is not None:
+            return override
+        async with self._uow_factory() as uow:
+            registry = await uow.experiment_registries.get(experiment_key)
+            await uow.commit()
+        if registry is None:
+            raise KeyError(f"Unknown experiment '{experiment_key}'")
+        return self._coerce_registry_definition(registry)
 
     def _coerce_definition(
         self,
@@ -164,14 +170,40 @@ class ExperimentService:
         definition: dict[str, int] | ExperimentDefinition,
     ) -> ExperimentDefinition:
         if isinstance(definition, ExperimentDefinition):
-            variants = definition.variants
-        else:
-            variants = tuple(
-                ExperimentVariant(name=name, weight=int(weight))
-                for name, weight in definition.items()
-            )
+            self._validate_rollout(key, definition.rollout_percentage)
+            self._validate_variants(key, definition.variants)
+            return definition
+        variants = tuple(
+            ExperimentVariant(name=name, weight=int(weight))
+            for name, weight in definition.items()
+        )
         self._validate_variants(key, variants)
-        return ExperimentDefinition(key=key, variants=variants)
+        return ExperimentDefinition(
+            key=key,
+            status="active",
+            rollout_percentage=100,
+            is_killed=False,
+            variants=variants,
+        )
+
+    def _coerce_registry_definition(self, registry) -> ExperimentDefinition:
+        variants = tuple(
+            ExperimentVariant(
+                name=str(item["name"]),
+                weight=int(item["weight"]),
+            )
+            for item in list(getattr(registry, "variants", []) or [])
+        )
+        definition = ExperimentDefinition(
+            key=str(registry.experiment_key),
+            status=str(registry.status),
+            rollout_percentage=int(registry.rollout_percentage),
+            is_killed=bool(registry.is_killed),
+            variants=variants,
+        )
+        self._validate_rollout(definition.key, definition.rollout_percentage)
+        self._validate_variants(definition.key, definition.variants)
+        return definition
 
     def _validate_variants(self, key: str, variants: Iterable[ExperimentVariant]) -> None:
         materialized = tuple(variants)
@@ -190,6 +222,26 @@ class ExperimentService:
             total_weight += variant.weight
         if total_weight <= 0:
             raise ValueError(f"Experiment '{key}' must have positive total weight")
+
+    def _validate_rollout(self, key: str, rollout_percentage: int) -> None:
+        if rollout_percentage < 0 or rollout_percentage > 100:
+            raise ValueError(f"Experiment '{key}' rollout percentage must be between 0 and 100")
+
+    def _is_assignable(self, definition: ExperimentDefinition) -> bool:
+        return definition.status == "active" and not definition.is_killed and definition.rollout_percentage > 0
+
+    def _is_in_rollout(self, user_id: int, definition: ExperimentDefinition) -> bool:
+        if definition.rollout_percentage >= 100:
+            return True
+        digest = hashlib.sha256(f"{definition.key}:rollout:{user_id}".encode("utf-8")).digest()
+        bucket = int.from_bytes(digest[:8], "big") % 100
+        return bucket < definition.rollout_percentage
+
+    def _baseline_variant(self, definition: ExperimentDefinition) -> str:
+        for variant in definition.variants:
+            if variant.name == "control":
+                return variant.name
+        return definition.variants[0].name
 
     def _select_variant(self, user_id: int, definition: ExperimentDefinition) -> str:
         total_weight = sum(variant.weight for variant in definition.variants)

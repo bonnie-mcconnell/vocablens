@@ -240,9 +240,9 @@ class ConversionFunnelService:
     async def _experiment_variant(self, user_id: int, stage: FunnelStage) -> str | None:
         if not self._experiments or stage not in {"usage_pressure", "paywall_exposure", "trial"}:
             return None
-        if self._experiments.has_experiment("paywall_pricing_messaging"):
+        if await self._experiments.has_experiment("paywall_pricing_messaging"):
             return await self._experiments.assign(user_id, "paywall_pricing_messaging")
-        if self._experiments.has_experiment("paywall_offer"):
+        if await self._experiments.has_experiment("paywall_offer"):
             return await self._experiments.assign(user_id, "paywall_offer")
         return None
 

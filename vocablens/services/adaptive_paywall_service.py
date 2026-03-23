@@ -294,7 +294,7 @@ class AdaptivePaywallService(PaywallService):
         }
 
     async def _assign_variant(self, user_id: int, experiment_key: str, *, default: str) -> str:
-        if not self._experiments or not self._experiments.has_experiment(experiment_key):
+        if not self._experiments or not await self._experiments.has_experiment(experiment_key):
             return default
         return await self._experiments.assign(user_id, experiment_key)
 

@@ -48,10 +48,34 @@ class FakeExperimentExposuresRepo:
         return SimpleNamespace(**self.exposures[(user_id, experiment_key)])
 
 
+class FakeExperimentRegistriesRepo:
+    def __init__(self, experiments: dict[str, dict[str, int]]):
+        self.registries = {
+            key: SimpleNamespace(
+                experiment_key=key,
+                status="active",
+                rollout_percentage=100,
+                is_killed=False,
+                description=None,
+                variants=[{"name": name, "weight": weight} for name, weight in definition.items()],
+            )
+            for key, definition in experiments.items()
+        }
+
+    async def get(self, experiment_key: str):
+        return self.registries.get(experiment_key)
+
+
 class FakeExperimentUOW:
-    def __init__(self, repo: FakeExperimentAssignmentsRepo, exposures: FakeExperimentExposuresRepo):
+    def __init__(
+        self,
+        repo: FakeExperimentAssignmentsRepo,
+        exposures: FakeExperimentExposuresRepo,
+        registries: FakeExperimentRegistriesRepo,
+    ):
         self.experiment_assignments = repo
         self.experiment_exposures = exposures
+        self.experiment_registries = registries
 
     async def __aenter__(self):
         return self
@@ -80,9 +104,10 @@ class FakeEventService:
 def _experiment_service(experiments: dict[str, dict[str, int]]):
     repo = FakeExperimentAssignmentsRepo()
     exposures = FakeExperimentExposuresRepo()
+    registries = FakeExperimentRegistriesRepo(experiments)
     events = FakeEventService()
-    factory = lambda: FakeExperimentUOW(repo, exposures)
-    service = ExperimentService(factory, events, experiments=experiments)
+    factory = lambda: FakeExperimentUOW(repo, exposures, registries)
+    service = ExperimentService(factory, events)
     return service, repo, exposures, events
 
 
@@ -205,7 +230,7 @@ class FixedExperimentService:
     def __init__(self, assignments: dict[str, str]):
         self.assignments = assignments
 
-    def has_experiment(self, experiment_key: str) -> bool:
+    async def has_experiment(self, experiment_key: str) -> bool:
         return experiment_key in self.assignments
 
     async def assign(self, user_id: int, experiment_key: str) -> str:

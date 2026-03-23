@@ -190,7 +190,7 @@ class SubscriptionService:
     async def _paywall_variant(self, user_id: int, tier: str) -> str | None:
         if tier != "free":
             return None
-        if not self._experiments or not self._experiments.has_experiment("paywall_offer"):
+        if not self._experiments or not await self._experiments.has_experiment("paywall_offer"):
             return None
         return await self._experiments.assign(user_id, "paywall_offer")
 
