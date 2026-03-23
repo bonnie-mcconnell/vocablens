@@ -138,7 +138,13 @@ class DecisionTraceService:
         snapshot = await self._user_snapshot(user_id)
         retention = self._retention_payload(snapshot)
         paywall = await self._adaptive_paywall_payload(snapshot)
-        lifecycle = self._lifecycle_payload(snapshot, retention, paywall=paywall)
+        lifecycle_trace = self._latest_trace(snapshot["traces"], trace_type="lifecycle_decision")
+        lifecycle = self._lifecycle_payload(
+            snapshot,
+            retention,
+            paywall=paywall,
+            decision_trace=lifecycle_trace,
+        )
         relevant_events = self._filtered_events(
             snapshot["events"],
             allowed_types=self._LIFECYCLE_EVENT_TYPES,
@@ -164,12 +170,20 @@ class DecisionTraceService:
         snapshot = await self._user_snapshot(user_id)
         retention = self._retention_payload(snapshot)
         paywall = await self._adaptive_paywall_payload(snapshot)
-        lifecycle = self._lifecycle_payload(snapshot, retention, paywall=paywall)
+        lifecycle_trace = self._latest_trace(snapshot["traces"], trace_type="lifecycle_decision")
+        lifecycle = self._lifecycle_payload(
+            snapshot,
+            retention,
+            paywall=paywall,
+            decision_trace=lifecycle_trace,
+        )
+        monetization_trace = self._latest_trace(snapshot["traces"], trace_type="monetization_decision")
         monetization = await self._monetization_payload(
             snapshot,
             lifecycle=lifecycle,
             paywall=paywall,
             geography=geography,
+            decision_trace=monetization_trace,
         )
         relevant_events = self._filtered_events(
             snapshot["events"],
@@ -398,7 +412,19 @@ class DecisionTraceService:
         retention: dict[str, Any],
         *,
         paywall: dict[str, Any],
+        decision_trace=None,
     ) -> dict[str, Any]:
+        if decision_trace is not None:
+            outputs = dict(decision_trace.outputs or {})
+            return {
+                "stage": str(outputs.get("stage") or "activating"),
+                "reasons": [str(reason) for reason in outputs.get("reasons", [])],
+                "actions": [
+                    self._lifecycle_action_payload_from_trace(action)
+                    for action in outputs.get("actions", [])
+                ],
+                "paywall": self._lifecycle_paywall_payload_from_trace(outputs.get("paywall")),
+            }
         learning_state = self._learning_state_domain(snapshot["learning_state"], snapshot["user"].id)
         engagement_state = self._engagement_state_domain(snapshot["engagement_state"], snapshot["user"].id)
         retention_view = type(
@@ -562,7 +588,23 @@ class DecisionTraceService:
         lifecycle: dict[str, Any],
         paywall: dict[str, Any],
         geography: str | None,
+        decision_trace=None,
     ) -> dict[str, Any]:
+        if decision_trace is not None:
+            outputs = dict(decision_trace.outputs or {})
+            return {
+                "show_paywall": bool(outputs.get("show_paywall", False)),
+                "paywall_type": outputs.get("paywall_type"),
+                "offer_type": str(outputs.get("offer_type") or "none"),
+                "pricing": dict(outputs.get("pricing", {}) or {}),
+                "trigger": dict(outputs.get("trigger", {}) or {}),
+                "value_display": dict(outputs.get("value_display", {}) or {}),
+                "strategy": str(outputs.get("strategy") or ""),
+                "lifecycle_stage": str(outputs.get("lifecycle_stage") or lifecycle["stage"]),
+                "onboarding_step": outputs.get("onboarding_step"),
+                "user_segment": str(outputs.get("user_segment") or paywall["user_segment"]),
+                "trial_days": outputs.get("trial_days"),
+            }
         engagement_state = self._engagement_state_domain(snapshot["engagement_state"], snapshot["user"].id)
         learning_state = self._learning_state_domain(snapshot["learning_state"], snapshot["user"].id)
         progress_state = self._progress_state_domain(snapshot["progress_state"], snapshot["user"].id)
@@ -647,6 +689,12 @@ class DecisionTraceService:
         filtered = [self._trace_payload(trace) for trace in traces if predicate(trace)]
         filtered.sort(key=lambda item: (item["created_at"], item["id"]))
         return filtered
+
+    def _latest_trace(self, traces, *, trace_type: str):
+        for trace in traces:
+            if str(getattr(trace, "trace_type", "") or "") == trace_type:
+                return trace
+        return None
 
     def _learning_state_payload(self, row) -> dict[str, Any] | None:
         if row is None:
@@ -838,6 +886,23 @@ class DecisionTraceService:
             "type": action.type,
             "message": action.message,
             "target": action.target,
+        }
+
+    def _lifecycle_action_payload_from_trace(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": str(payload.get("type") or ""),
+            "message": str(payload.get("message") or ""),
+            "target": payload.get("target"),
+        }
+
+    def _lifecycle_paywall_payload_from_trace(self, payload: dict[str, Any] | None) -> dict[str, Any]:
+        payload = dict(payload or {})
+        return {
+            "show": bool(payload.get("show", False)),
+            "type": payload.get("type"),
+            "reason": payload.get("reason"),
+            "usage_percent": int(payload.get("usage_percent", 0) or 0),
+            "allow_access": bool(payload.get("allow_access", True)),
         }
 
     def _ratio(self, used: int, limit: int) -> float:

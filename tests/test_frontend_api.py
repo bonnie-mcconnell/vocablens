@@ -342,6 +342,23 @@ class FakeDecisionTraceService:
             ],
             "traces": [
                 {
+                    "id": 9,
+                    "user_id": user_id,
+                    "trace_type": "lifecycle_decision",
+                    "source": "lifecycle_service.evaluate",
+                    "reference_id": f"lifecycle:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {"retention": {"state": "active"}},
+                    "outputs": {
+                        "stage": "activating",
+                        "reasons": ["user is building toward activation"],
+                        "actions": [{"type": "wow_moment_push", "message": "Guide the user toward a clean success around grammar.", "target": None}],
+                        "paywall": {"show": True, "type": "soft_paywall", "reason": "wow moment reached", "usage_percent": 34, "allow_access": True},
+                    },
+                    "reason": "user is building toward activation",
+                    "created_at": "2026-03-23T12:04:30",
+                },
+                {
                     "id": 8,
                     "user_id": user_id,
                     "trace_type": "onboarding_paywall_entry",
@@ -519,6 +536,28 @@ class FakeDecisionTraceService:
             ],
             "traces": [
                 {
+                    "id": 9,
+                    "user_id": user_id,
+                    "trace_type": "monetization_decision",
+                    "source": "monetization_engine",
+                    "reference_id": f"user:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {
+                        "geography": geography or "global",
+                        "lifecycle_stage": "activating",
+                        "onboarding_step": "soft_paywall",
+                        "strategy": "high_intent:early:premium_anchor",
+                    },
+                    "outputs": {
+                        "show_paywall": True,
+                        "offer_type": "trial",
+                        "pricing_variant": "premium_anchor",
+                        "trigger_variant": "early",
+                    },
+                    "reason": "Monetization shown after wow moment for a high-intent activating user.",
+                    "created_at": "2026-03-23T12:01:10",
+                },
+                {
                     "id": 8,
                     "user_id": user_id,
                     "trace_type": "onboarding_paywall_entry",
@@ -529,7 +568,7 @@ class FakeDecisionTraceService:
                     "outputs": {"next_step": "soft_paywall", "trial_recommended": True},
                     "reason": "Paywall shown after progress illusion because wow or engagement threshold qualified.",
                     "created_at": "2026-03-23T12:01:00",
-                }
+                },
             ],
         }
 
@@ -629,6 +668,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert lifecycle.json()["meta"]["source"] == "admin.lifecycle.detail"
     assert lifecycle.json()["data"]["lifecycle"]["stage"] == "activating"
     assert lifecycle.json()["data"]["adaptive_paywall"]["strategy"] == "high_intent:early:premium_anchor"
+    assert lifecycle.json()["data"]["traces"][0]["trace_type"] == "lifecycle_decision"
     assert lifecycle.json()["data"]["events"][0]["event_type"] == "paywall_viewed"
     assert monetization.status_code == 200
     assert monetization.json()["meta"]["source"] == "admin.monetization.detail"
@@ -636,6 +676,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert monetization.json()["data"]["monetization"]["offer_type"] == "trial"
     assert monetization.json()["data"]["monetization"]["pricing"]["geography"] == "us"
     assert monetization.json()["data"]["experiments"]["paywall_trigger_timing"] == "early"
+    assert monetization.json()["data"]["traces"][0]["trace_type"] == "monetization_decision"
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():

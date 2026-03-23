@@ -234,6 +234,7 @@ class LifecycleService:
                     "stage": plan.stage,
                     "reasons": list(plan.reasons),
                     "action_types": [action.type for action in plan.actions],
+                    "actions": [asdict(action) for action in plan.actions],
                     "paywall": asdict(plan.paywall),
                     "notification": asdict(plan.notification),
                 },
