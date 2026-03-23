@@ -114,6 +114,12 @@ class FakeGlobalDecisionEngine:
 
 class FakeLearningAdapterUOW:
     def __init__(self):
+        self.decision_traces = SimpleNamespace(
+            create=self._create_decision_trace,
+        )
+        self.events = SimpleNamespace(
+            create=self._create_event,
+        )
         self.vocab = SimpleNamespace(
             list_due=self._list_due,
         )
@@ -167,6 +173,12 @@ class FakeLearningAdapterUOW:
 
     async def _engagement_state(self, user_id: int):
         return SimpleNamespace(total_sessions=7)
+
+    async def _create_decision_trace(self, **kwargs):
+        return None
+
+    async def _create_event(self, **kwargs):
+        return None
 
 
 def _assessment(stage: str) -> RetentionAssessment:
@@ -338,5 +350,5 @@ def test_learning_lifecycle_and_habit_services_use_global_decision_engine():
     assert learning_decision.lesson_difficulty == "hard"
     assert learning_decision.reason == "Engaged users should see monetization next."
     assert lifecycle_plan.stage == "engaged"
-    assert habit_plan.action["duration_minutes"] == 5
+    assert habit_plan.action.duration_minutes == 5
     assert global_engine.calls == [5, 5, 5]

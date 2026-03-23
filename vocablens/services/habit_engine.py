@@ -6,15 +6,16 @@ from vocablens.services.engagement_loop_policy import EngagementLoopContext, Eng
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.progress_service import ProgressService
+from vocablens.services.report_models import HabitAction, HabitRepeat, HabitReward, HabitTrigger
 from vocablens.services.retention_engine import RetentionEngine
 
 
 @dataclass(frozen=True)
 class HabitLoopPlan:
-    trigger: dict
-    action: dict
-    reward: dict
-    repeat: dict
+    trigger: HabitTrigger
+    action: HabitAction
+    reward: HabitReward
+    repeat: HabitRepeat
 
 
 class HabitEngine:
@@ -61,16 +62,16 @@ class HabitEngine:
         decision = await self._global_decision.decide(user_id)
         context = await self._load_context(user_id)
         trigger = self._policy.build_trigger(context.retention, context.notification)
-        action = {
-            "type": "quick_session",
-            "duration_minutes": 3 if decision.session_type == "quick" else 2 if decision.session_type == "passive" else 5,
-            "target": decision.primary_action if decision.primary_action in {"learn", "review", "conversation"} else "review",
-            "reason": decision.reason,
-        }
+        action = HabitAction(
+            type="quick_session",
+            duration_minutes=3 if decision.session_type == "quick" else 2 if decision.session_type == "passive" else 5,
+            target=decision.primary_action if decision.primary_action in {"learn", "review", "conversation"} else "review",
+            reason=decision.reason,
+        )
         reward = self._policy.build_reward(context.retention, context.progress, action)
-        repeat = {
-            "should_repeat": decision.lifecycle_stage in {"new_user", "activating", "at_risk", "engaged"},
-            "next_best_trigger": "streak_reminder" if decision.engagement_action == "streak_push" else "notification",
-            "cadence": "daily",
-        }
+        repeat = HabitRepeat(
+            should_repeat=decision.lifecycle_stage in {"new_user", "activating", "at_risk", "engaged"},
+            next_best_trigger="streak_reminder" if decision.engagement_action == "streak_push" else "notification",
+            cadence="daily",
+        )
         return HabitLoopPlan(trigger=trigger, action=action, reward=reward, repeat=repeat)

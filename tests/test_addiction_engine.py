@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from tests.conftest import run_async
 from vocablens.core.time import utc_now
 from vocablens.services.addiction_engine import AddictionEngine
+from vocablens.services.report_models import HabitAction, HabitRepeat, HabitReward, HabitTrigger
 
 
 class FakeHabitEngine:
@@ -40,10 +41,30 @@ class FakeProgressService:
 
 def _habit_plan():
     return SimpleNamespace(
-        trigger={"type": "notification"},
-        action={"type": "quick_session", "duration_minutes": 3, "target": "review"},
-        reward={"progress_increase": 2, "feedback": "Keep going"},
-        repeat={"cadence": "daily"},
+        trigger=HabitTrigger(
+            type="notification",
+            channel="push",
+            send_at=utc_now().isoformat(),
+            category="retention:streak_nudge",
+            reason="reminder",
+            streak_reminder=True,
+        ),
+        action=HabitAction(
+            type="quick_session",
+            duration_minutes=3,
+            target="review",
+            reason="Keep going",
+        ),
+        reward=HabitReward(
+            progress_increase=2,
+            streak_boost=4,
+            feedback="Keep going",
+        ),
+        repeat=HabitRepeat(
+            should_repeat=True,
+            next_best_trigger="streak_reminder",
+            cadence="daily",
+        ),
     )
 
 
@@ -77,7 +98,7 @@ def test_addiction_engine_generates_variable_but_deterministic_rewards():
     third = run_async(engine.execute(27))
 
     assert first.reward == second.reward
-    assert first.reward["type"] in {"bonus_xp", "surprise_streak_boost", "mystery_reward"}
+    assert first.reward.type in {"bonus_xp", "surprise_streak_boost", "mystery_reward"}
     assert first.reward != third.reward
 
 
@@ -92,9 +113,9 @@ def test_addiction_engine_applies_streak_pressure_and_identity_reinforcement():
 
     plan = run_async(engine.execute(4))
 
-    assert plan.pressure["show_streak_decay_warning"] is True
-    assert plan.pressure["will_lose_progress"] is True
-    assert "lose progress" in plan.pressure["warning_message"].lower()
-    assert "becoming fluent" in plan.identity["message"].lower()
-    assert plan.ritual["daily_ritual_hour"] == 7
-    assert plan.ritual["streak_anchor"] == 6
+    assert plan.pressure.show_streak_decay_warning is True
+    assert plan.pressure.will_lose_progress is True
+    assert "lose progress" in plan.pressure.warning_message.lower()
+    assert "becoming fluent" in plan.identity.message.lower()
+    assert plan.ritual.daily_ritual_hour == 7
+    assert plan.ritual.streak_anchor == 6

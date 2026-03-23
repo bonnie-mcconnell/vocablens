@@ -6,17 +6,25 @@ from vocablens.services.engagement_loop_policy import EngagementLoopPolicy
 from vocablens.services.habit_engine import HabitEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.progress_service import ProgressService
+from vocablens.services.report_models import (
+    HabitAction,
+    HabitTrigger,
+    IdentityReinforcement,
+    LossAversionPlan,
+    RitualHook,
+    VariableReward,
+)
 from vocablens.services.retention_engine import RetentionEngine
 
 
 @dataclass(frozen=True)
 class AddictionLoopPlan:
-    trigger: dict
-    action: dict
-    reward: dict
-    pressure: dict
-    identity: dict
-    ritual: dict
+    trigger: HabitTrigger
+    action: HabitAction
+    reward: VariableReward
+    pressure: LossAversionPlan
+    identity: IdentityReinforcement
+    ritual: RitualHook
 
 
 class AddictionEngine:

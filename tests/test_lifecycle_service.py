@@ -180,10 +180,10 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
     new_user_plan = run_async(new_user_service.evaluate(1))
     activating_plan = run_async(activating_service.evaluate(2))
 
-    assert [action["type"] for action in new_user_plan.actions] == ["onboarding_nudge", "quick_start_path"]
+    assert [action.type for action in new_user_plan.actions] == ["onboarding_nudge", "quick_start_path"]
     assert new_user_notifier.calls == [(1, "active")]
-    assert activating_plan.actions[0]["type"] == "wow_moment_push"
-    assert "mastery at 25.0%" in activating_plan.actions[1]["message"]
+    assert activating_plan.actions[0].type == "wow_moment_push"
+    assert "mastery at 25.0%" in activating_plan.actions[1].message
     assert activating_notifier.calls == [(2, "active")]
 
 
@@ -205,13 +205,13 @@ def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
     plan = run_async(service.evaluate(7))
 
     assert plan.stage == "at_risk"
-    assert [action["type"] for action in plan.actions] == [
+    assert [action.type for action in plan.actions] == [
         "reengagement_flow",
         "review_reminder",
         "quick_session",
     ]
-    assert plan.notification["should_send"] is True
-    assert plan.notification["category"] == "retention:review_reminder"
+    assert plan.notification.should_send is True
+    assert plan.notification.category == "retention:review_reminder"
     assert notifier.calls == [(7, "at-risk")]
 
 
@@ -233,7 +233,7 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
     plan = run_async(service.evaluate(11))
 
     assert plan.stage == "engaged"
-    assert [action["type"] for action in plan.actions] == ["monetization_prompt", "paywall_follow_up"]
-    assert plan.paywall["usage_percent"] == 82
-    assert plan.notification["should_send"] is False
+    assert [action.type for action in plan.actions] == ["monetization_prompt", "paywall_follow_up"]
+    assert plan.paywall.usage_percent == 82
+    assert plan.notification.should_send is False
     assert notifier.calls == []

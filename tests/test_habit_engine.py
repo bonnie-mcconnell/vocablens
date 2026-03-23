@@ -91,15 +91,15 @@ def test_habit_engine_executes_notification_to_quick_session_loop():
 
     plan = run_async(engine.execute(12))
 
-    assert plan.trigger["type"] == "notification"
-    assert plan.trigger["streak_reminder"] is True
-    assert plan.action["type"] == "quick_session"
-    assert plan.action["duration_minutes"] == 3
-    assert plan.reward["progress_increase"] == 2
-    assert plan.reward["streak_boost"] == 4
-    assert "78.0% accuracy" in plan.reward["feedback"]
-    assert plan.repeat["should_repeat"] is True
-    assert plan.repeat["cadence"] == "daily"
+    assert plan.trigger.type == "notification"
+    assert plan.trigger.streak_reminder is True
+    assert plan.action.type == "quick_session"
+    assert plan.action.duration_minutes == 3
+    assert plan.reward.progress_increase == 2
+    assert plan.reward.streak_boost == 4
+    assert "78.0% accuracy" in plan.reward.feedback
+    assert plan.repeat.should_repeat is True
+    assert plan.repeat.cadence == "daily"
 
 
 def test_habit_engine_falls_back_to_passive_trigger_and_low_friction_action():
@@ -128,9 +128,9 @@ def test_habit_engine_falls_back_to_passive_trigger_and_low_friction_action():
 
     plan = run_async(engine.execute(7))
 
-    assert plan.trigger["type"] == "passive_reentry"
-    assert plan.action["duration_minutes"] == 2
-    assert plan.action["target"] == "conversation"
-    assert plan.reward["progress_increase"] == 0
-    assert plan.reward["streak_boost"] == 4
-    assert plan.repeat["next_best_trigger"] == "streak_reminder"
+    assert plan.trigger.type == "passive_reentry"
+    assert plan.action.duration_minutes == 2
+    assert plan.action.target == "conversation"
+    assert plan.reward.progress_increase == 0
+    assert plan.reward.streak_boost == 4
+    assert plan.repeat.next_best_trigger == "streak_reminder"

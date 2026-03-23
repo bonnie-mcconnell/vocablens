@@ -228,3 +228,89 @@ class AdaptivePaywallViewedEvent:
     wow_score: float
     trial_recommended: bool
     upsell_recommended: bool
+
+
+@dataclass(frozen=True)
+class LifecycleAction:
+    type: str
+    message: str
+    target: str | None = None
+
+
+@dataclass(frozen=True)
+class LifecycleNotification:
+    should_send: bool
+    reason: str
+    channel: str | None = None
+    send_at: str | None = None
+    category: str | None = None
+
+
+@dataclass(frozen=True)
+class LifecyclePaywallState:
+    show: bool
+    type: str | None
+    reason: str | None
+    usage_percent: int
+    allow_access: bool
+
+
+@dataclass(frozen=True)
+class HabitTrigger:
+    type: str
+    channel: str | None
+    send_at: str | None
+    category: str
+    reason: str
+    streak_reminder: bool
+
+
+@dataclass(frozen=True)
+class HabitAction:
+    type: str
+    duration_minutes: int
+    target: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class HabitReward:
+    progress_increase: int
+    streak_boost: int
+    feedback: str
+
+
+@dataclass(frozen=True)
+class HabitRepeat:
+    should_repeat: bool
+    next_best_trigger: str
+    cadence: str
+
+
+@dataclass(frozen=True)
+class VariableReward:
+    type: str
+    bonus_xp: int
+    surprise_streak_boost: int
+    progress_increase: int
+    feedback: str | None
+
+
+@dataclass(frozen=True)
+class LossAversionPlan:
+    show_streak_decay_warning: bool
+    will_lose_progress: bool
+    warning_message: str
+
+
+@dataclass(frozen=True)
+class IdentityReinforcement:
+    message: str
+    identity_state: str
+
+
+@dataclass(frozen=True)
+class RitualHook:
+    daily_ritual_hour: int
+    daily_ritual_message: str
+    streak_anchor: int

@@ -10,6 +10,11 @@ from vocablens.services.notification_decision_engine import NotificationDecision
 from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
+from vocablens.services.report_models import (
+    LifecycleAction,
+    LifecycleNotification,
+    LifecyclePaywallState,
+)
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
 
 LifecycleStage = Literal["new_user", "activating", "engaged", "at_risk", "churned"]
@@ -19,9 +24,9 @@ LifecycleStage = Literal["new_user", "activating", "engaged", "at_risk", "churne
 class LifecyclePlan:
     stage: LifecycleStage
     reasons: list[str]
-    actions: list[dict]
-    paywall: dict
-    notification: dict
+    actions: list[LifecycleAction]
+    paywall: LifecyclePaywallState
+    notification: LifecycleNotification
 
 
 class LifecycleService:
@@ -65,13 +70,13 @@ class LifecycleService:
             stage=stage,
             reasons=reasons,
             actions=actions,
-            paywall={
-                "show": paywall.show_paywall,
-                "type": paywall.paywall_type,
-                "reason": paywall.reason,
-                "usage_percent": paywall.usage_percent,
-                "allow_access": paywall.allow_access,
-            },
+            paywall=LifecyclePaywallState(
+                show=paywall.show_paywall,
+                type=paywall.paywall_type,
+                reason=paywall.reason,
+                usage_percent=paywall.usage_percent,
+                allow_access=paywall.allow_access,
+            ),
             notification=notification,
         )
 
@@ -82,72 +87,26 @@ class LifecycleService:
             await uow.commit()
         return learning_state, engagement_state
 
-    def _actions_for_stage(self, stage: LifecycleStage, retention: RetentionAssessment, paywall, learning_state, engagement_state) -> list[dict]:
-        actions: list[dict] = []
+    def _actions_for_stage(self, stage: LifecycleStage, retention: RetentionAssessment, paywall, learning_state, engagement_state) -> list[LifecycleAction]:
+        actions: list[LifecycleAction] = []
         weak_area = next(iter(getattr(learning_state, "weak_areas", []) or []), "core skills")
         mastery = float(getattr(learning_state, "mastery_percent", 0.0) or 0.0)
         if stage == "new_user":
-            actions.append(
-                {
-                    "type": "onboarding_nudge",
-                    "message": "Guide the user to complete the first meaningful session.",
-                }
-            )
-            actions.append(
-                {
-                    "type": "quick_start_path",
-                    "message": "Surface the easiest next lesson and tutor mode entry point.",
-                }
-            )
+            actions.append(LifecycleAction(type="onboarding_nudge", message="Guide the user to complete the first meaningful session."))
+            actions.append(LifecycleAction(type="quick_start_path", message="Surface the easiest next lesson and tutor mode entry point."))
         elif stage == "activating":
-            actions.append(
-                {
-                    "type": "wow_moment_push",
-                    "message": f"Guide the user toward a clean success around {weak_area}.",
-                }
-            )
-            actions.append(
-                {
-                    "type": "progress_visibility",
-                    "message": f"Highlight current mastery at {mastery}%.",
-                }
-            )
+            actions.append(LifecycleAction(type="wow_moment_push", message=f"Guide the user toward a clean success around {weak_area}."))
+            actions.append(LifecycleAction(type="progress_visibility", message=f"Highlight current mastery at {mastery}%."))
         elif stage == "engaged":
-            actions.append(
-                {
-                    "type": "monetization_prompt",
-                    "message": "Show the paid value clearly without interrupting a productive stretch.",
-                }
-            )
+            actions.append(LifecycleAction(type="monetization_prompt", message="Show the paid value clearly without interrupting a productive stretch."))
             if paywall.show_paywall:
-                actions.append(
-                    {
-                        "type": "paywall_follow_up",
-                        "message": f"Paywall available: {paywall.paywall_type} for {paywall.reason}.",
-                    }
-                )
+                actions.append(LifecycleAction(type="paywall_follow_up", message=f"Paywall available: {paywall.paywall_type} for {paywall.reason}."))
         elif stage == "at_risk":
-            actions.append(
-                {
-                    "type": "reengagement_flow",
-                    "message": "Run a low-friction comeback flow.",
-                }
-            )
+            actions.append(LifecycleAction(type="reengagement_flow", message="Run a low-friction comeback flow."))
             for action in retention.suggested_actions[:2]:
-                actions.append(
-                    {
-                        "type": action.kind,
-                        "message": action.reason,
-                        "target": action.target,
-                    }
-                )
+                actions.append(LifecycleAction(type=action.kind, message=action.reason, target=action.target))
         elif stage == "churned":
-            actions.append(
-                {
-                    "type": "win_back_flow",
-                    "message": "Offer a straightforward restart path with a reminder of what is worth returning for.",
-                }
-            )
+            actions.append(LifecycleAction(type="win_back_flow", message="Offer a straightforward restart path with a reminder of what is worth returning for."))
         return actions
 
     async def _notification_for_stage(
@@ -155,18 +114,18 @@ class LifecycleService:
         stage: LifecycleStage,
         user_id: int,
         retention: RetentionAssessment,
-        actions: list[dict],
-    ) -> dict:
+        actions: list[LifecycleAction],
+    ) -> LifecycleNotification:
         if stage not in {"at_risk", "churned", "new_user", "activating"}:
-            return {"should_send": False, "reason": "stage does not require proactive lifecycle messaging"}
+            return LifecycleNotification(should_send=False, reason="stage does not require proactive lifecycle messaging")
         decision = await self._notifications.decide(user_id, retention)
-        return {
-            "should_send": decision.should_send,
-            "reason": decision.reason,
-            "channel": decision.channel,
-            "send_at": decision.send_at.isoformat() if getattr(decision.send_at, "isoformat", None) else None,
-            "category": decision.message.category if decision.message else (actions[0]["type"] if actions else None),
-        }
+        return LifecycleNotification(
+            should_send=decision.should_send,
+            reason=decision.reason,
+            channel=decision.channel,
+            send_at=decision.send_at.isoformat() if getattr(decision.send_at, "isoformat", None) else None,
+            category=decision.message.category if decision.message else (actions[0].type if actions else None),
+        )
 
     async def _evaluate_from_global_decision(self, user_id: int) -> LifecyclePlan:
         decision = await self._global_decision.decide(user_id)
@@ -182,23 +141,23 @@ class LifecycleService:
             stage=stage,
             reasons=reasons,
             actions=actions,
-            paywall={
-                "show": paywall.show_paywall,
-                "type": paywall.paywall_type,
-                "reason": paywall.reason,
-                "usage_percent": paywall.usage_percent,
-                "allow_access": paywall.allow_access,
-            },
+            paywall=LifecyclePaywallState(
+                show=paywall.show_paywall,
+                type=paywall.paywall_type,
+                reason=paywall.reason,
+                usage_percent=paywall.usage_percent,
+                allow_access=paywall.allow_access,
+            ),
             notification=notification,
         )
 
-    async def _onboarding_actions(self, user_id: int, stage: LifecycleStage) -> list[dict]:
+    async def _onboarding_actions(self, user_id: int, stage: LifecycleStage) -> list[LifecycleAction]:
         if not self._onboarding or stage not in {"new_user", "activating"}:
             return []
         plan = await self._onboarding.plan(user_id)
         return [
-            {"type": "goal_capture", "message": step["message"]}
+            LifecycleAction(type="goal_capture", message=step["message"])
             if step["type"] == "goal_capture"
-            else {"type": step["type"], "message": step["message"]}
+            else LifecycleAction(type=step["type"], message=step["message"])
             for step in plan.guided_flow
         ]

@@ -18,6 +18,8 @@ class FakeEventsRepo:
 class FakeUOW:
     def __init__(self, events):
         self.events = FakeEventsRepo(events)
+        self.learning_states = SimpleNamespace(get_or_create=self._learning_state)
+        self.engagement_states = SimpleNamespace(get_or_create=self._engagement_state)
 
     async def __aenter__(self):
         return self
@@ -27,6 +29,16 @@ class FakeUOW:
 
     async def commit(self):
         return None
+
+    async def _learning_state(self, user_id: int):
+        return SimpleNamespace(
+            skills={"grammar": 0.45, "vocabulary": 0.12, "fluency": 0.35},
+            weak_areas=[],
+            mastery_percent=12.0,
+        )
+
+    async def _engagement_state(self, user_id: int):
+        return SimpleNamespace(total_sessions=1)
 
 
 class FakeProgressService:
@@ -261,4 +273,4 @@ def test_lifecycle_service_includes_onboarding_actions_for_new_users():
     plan = run_async(lifecycle.evaluate(9))
 
     assert plan.stage == "new_user"
-    assert any(action["type"] == "goal_capture" for action in plan.actions)
+    assert any(action.type == "goal_capture" for action in plan.actions)
