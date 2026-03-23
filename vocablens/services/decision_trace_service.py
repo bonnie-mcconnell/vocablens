@@ -59,6 +59,40 @@ class DecisionTraceService:
             "traces": [self._trace_payload(trace) for trace in traces],
         }
 
+    async def onboarding_detail(self, user_id: int) -> dict:
+        reference_id = f"onboarding:{user_id}"
+        async with self._uow_factory() as uow:
+            state = await uow.onboarding_states.get(user_id)
+            if state is None:
+                raise NotFoundError("Onboarding state not found")
+            traces = await uow.decision_traces.list_recent(
+                user_id=user_id,
+                reference_id=reference_id,
+                limit=200,
+            )
+            events = await uow.events.list_by_user(user_id, limit=1000)
+            await uow.commit()
+
+        related_events = []
+        for event in events:
+            event_type = str(getattr(event, "event_type", "") or "")
+            if not event_type.startswith("onboarding_"):
+                continue
+            related_events.append(self._event_payload(event))
+        related_events.sort(key=lambda item: (item["created_at"], item["id"]))
+
+        onboarding_traces = [
+            self._trace_payload(trace)
+            for trace in traces
+            if str(trace.trace_type).startswith("onboarding_")
+        ]
+
+        return {
+            "state": self._onboarding_state_payload(state),
+            "events": related_events,
+            "traces": onboarding_traces,
+        }
+
     def _trace_payload(self, trace) -> dict[str, Any]:
         return {
             "id": trace.id,
@@ -112,3 +146,27 @@ class DecisionTraceService:
             "payload": dict(getattr(event, "payload", {}) or {}),
             "created_at": event.created_at.isoformat(),
         }
+
+    def _onboarding_state_payload(self, state) -> dict[str, Any]:
+        return {
+            "current_step": state.current_step,
+            "steps_completed": list(state.steps_completed),
+            "identity": self._as_dict(state.identity),
+            "personalization": self._as_dict(state.personalization),
+            "wow": self._as_dict(state.wow),
+            "early_success_score": state.early_success_score,
+            "progress_illusion": self._as_dict(state.progress_illusion),
+            "paywall": self._as_dict(state.paywall),
+            "habit_lock_in": self._as_dict(state.habit_lock_in),
+        }
+
+    def _as_dict(self, value) -> dict[str, Any]:
+        if hasattr(value, "__dict__"):
+            return {
+                key: self._as_dict(item) if hasattr(item, "__dict__") else item
+                for key, item in value.__dict__.items()
+                if not key.startswith("_")
+            }
+        if isinstance(value, dict):
+            return dict(value)
+        return {}

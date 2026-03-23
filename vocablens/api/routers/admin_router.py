@@ -15,6 +15,7 @@ from vocablens.api.schemas import (
     DecisionTraceDetailResponse,
     DecisionTraceListResponse,
     ExperimentResultsResponse,
+    OnboardingDiagnosticsResponse,
     RetentionAnalyticsResponse,
     UsageAnalyticsResponse,
 )
@@ -124,6 +125,24 @@ def create_admin_router() -> APIRouter:
             "meta": {
                 "source": "admin.decision_traces.detail",
                 "reference_id": reference_id,
+            },
+        }
+
+    @router.get("/onboarding/{user_id}", response_model=OnboardingDiagnosticsResponse)
+    async def onboarding_detail(
+        user_id: int,
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.onboarding_detail(user_id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.onboarding.detail",
+                "user_id": user_id,
             },
         }
 

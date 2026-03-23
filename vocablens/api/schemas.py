@@ -286,6 +286,34 @@ class DecisionTraceDetailResponse(BaseModel):
     meta: DecisionTraceDetailMetaResponse
 
 
+class OnboardingDiagnosticsStateResponse(BaseModel):
+    current_step: str
+    steps_completed: list[str] = Field(default_factory=list)
+    identity: dict[str, Any] = Field(default_factory=dict)
+    personalization: dict[str, Any] = Field(default_factory=dict)
+    wow: dict[str, Any] = Field(default_factory=dict)
+    early_success_score: float = 0.0
+    progress_illusion: dict[str, Any] = Field(default_factory=dict)
+    paywall: dict[str, Any] = Field(default_factory=dict)
+    habit_lock_in: dict[str, Any] = Field(default_factory=dict)
+
+
+class OnboardingDiagnosticsDataResponse(BaseModel):
+    state: OnboardingDiagnosticsStateResponse
+    events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
+    traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class OnboardingDiagnosticsMetaResponse(BaseModel):
+    source: Literal["admin.onboarding.detail"]
+    user_id: int
+
+
+class OnboardingDiagnosticsResponse(BaseModel):
+    data: OnboardingDiagnosticsDataResponse
+    meta: OnboardingDiagnosticsMetaResponse
+
+
 class OnboardingStartRequest(BaseModel):
     pass
 

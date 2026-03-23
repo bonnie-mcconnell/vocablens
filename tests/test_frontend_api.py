@@ -202,6 +202,43 @@ class FakeDecisionTraceService:
             ],
         }
 
+    async def onboarding_detail(self, user_id: int):
+        return {
+            "state": {
+                "current_step": "soft_paywall",
+                "steps_completed": ["identity_selection", "personalization", "instant_wow_moment", "progress_illusion"],
+                "identity": {"motivation": "travel"},
+                "personalization": {"skill_level": "beginner", "daily_goal": 10, "learning_intent": "conversation"},
+                "wow": {"score": 0.84, "qualifies": True, "triggered": True, "understood_percent": 81.0},
+                "early_success_score": 84.0,
+                "progress_illusion": {"xp_gain": 49, "relative_ranking_percentile": 79},
+                "paywall": {"show": True, "trial_recommended": True, "strategy": "high_intent:early:premium_anchor"},
+                "habit_lock_in": {},
+            },
+            "events": [
+                {
+                    "id": 31,
+                    "event_type": "onboarding_state_updated",
+                    "payload": {"current_step": "soft_paywall", "steps_completed_count": 4},
+                    "created_at": "2026-03-23T12:01:00",
+                }
+            ],
+            "traces": [
+                {
+                    "id": 8,
+                    "user_id": user_id,
+                    "trace_type": "onboarding_paywall_entry",
+                    "source": "onboarding_flow_service",
+                    "reference_id": f"onboarding:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {"wow_score": 0.84, "lifecycle_stage": "new_user"},
+                    "outputs": {"next_step": "soft_paywall", "trial_recommended": True},
+                    "reason": "Paywall shown after progress illusion because wow or engagement threshold qualified.",
+                    "created_at": "2026-03-23T12:01:00",
+                }
+            ],
+        }
+
 
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
@@ -253,6 +290,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/decision-traces/sess_123",
         headers={"X-Admin-Token": "secret"},
     )
+    onboarding = client.get(
+        "/admin/onboarding/1",
+        headers={"X-Admin-Token": "secret"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -277,6 +318,11 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert detail.json()["data"]["attempts"][0]["learner_response"] == "I goed there yesterday"
     assert detail.json()["data"]["events"][0]["event_type"] == "session_ended"
     assert detail.json()["data"]["traces"][0]["trace_type"] == "session_evaluation"
+    assert onboarding.status_code == 200
+    assert onboarding.json()["meta"]["source"] == "admin.onboarding.detail"
+    assert onboarding.json()["data"]["state"]["current_step"] == "soft_paywall"
+    assert onboarding.json()["data"]["events"][0]["event_type"] == "onboarding_state_updated"
+    assert onboarding.json()["data"]["traces"][0]["trace_type"] == "onboarding_paywall_entry"
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():
