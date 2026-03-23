@@ -448,3 +448,27 @@ class DecisionTraceORM(Base):
     outputs = Column(JSON, nullable=False, default=dict)
     reason = Column(Text)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class OnboardingFlowStateORM(Base):
+    __tablename__ = "onboarding_flow_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_onboarding_flow_states_user_id"),
+        Index("idx_onboarding_flow_states_user", "user_id"),
+        Index("idx_onboarding_flow_states_step", "current_step", "updated_at"),
+        Index("idx_onboarding_flow_states_updated_at", "updated_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    current_step = Column(String, nullable=False)
+    steps_completed = Column(JSON, nullable=False, default=list)
+    identity = Column(JSON, nullable=False, default=dict)
+    personalization = Column(JSON, nullable=False, default=dict)
+    wow = Column(JSON, nullable=False, default=dict)
+    early_success_score = Column(Float, default=0.0, nullable=False)
+    progress_illusion = Column(JSON, nullable=False, default=dict)
+    paywall = Column(JSON, nullable=False, default=dict)
+    habit_lock_in = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)

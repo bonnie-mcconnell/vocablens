@@ -10,6 +10,7 @@ from vocablens.domain.models import (
     UserProgressState,
     VocabularyItem,
 )
+from vocablens.services.report_models import OnboardingFlowState
 from vocablens.domain.user import User
 
 
@@ -185,3 +186,8 @@ class DecisionTraceRepository(Protocol):
         outputs: Dict[str, Any],
         reason: str | None = None,
     ) -> DecisionTrace: ...
+
+
+class OnboardingFlowStateRepository(Protocol):
+    async def get(self, user_id: int) -> OnboardingFlowState | None: ...
+    async def upsert(self, user_id: int, state: OnboardingFlowState) -> OnboardingFlowState: ...

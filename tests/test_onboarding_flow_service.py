@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from tests.conftest import run_async
 from vocablens.services.onboarding_flow_service import OnboardingFlowService
+from vocablens.services.report_models import OnboardingFlowState
 
 
 class FakeEventsRepo:
@@ -49,10 +50,23 @@ class FakeProfilesRepo:
         self.updated.append((user_id, kwargs))
 
 
+class FakeOnboardingStatesRepo:
+    def __init__(self):
+        self.states = {}
+
+    async def get(self, user_id: int):
+        return self.states.get(user_id)
+
+    async def upsert(self, user_id: int, state: OnboardingFlowState):
+        self.states[user_id] = state
+        return state
+
+
 class FakeUOW:
-    def __init__(self, events_repo: FakeEventsRepo, profiles_repo: FakeProfilesRepo):
+    def __init__(self, events_repo: FakeEventsRepo, profiles_repo: FakeProfilesRepo, onboarding_states_repo: FakeOnboardingStatesRepo):
         self.events = events_repo
         self.profiles = profiles_repo
+        self.onboarding_states = onboarding_states_repo
 
     async def __aenter__(self):
         return self
@@ -157,6 +171,7 @@ def _wow(score: float, qualifies: bool, current_accuracy: float):
 def _service(*, wow_score=0.82, qualifies=True, paywall=None):
     events_repo = FakeEventsRepo()
     profiles_repo = FakeProfilesRepo()
+    onboarding_states_repo = FakeOnboardingStatesRepo()
     paywall = paywall or SimpleNamespace(
         show_paywall=True,
         paywall_type="soft_paywall",
@@ -169,7 +184,7 @@ def _service(*, wow_score=0.82, qualifies=True, paywall=None):
         strategy="high_intent:early:premium_anchor",
     )
     service = OnboardingFlowService(
-        lambda: FakeUOW(events_repo, profiles_repo),
+        lambda: FakeUOW(events_repo, profiles_repo, onboarding_states_repo),
         FakeWowEngine(_wow(wow_score, qualifies, 0.81)),
         FakeAddictionEngine(),
         FakeLifecycleService(),

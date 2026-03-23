@@ -25,6 +25,9 @@ from vocablens.infrastructure.postgres_learning_session_repository import Postgr
 from vocablens.infrastructure.postgres_user_learning_state_repository import PostgresUserLearningStateRepository
 from vocablens.infrastructure.postgres_user_engagement_state_repository import PostgresUserEngagementStateRepository
 from vocablens.infrastructure.postgres_user_progress_state_repository import PostgresUserProgressStateRepository
+from vocablens.infrastructure.postgres_onboarding_flow_state_repository import (
+    PostgresOnboardingFlowStateRepository,
+)
 
 
 class UnitOfWork:
@@ -56,6 +59,7 @@ class UnitOfWork:
         self._learning_states: Optional[PostgresUserLearningStateRepository] = None
         self._engagement_states: Optional[PostgresUserEngagementStateRepository] = None
         self._progress_states: Optional[PostgresUserProgressStateRepository] = None
+        self._onboarding_states: Optional[PostgresOnboardingFlowStateRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -235,6 +239,14 @@ class UnitOfWork:
         if self._progress_states is None:
             self._progress_states = PostgresUserProgressStateRepository(self.session)
         return self._progress_states
+
+    @property
+    def onboarding_states(self) -> PostgresOnboardingFlowStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._onboarding_states is None:
+            self._onboarding_states = PostgresOnboardingFlowStateRepository(self.session)
+        return self._onboarding_states
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

@@ -36,6 +36,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "events" in tables
     assert "vocabulary" in tables
     assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
+    assert "onboarding_flow_states" in tables
     assert {"learning_sessions", "learning_session_attempts"} <= tables
     assert "decision_traces" in tables
 
@@ -170,6 +171,28 @@ def test_upgrade_downgrade_upgrade_round_trip():
     progress_state_fks = inspector.get_foreign_keys("user_progress_states")
     assert any(fk["referred_table"] == "users" for fk in progress_state_fks)
 
+    onboarding_state_columns = {col["name"] for col in inspector.get_columns("onboarding_flow_states")}
+    assert {
+        "user_id",
+        "current_step",
+        "steps_completed",
+        "identity",
+        "personalization",
+        "wow",
+        "early_success_score",
+        "progress_illusion",
+        "paywall",
+        "habit_lock_in",
+        "created_at",
+        "updated_at",
+    } <= onboarding_state_columns
+    onboarding_state_indexes = {idx["name"] for idx in inspector.get_indexes("onboarding_flow_states")}
+    assert "idx_onboarding_flow_states_user" in onboarding_state_indexes
+    assert "idx_onboarding_flow_states_step" in onboarding_state_indexes
+    assert "idx_onboarding_flow_states_updated_at" in onboarding_state_indexes
+    onboarding_state_fks = inspector.get_foreign_keys("onboarding_flow_states")
+    assert any(fk["referred_table"] == "users" for fk in onboarding_state_fks)
+
     learning_session_columns = {col["name"] for col in inspector.get_columns("learning_sessions")}
     assert {
         "session_id",
@@ -240,6 +263,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "user_learning_states" not in tables
     assert "user_engagement_states" not in tables
     assert "user_progress_states" not in tables
+    assert "onboarding_flow_states" not in tables
     assert "learning_sessions" not in tables
     assert "learning_session_attempts" not in tables
     assert "decision_traces" not in tables
@@ -252,6 +276,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_assignments" in tables
     assert "events" in tables
     assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
+    assert "onboarding_flow_states" in tables
     assert {"learning_sessions", "learning_session_attempts"} <= tables
     assert "decision_traces" in tables
     engine.dispose()
