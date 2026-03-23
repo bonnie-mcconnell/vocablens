@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from vocablens.domain.errors import NotFoundError
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 
@@ -26,23 +28,7 @@ class DecisionTraceService:
             )
             await uow.commit()
 
-        return {
-            "traces": [
-                {
-                    "id": trace.id,
-                    "user_id": trace.user_id,
-                    "trace_type": trace.trace_type,
-                    "source": trace.source,
-                    "reference_id": trace.reference_id,
-                    "policy_version": trace.policy_version,
-                    "inputs": trace.inputs,
-                    "outputs": trace.outputs,
-                    "reason": trace.reason,
-                    "created_at": trace.created_at.isoformat(),
-                }
-                for trace in traces
-            ]
-        }
+        return {"traces": [self._trace_payload(trace) for trace in traces]}
 
     async def session_detail(self, reference_id: str) -> dict:
         async with self._uow_factory() as uow:
@@ -63,62 +49,66 @@ class DecisionTraceService:
             payload = dict(getattr(event, "payload", {}) or {})
             if payload.get("session_id") != reference_id:
                 continue
-            related_events.append(
-                {
-                    "id": int(event.id),
-                    "event_type": str(event.event_type),
-                    "payload": payload,
-                    "created_at": event.created_at.isoformat(),
-                }
-            )
+            related_events.append(self._event_payload(event))
         related_events.sort(key=lambda item: (item["created_at"], item["id"]))
 
         return {
-            "session": {
-                "session_id": session.session_id,
-                "user_id": session.user_id,
-                "status": session.status,
-                "duration_seconds": session.duration_seconds,
-                "mode": session.mode,
-                "weak_area": session.weak_area,
-                "lesson_target": session.lesson_target,
-                "goal_label": session.goal_label,
-                "success_criteria": session.success_criteria,
-                "review_window_minutes": session.review_window_minutes,
-                "session_payload": session.session_payload,
-                "created_at": session.created_at.isoformat(),
-                "expires_at": session.expires_at.isoformat(),
-                "completed_at": session.completed_at.isoformat() if session.completed_at else None,
-                "last_evaluated_at": session.last_evaluated_at.isoformat() if session.last_evaluated_at else None,
-                "evaluation_count": session.evaluation_count,
-            },
-            "attempts": [
-                {
-                    "id": attempt.id,
-                    "session_id": attempt.session_id,
-                    "user_id": attempt.user_id,
-                    "learner_response": attempt.learner_response,
-                    "is_correct": attempt.is_correct,
-                    "improvement_score": attempt.improvement_score,
-                    "feedback_payload": attempt.feedback_payload,
-                    "created_at": attempt.created_at.isoformat(),
-                }
-                for attempt in attempts
-            ],
+            "session": self._session_payload(session),
+            "attempts": [self._attempt_payload(attempt) for attempt in attempts],
             "events": related_events,
-            "traces": [
-                {
-                    "id": trace.id,
-                    "user_id": trace.user_id,
-                    "trace_type": trace.trace_type,
-                    "source": trace.source,
-                    "reference_id": trace.reference_id,
-                    "policy_version": trace.policy_version,
-                    "inputs": trace.inputs,
-                    "outputs": trace.outputs,
-                    "reason": trace.reason,
-                    "created_at": trace.created_at.isoformat(),
-                }
-                for trace in traces
-            ],
+            "traces": [self._trace_payload(trace) for trace in traces],
+        }
+
+    def _trace_payload(self, trace) -> dict[str, Any]:
+        return {
+            "id": trace.id,
+            "user_id": trace.user_id,
+            "trace_type": trace.trace_type,
+            "source": trace.source,
+            "reference_id": trace.reference_id,
+            "policy_version": trace.policy_version,
+            "inputs": trace.inputs,
+            "outputs": trace.outputs,
+            "reason": trace.reason,
+            "created_at": trace.created_at.isoformat(),
+        }
+
+    def _session_payload(self, session) -> dict[str, Any]:
+        return {
+            "session_id": session.session_id,
+            "user_id": session.user_id,
+            "status": session.status,
+            "duration_seconds": session.duration_seconds,
+            "mode": session.mode,
+            "weak_area": session.weak_area,
+            "lesson_target": session.lesson_target,
+            "goal_label": session.goal_label,
+            "success_criteria": session.success_criteria,
+            "review_window_minutes": session.review_window_minutes,
+            "session_payload": session.session_payload,
+            "created_at": session.created_at.isoformat(),
+            "expires_at": session.expires_at.isoformat(),
+            "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+            "last_evaluated_at": session.last_evaluated_at.isoformat() if session.last_evaluated_at else None,
+            "evaluation_count": session.evaluation_count,
+        }
+
+    def _attempt_payload(self, attempt) -> dict[str, Any]:
+        return {
+            "id": attempt.id,
+            "session_id": attempt.session_id,
+            "user_id": attempt.user_id,
+            "learner_response": attempt.learner_response,
+            "is_correct": attempt.is_correct,
+            "improvement_score": attempt.improvement_score,
+            "feedback_payload": attempt.feedback_payload,
+            "created_at": attempt.created_at.isoformat(),
+        }
+
+    def _event_payload(self, event) -> dict[str, Any]:
+        return {
+            "id": int(event.id),
+            "event_type": str(event.event_type),
+            "payload": dict(getattr(event, "payload", {}) or {}),
+            "created_at": event.created_at.isoformat(),
         }
