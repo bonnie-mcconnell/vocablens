@@ -60,7 +60,7 @@ def test_subscription_service_returns_tier_features_and_tracks_upgrade():
     assert features.tier == "pro"
     assert features.tutor_depth == "standard"
     assert upgraded.tier == "premium"
-    assert metrics["tier_upgraded"] == 1
+    assert metrics.counts_by_event["tier_upgraded"] == 1
 
 
 def test_subscription_service_records_feature_gate_metrics():
@@ -78,4 +78,4 @@ def test_subscription_service_records_feature_gate_metrics():
     )
     metrics = run_async(service.conversion_metrics())
 
-    assert metrics["feature_gate_blocked"] == 1
+    assert metrics.counts_by_event["feature_gate_blocked"] == 1

@@ -61,16 +61,16 @@ def test_analytics_service_calculates_daily_cohorts_and_retention_correctly():
 
     report = run_async(service.retention_report())
 
-    old_cohort = next(row for row in report["cohorts"] if row["cohort_date"] == signup_day_old.isoformat())
-    new_cohort = next(row for row in report["cohorts"] if row["cohort_date"] == signup_day_new.isoformat())
+    old_cohort = next(row for row in report.cohorts if row.cohort_date == signup_day_old.isoformat())
+    new_cohort = next(row for row in report.cohorts if row.cohort_date == signup_day_new.isoformat())
 
-    assert old_cohort["size"] == 2
-    assert old_cohort["d1_retention"] == 100.0
-    assert old_cohort["d7_retention"] == 50.0
-    assert old_cohort["d30_retention"] == 50.0
-    assert new_cohort["size"] == 1
-    assert new_cohort["d1_retention"] == 100.0
-    assert new_cohort["d7_retention"] == 100.0
+    assert old_cohort.size == 2
+    assert old_cohort.d1_retention == 100.0
+    assert old_cohort.d7_retention == 50.0
+    assert old_cohort.d30_retention == 50.0
+    assert new_cohort.size == 1
+    assert new_cohort.d1_retention == 100.0
+    assert new_cohort.d7_retention == 100.0
 
 
 def test_analytics_service_computes_usage_and_retention_metrics():
@@ -87,9 +87,9 @@ def test_analytics_service_computes_usage_and_retention_metrics():
 
     usage = run_async(service.usage_report())
 
-    assert usage["dau"] == 1
-    assert usage["mau"] == 1
-    assert usage["dau_mau_ratio"] == 1.0
-    assert usage["avg_session_length_seconds"] == 360.0
-    assert usage["sessions_per_user"] == 2.0
-    assert usage["engagement_distribution"]["low"] == 1
+    assert usage.dau == 1
+    assert usage.mau == 1
+    assert usage.dau_mau_ratio == 1.0
+    assert usage.avg_session_length_seconds == 360.0
+    assert usage.sessions_per_user == 2.0
+    assert usage.engagement_distribution.low == 1

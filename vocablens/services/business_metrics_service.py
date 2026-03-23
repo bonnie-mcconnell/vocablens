@@ -3,6 +3,7 @@ from __future__ import annotations
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.conversion_funnel_service import ConversionFunnelService
+from vocablens.services.report_models import RetentionCohort, RetentionReport
 
 
 TIER_MONTHLY_PRICES = {
@@ -85,19 +86,34 @@ class BusinessMetricsService:
         churn_proxy = active_trials / max(1, len(subscriptions))
         return round(max(0.05, churn_proxy), 4)
 
-    def _retention_visualization(self, retention: dict) -> dict:
-        cohorts = retention.get("cohorts", [])
+    def _retention_visualization(self, retention: RetentionReport | dict) -> dict:
+        if isinstance(retention, RetentionReport):
+            cohorts = retention.cohorts
+            churn_rate = retention.churn_rate
+        else:
+            cohorts = retention.get("cohorts", [])
+            churn_rate = retention.get("churn_rate", 0.0)
+
         return {
             "curves": [
                 {
-                    "cohort_date": row["cohort_date"],
+                    "cohort_date": row.cohort_date if isinstance(row, RetentionCohort) else row["cohort_date"],
                     "points": [
-                        {"day": 1, "retention": row["retention_curve"]["d1"]},
-                        {"day": 7, "retention": row["retention_curve"]["d7"]},
-                        {"day": 30, "retention": row["retention_curve"]["d30"]},
+                        {
+                            "day": 1,
+                            "retention": row.retention_curve.d1 if isinstance(row, RetentionCohort) else row["retention_curve"]["d1"],
+                        },
+                        {
+                            "day": 7,
+                            "retention": row.retention_curve.d7 if isinstance(row, RetentionCohort) else row["retention_curve"]["d7"],
+                        },
+                        {
+                            "day": 30,
+                            "retention": row.retention_curve.d30 if isinstance(row, RetentionCohort) else row["retention_curve"]["d30"],
+                        },
                     ],
                 }
                 for row in cohorts
             ],
-            "churn_rate": retention.get("churn_rate", 0.0),
+            "churn_rate": churn_rate,
         }

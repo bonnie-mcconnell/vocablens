@@ -5,13 +5,20 @@ from datetime import timedelta
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.report_models import (
+    RetentionCohort,
+    RetentionCurve,
+    RetentionReport,
+    UsageEngagementDistribution,
+    UsageReport,
+)
 
 
 class AnalyticsService:
     def __init__(self, uow_factory: type[UnitOfWork]):
         self._uow_factory = uow_factory
 
-    async def retention_report(self) -> dict:
+    async def retention_report(self) -> RetentionReport:
         now = utc_now()
         async with self._uow_factory() as uow:
             users = await uow.users.list_all()
@@ -45,26 +52,23 @@ class AnalyticsService:
             eligible_d30 += eligible
             retained_d30 += retained
             cohort_rows.append(
-                {
-                    "cohort_date": cohort_date,
-                    "size": size,
-                    "d1_retention": d1,
-                    "d7_retention": d7,
-                    "d30_retention": d30,
-                    "retention_curve": {"d1": d1, "d7": d7, "d30": d30},
-                }
+                RetentionCohort(
+                    cohort_date=cohort_date,
+                    size=size,
+                    d1_retention=d1,
+                    d7_retention=d7,
+                    d30_retention=d30,
+                    retention_curve=RetentionCurve(d1=d1, d7=d7, d30=d30),
+                )
             )
 
         churn_rate = 0.0
         if eligible_d30:
             churn_rate = round(100.0 - ((retained_d30 / eligible_d30) * 100), 1)
 
-        return {
-            "cohorts": cohort_rows,
-            "churn_rate": churn_rate,
-        }
+        return RetentionReport(cohorts=cohort_rows, churn_rate=churn_rate)
 
-    async def usage_report(self) -> dict:
+    async def usage_report(self) -> UsageReport:
         now = utc_now()
         async with self._uow_factory() as uow:
             events = await uow.events.list_since(
@@ -97,14 +101,14 @@ class AnalyticsService:
         avg_session_length = round(sum(session_lengths) / len(session_lengths), 1) if session_lengths else 0.0
         sessions_per_user = round(total_sessions / user_count, 2) if user_count else 0.0
 
-        return {
-            "dau": dau,
-            "mau": mau,
-            "dau_mau_ratio": round((dau / mau), 3) if mau else 0.0,
-            "avg_session_length_seconds": avg_session_length,
-            "sessions_per_user": sessions_per_user,
-            "engagement_distribution": self._engagement_distribution(session_counts),
-        }
+        return UsageReport(
+            dau=dau,
+            mau=mau,
+            dau_mau_ratio=round((dau / mau), 3) if mau else 0.0,
+            avg_session_length_seconds=avg_session_length,
+            sessions_per_user=sessions_per_user,
+            engagement_distribution=self._engagement_distribution(session_counts),
+        )
 
     def _retention_rate(self, cohort_users, active_dates_by_user, signup_date, day_offset: int) -> float:
         eligible_users = [
@@ -135,7 +139,7 @@ class AnalyticsService:
                     open_session = None
         return lengths
 
-    def _engagement_distribution(self, session_counts: dict[int, int]) -> dict:
+    def _engagement_distribution(self, session_counts: dict[int, int]) -> UsageEngagementDistribution:
         distribution = {"low": 0, "medium": 0, "high": 0}
         for count in session_counts.values():
             if count <= 2:
@@ -144,4 +148,4 @@ class AnalyticsService:
                 distribution["medium"] += 1
             else:
                 distribution["high"] += 1
-        return distribution
+        return UsageEngagementDistribution(**distribution)

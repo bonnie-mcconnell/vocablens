@@ -53,9 +53,9 @@ def test_experiment_results_service_groups_by_variant_correctly():
 
     report = run_async(service.results())
 
-    assert len(report["experiments"]) == 2
-    paywall = next(row for row in report["experiments"] if row["experiment_key"] == "paywall_offer")
-    assert {variant["variant"] for variant in paywall["variants"]} == {"control", "variant_a"}
+    assert len(report.experiments) == 2
+    paywall = next(row for row in report.experiments if row.experiment_key == "paywall_offer")
+    assert {variant.variant for variant in paywall.variants} == {"control", "variant_a"}
 
 
 def test_experiment_results_service_aggregates_metrics_and_comparisons():
@@ -81,16 +81,16 @@ def test_experiment_results_service_aggregates_metrics_and_comparisons():
 
     report = run_async(service.results("paywall_offer"))
 
-    experiment = report["experiments"][0]
-    control = next(row for row in experiment["variants"] if row["variant"] == "control")
-    variant_a = next(row for row in experiment["variants"] if row["variant"] == "variant_a")
+    experiment = report.experiments[0]
+    control = next(row for row in experiment.variants if row.variant == "control")
+    variant_a = next(row for row in experiment.variants if row.variant == "variant_a")
 
-    assert control["retention_rate"] == 50.0
-    assert control["conversion_rate"] == 0.0
-    assert control["engagement"]["messages_per_user"] == 1.0
-    assert variant_a["retention_rate"] == 100.0
-    assert variant_a["conversion_rate"] == 50.0
-    assert variant_a["engagement"]["learning_actions_per_user"] == 1.0
-    assert experiment["comparisons"][0]["baseline_variant"] == "control"
-    assert experiment["comparisons"][0]["candidate_variant"] == "variant_a"
-    assert experiment["comparisons"][0]["retention_lift"] == 50.0
+    assert control.retention_rate == 50.0
+    assert control.conversion_rate == 0.0
+    assert control.engagement.messages_per_user == 1.0
+    assert variant_a.retention_rate == 100.0
+    assert variant_a.conversion_rate == 50.0
+    assert variant_a.engagement.learning_actions_per_user == 1.0
+    assert experiment.comparisons[0].baseline_variant == "control"
+    assert experiment.comparisons[0].candidate_variant == "variant_a"
+    assert experiment.comparisons[0].retention_lift == 50.0

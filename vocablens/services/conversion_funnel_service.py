@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import timedelta
 from typing import Literal
 
@@ -115,6 +115,8 @@ class ConversionFunnelService:
         retention_summary = None
         if self._analytics:
             retention_summary = await self._analytics.retention_report()
+            if is_dataclass(retention_summary):
+                retention_summary = asdict(retention_summary)
 
         return {
             "stages": [

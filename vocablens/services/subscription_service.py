@@ -5,6 +5,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.paywall_service import PaywallService
+from vocablens.services.report_models import ConversionMetrics
 
 
 @dataclass(frozen=True)
@@ -177,11 +178,11 @@ class SubscriptionService:
         if self._paywall_service:
             await self._paywall_service.register_upgrade_click(user_id, source=source)
 
-    async def conversion_metrics(self) -> dict:
+    async def conversion_metrics(self) -> ConversionMetrics:
         async with self._uow_factory() as uow:
             counts = await uow.subscription_events.counts_by_event()
             await uow.commit()
-        return counts
+        return ConversionMetrics(counts_by_event=counts)
 
     def _tier_rank(self, tier: str) -> int:
         return {"free": 0, "pro": 1, "premium": 2}.get(tier, 0)

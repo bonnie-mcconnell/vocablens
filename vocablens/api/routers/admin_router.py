@@ -1,3 +1,5 @@
+from dataclasses import asdict, is_dataclass
+
 from fastapi import APIRouter, Depends, Query
 from fastapi import HTTPException
 
@@ -23,6 +25,12 @@ from vocablens.services.experiment_results_service import ExperimentResultsServi
 from vocablens.services.subscription_service import SubscriptionService
 
 
+def _response_payload(value):
+    if is_dataclass(value):
+        return asdict(value)
+    return value
+
+
 def create_admin_router() -> APIRouter:
     router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -33,7 +41,9 @@ def create_admin_router() -> APIRouter:
     ):
         metrics = await service.conversion_metrics()
         return {
-            "data": {"conversion_metrics": metrics},
+            "data": {
+                "conversion_metrics": metrics.counts_by_event if hasattr(metrics, "counts_by_event") else metrics,
+            },
             "meta": {"source": "admin.conversions"},
         }
 
@@ -44,7 +54,7 @@ def create_admin_router() -> APIRouter:
     ):
         metrics = await service.retention_report()
         return {
-            "data": {"retention": metrics},
+            "data": {"retention": _response_payload(metrics)},
             "meta": {"source": "admin.analytics.retention"},
         }
 
@@ -55,7 +65,7 @@ def create_admin_router() -> APIRouter:
     ):
         metrics = await service.usage_report()
         return {
-            "data": {"usage": metrics},
+            "data": {"usage": _response_payload(metrics)},
             "meta": {"source": "admin.analytics.usage"},
         }
 
@@ -67,7 +77,7 @@ def create_admin_router() -> APIRouter:
     ):
         results = await service.results(experiment_key)
         return {
-            "data": {"experiment_results": results},
+            "data": {"experiment_results": _response_payload(results)},
             "meta": {"source": "admin.experiments.results"},
         }
 
