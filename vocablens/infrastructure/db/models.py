@@ -429,3 +429,22 @@ class LearningSessionAttemptORM(Base):
     improvement_score = Column(Float, nullable=False)
     feedback_payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class DecisionTraceORM(Base):
+    __tablename__ = "decision_traces"
+    __table_args__ = (
+        Index("idx_decision_traces_user_type", "user_id", "trace_type", "created_at"),
+        Index("idx_decision_traces_reference", "reference_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    trace_type = Column(String, nullable=False)
+    source = Column(String, nullable=False)
+    reference_id = Column(String)
+    policy_version = Column(String, nullable=False)
+    inputs = Column(JSON, nullable=False, default=dict)
+    outputs = Column(JSON, nullable=False, default=dict)
+    reason = Column(Text)
+    created_at = Column(DateTime, default=utc_now, nullable=False)

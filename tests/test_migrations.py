@@ -37,6 +37,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "vocabulary" in tables
     assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
     assert {"learning_sessions", "learning_session_attempts"} <= tables
+    assert "decision_traces" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -206,6 +207,25 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert any(fk["referred_table"] == "learning_sessions" for fk in learning_attempt_fks)
     assert any(fk["referred_table"] == "users" for fk in learning_attempt_fks)
 
+    decision_trace_columns = {col["name"] for col in inspector.get_columns("decision_traces")}
+    assert {
+        "id",
+        "user_id",
+        "trace_type",
+        "source",
+        "reference_id",
+        "policy_version",
+        "inputs",
+        "outputs",
+        "reason",
+        "created_at",
+    } <= decision_trace_columns
+    decision_trace_indexes = {idx["name"] for idx in inspector.get_indexes("decision_traces")}
+    assert "idx_decision_traces_user_type" in decision_trace_indexes
+    assert "idx_decision_traces_reference" in decision_trace_indexes
+    decision_trace_fks = inspector.get_foreign_keys("decision_traces")
+    assert any(fk["referred_table"] == "users" for fk in decision_trace_fks)
+
     command.downgrade(config, "20260317_0001")
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
@@ -222,6 +242,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "user_progress_states" not in tables
     assert "learning_sessions" not in tables
     assert "learning_session_attempts" not in tables
+    assert "decision_traces" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -232,6 +253,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "events" in tables
     assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
     assert {"learning_sessions", "learning_session_attempts"} <= tables
+    assert "decision_traces" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

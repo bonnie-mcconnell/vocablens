@@ -144,28 +144,101 @@ class LearningEngine:
         return await self._finalize_recommendation(user_id, recommendation, adaptation)
 
     async def update_knowledge(self, user_id: int, session_result: SessionResult) -> KnowledgeUpdateSummary:
-        async with self._uow_factory() as uow:
-            profile = await uow.profiles.get_or_create(user_id)
-            applied = await self._session_updater.apply(
-                uow=uow,
-                user_id=user_id,
-                session_result=session_result,
-                review_multiplier=self._review_multiplier(profile),
-            )
-            await uow.commit()
-
+        summary = await self.apply_session_result(
+            user_id,
+            session_result,
+            source="learning_engine",
+        )
         if self._event_service:
             await self._event_service.track_event(
                 user_id=user_id,
                 event_type="knowledge_updated",
                 payload={
                     "source": "learning_engine",
-                    "reviewed_count": applied.reviewed_count,
-                    "learned_count": applied.learned_count,
-                    "updated_item_ids": applied.updated_item_ids,
+                    "reviewed_count": summary.reviewed_count,
+                    "learned_count": summary.learned_count,
+                    "updated_item_ids": summary.updated_item_ids,
                     "weak_areas": list(session_result.weak_areas),
                 },
             )
+        return summary
+
+    async def apply_session_result(
+        self,
+        user_id: int,
+        session_result: SessionResult,
+        *,
+        source: str,
+        uow=None,
+        reference_id: str | None = None,
+    ) -> KnowledgeUpdateSummary:
+        if uow is None:
+            async with self._uow_factory() as managed_uow:
+                summary = await self._apply_session_result(
+                    managed_uow,
+                    user_id,
+                    session_result,
+                    source=source,
+                    reference_id=reference_id,
+                )
+                await managed_uow.commit()
+                return summary
+        return await self._apply_session_result(
+            uow,
+            user_id,
+            session_result,
+            source=source,
+            reference_id=reference_id,
+        )
+
+    async def _apply_session_result(
+        self,
+        uow,
+        user_id: int,
+        session_result: SessionResult,
+        *,
+        source: str,
+        reference_id: str | None,
+    ) -> KnowledgeUpdateSummary:
+        profile = await uow.profiles.get_or_create(user_id)
+        applied = await self._session_updater.apply(
+            uow=uow,
+            user_id=user_id,
+            session_result=session_result,
+            review_multiplier=self._review_multiplier(profile),
+        )
+        await uow.events.record(
+            user_id=user_id,
+            event_type="knowledge_updated",
+            payload={
+                "source": source,
+                "reviewed_count": applied.reviewed_count,
+                "learned_count": applied.learned_count,
+                "updated_item_ids": applied.updated_item_ids,
+                "weak_areas": list(session_result.weak_areas),
+            },
+        )
+        await uow.decision_traces.create(
+            user_id=user_id,
+            trace_type="knowledge_update",
+            source=source,
+            reference_id=reference_id,
+            policy_version="v1",
+            inputs={
+                "reviewed_item_count": len(session_result.reviewed_items),
+                "learned_item_count": len(session_result.learned_item_ids),
+                "skill_scores": dict(session_result.skill_scores),
+                "mistakes": list(session_result.mistakes),
+                "weak_areas": list(session_result.weak_areas),
+            },
+            outputs={
+                "reviewed_count": applied.reviewed_count,
+                "learned_count": applied.learned_count,
+                "updated_item_ids": applied.updated_item_ids,
+                "interaction_stats": dict(applied.interaction_stats),
+            },
+            reason="Applied session result to canonical learning, engagement, and progress state.",
+        )
 
         return KnowledgeUpdateSummary(
             reviewed_count=applied.reviewed_count,
@@ -216,6 +289,32 @@ class LearningEngine:
         adaptation: PersonalizationAdaptation,
     ) -> LearningRecommendation:
         decorated = self._decorate(recommendation, adaptation)
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="lesson_recommendation",
+                source="learning_engine",
+                reference_id=None,
+                policy_version="v1",
+                inputs={
+                    "action": decorated.action,
+                    "target": decorated.target,
+                    "difficulty": decorated.lesson_difficulty,
+                    "content_type": decorated.content_type,
+                    "skill_focus": decorated.skill_focus,
+                    "due_items_count": decorated.due_items_count,
+                },
+                outputs={
+                    "action": decorated.action,
+                    "target": decorated.target,
+                    "goal_label": decorated.goal_label,
+                    "review_window_minutes": decorated.review_window_minutes,
+                    "review_priority": decorated.review_priority,
+                },
+                reason=decorated.reason,
+            )
+            await uow.commit()
+
         if self._event_service:
             await self._event_service.track_event(
                 user_id=user_id,

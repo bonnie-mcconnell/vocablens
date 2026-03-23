@@ -17,6 +17,8 @@ class FakeUOW:
             mark_completed=self._mark_completed,
             mark_expired=self._mark_expired,
         )
+        self.events = SimpleNamespace(record=self._record_event, records=[])
+        self.decision_traces = SimpleNamespace(create=self._create_trace, records=[])
         self._due_items = due_items or []
         self._skills = skills or {"grammar": 0.4, "vocabulary": 0.7, "fluency": 0.8}
         self._weak_clusters = weak_clusters or []
@@ -78,6 +80,13 @@ class FakeUOW:
         self.expired_sessions.append(session_id)
         return session
 
+    async def _record_event(self, *, user_id: int, event_type: str, payload: dict, created_at=None):
+        self.events.records.append((user_id, event_type, payload))
+
+    async def _create_trace(self, **kwargs):
+        self.decision_traces.records.append(kwargs)
+        return SimpleNamespace(id=len(self.decision_traces.records), created_at=None, **kwargs)
+
 
 class FakeLearningEngine:
     def __init__(self, recommendation):
@@ -90,6 +99,16 @@ class FakeLearningEngine:
     async def update_knowledge(self, user_id: int, session_result):
         self.update_calls.append((user_id, session_result))
         return SimpleNamespace(reviewed_count=1, learned_count=0, weak_areas=session_result.weak_areas, updated_item_ids=[])
+
+    async def apply_session_result(self, user_id: int, session_result, *, source: str, uow=None, reference_id: str | None = None):
+        self.update_calls.append((user_id, session_result, source, reference_id))
+        return SimpleNamespace(
+            reviewed_count=1,
+            learned_count=0,
+            weak_areas=session_result.weak_areas,
+            updated_item_ids=[],
+            interaction_stats={"lessons_completed": 1, "reviews_completed": 1},
+        )
 
 
 class FakeWowEngine:
@@ -206,7 +225,7 @@ def test_session_engine_feedback_loop_returns_correction_reinforcement_and_win()
     assert "improved" in feedback.progress_summary.lower()
     assert "next" in feedback.recommended_next_step.lower() or "repeat" in feedback.recommended_next_step.lower()
     assert feedback.xp_preview == 145
-    assert len(learning_engine.update_calls) == 1
+    assert learning_engine.update_calls == []
 
 
 def test_session_engine_persists_server_owned_session_and_evaluates_by_session_id():
@@ -233,4 +252,6 @@ def test_session_engine_persists_server_owned_session_and_evaluates_by_session_i
     assert started["session_id"] in uow.created_sessions
     assert uow.attempts[0]["session_id"] == started["session_id"]
     assert started["session_id"] in uow.completed_sessions
+    assert uow.events.records[-1][1] == "lesson_completed"
+    assert uow.decision_traces.records[-1]["trace_type"] == "session_evaluation"
     assert feedback.corrected_response == "I went there yesterday."

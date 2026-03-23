@@ -69,6 +69,12 @@ class SessionFeedback:
     review_window_minutes: int
 
 
+@dataclass(frozen=True)
+class SessionEvaluation:
+    feedback: SessionFeedback
+    session_result: SessionResult
+
+
 class SessionEngine:
     """
     Builds a fixed five-step tutor round:
@@ -226,27 +232,39 @@ class SessionEngine:
                 raise ConflictError("Session expired")
 
         session = self.from_payload(stored_session.session_payload)
-        feedback = await self.evaluate_response(user_id, session, learner_response)
+        evaluation = await self._evaluate_session(user_id, session, learner_response)
+        feedback = evaluation.feedback
         feedback_payload = self.feedback_to_payload(feedback)
 
         async with self._uow_factory() as uow:
+            summary = await self._learning_engine.apply_session_result(
+                user_id,
+                evaluation.session_result,
+                source="session_engine",
+                uow=uow,
+                reference_id=session_id,
+            )
             await uow.learning_sessions.record_attempt(
                 session_id=session_id,
                 user_id=user_id,
                 learner_response=learner_response,
                 is_correct=feedback.is_correct,
                 improvement_score=feedback.improvement_score,
-                feedback_payload=feedback_payload,
+                feedback_payload={
+                    **feedback_payload,
+                    "knowledge_update": {
+                        "reviewed_count": summary.reviewed_count,
+                        "learned_count": summary.learned_count,
+                        "updated_item_ids": summary.updated_item_ids,
+                    },
+                },
             )
             await uow.learning_sessions.mark_completed(
                 user_id=user_id,
                 session_id=session_id,
                 completed_at=utc_now(),
             )
-            await uow.commit()
-
-        if self._event_service:
-            await self._event_service.track_event(
+            await uow.events.record(
                 user_id=user_id,
                 event_type="session_ended",
                 payload={
@@ -257,6 +275,38 @@ class SessionEngine:
                     "improvement_score": feedback.improvement_score,
                 },
             )
+            await uow.events.record(
+                user_id=user_id,
+                event_type="lesson_completed",
+                payload={
+                    "source": "session_engine",
+                    "session_id": session_id,
+                    "weak_area": feedback.targeted_weak_area,
+                    "reviewed_count": summary.reviewed_count,
+                    "learned_count": summary.learned_count,
+                },
+            )
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="session_evaluation",
+                source="session_engine",
+                reference_id=session_id,
+                policy_version="v1",
+                inputs={
+                    "session_id": session_id,
+                    "weak_area": session.weak_area,
+                    "lesson_target": session.lesson_target,
+                    "learner_response": learner_response,
+                },
+                outputs={
+                    "is_correct": feedback.is_correct,
+                    "improvement_score": feedback.improvement_score,
+                    "highlighted_mistakes": list(feedback.highlighted_mistakes),
+                    "recommended_next_step": feedback.recommended_next_step,
+                },
+                reason="Evaluated the stored structured session and completed canonical state projection.",
+            )
+            await uow.commit()
 
         return feedback
 
@@ -289,6 +339,9 @@ class SessionEngine:
         )
 
     async def evaluate_response(self, user_id: int, session: StructuredSession, learner_response: str) -> SessionFeedback:
+        return (await self._evaluate_session(user_id, session, learner_response)).feedback
+
+    async def _evaluate_session(self, user_id: int, session: StructuredSession, learner_response: str) -> SessionEvaluation:
         warmup = self._phase(session, "warmup")
         core = self._phase(session, "core_challenge")
         expected_answer = str(core.payload.get("expected_answer") or "")
@@ -338,32 +391,30 @@ class SessionEngine:
             {"category": session.weak_area if session.weak_area in {"grammar", "vocabulary"} else "grammar", "pattern": item}
             for item in highlighted_mistakes
         ]
-        await self._learning_engine.update_knowledge(
-            user_id,
-            SessionResult(
+        return SessionEvaluation(
+            feedback=SessionFeedback(
+                structured=True,
+                targeted_weak_area=session.weak_area,
+                is_correct=is_correct,
+                improvement_score=improvement_score,
+                corrected_response=corrected_response,
+                highlighted_mistakes=highlighted_mistakes,
+                reinforcement_prompt=f"Repeat exactly: {corrected_response}",
+                variation_prompt=self._variation_prompt(core.payload, corrected_response),
+                win_message=win_message,
+                wow_score=wow.score,
+                xp_preview=xp_preview,
+                badges_preview=badges_preview,
+                progress_summary=progress_summary,
+                recommended_next_step=self._recommended_next_step(improvement_score, session),
+                review_window_minutes=session.review_window_minutes,
+            ),
+            session_result=SessionResult(
                 reviewed_items=reviewed_items,
                 skill_scores=skill_scores,
                 mistakes=mistakes,
                 weak_areas=[session.weak_area, str(core.payload.get("target") or session.lesson_target or "")],
             ),
-        )
-
-        return SessionFeedback(
-            structured=True,
-            targeted_weak_area=session.weak_area,
-            is_correct=is_correct,
-            improvement_score=improvement_score,
-            corrected_response=corrected_response,
-            highlighted_mistakes=highlighted_mistakes,
-            reinforcement_prompt=f"Repeat exactly: {corrected_response}",
-            variation_prompt=self._variation_prompt(core.payload, corrected_response),
-            win_message=win_message,
-            wow_score=wow.score,
-            xp_preview=xp_preview,
-            badges_preview=badges_preview,
-            progress_summary=progress_summary,
-            recommended_next_step=self._recommended_next_step(improvement_score, session),
-            review_window_minutes=session.review_window_minutes,
         )
 
     def _target_weak_area(self, recommendation, skills: dict[str, float], weak_clusters, mistakes) -> str:

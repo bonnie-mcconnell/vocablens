@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+from sqlalchemy import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from vocablens.domain.models import DecisionTrace
+from vocablens.infrastructure.db.models import DecisionTraceORM
+
+
+def _map_row(row: DecisionTraceORM) -> DecisionTrace:
+    return DecisionTrace(
+        id=int(row.id),
+        user_id=int(row.user_id),
+        trace_type=str(row.trace_type),
+        source=str(row.source),
+        reference_id=row.reference_id,
+        policy_version=str(row.policy_version),
+        inputs=dict(row.inputs or {}),
+        outputs=dict(row.outputs or {}),
+        reason=row.reason,
+        created_at=row.created_at,
+    )
+
+
+class PostgresDecisionTraceRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(
+        self,
+        *,
+        user_id: int,
+        trace_type: str,
+        source: str,
+        reference_id: str | None,
+        policy_version: str,
+        inputs: dict,
+        outputs: dict,
+        reason: str | None = None,
+    ) -> DecisionTrace:
+        result = await self.session.execute(
+            insert(DecisionTraceORM)
+            .values(
+                user_id=user_id,
+                trace_type=trace_type,
+                source=source,
+                reference_id=reference_id,
+                policy_version=policy_version,
+                inputs=dict(inputs),
+                outputs=dict(outputs),
+                reason=reason,
+            )
+            .returning(DecisionTraceORM)
+        )
+        return _map_row(result.scalar_one())

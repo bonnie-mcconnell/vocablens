@@ -184,6 +184,8 @@ class FakeLearningEngineUOW:
         self.knowledge_graph = FakeKnowledgeGraph(clusters=clusters, weak_clusters=weak_clusters)
         self.mistake_patterns = FakeMistakePatterns(patterns=patterns, repeated=repeated_patterns)
         self.learning_events = FakeLearningEvents()
+        self.events = SimpleNamespace(record=self._record_event, records=[])
+        self.decision_traces = SimpleNamespace(create=self._create_trace, records=[])
         self.profiles = FakeProfiles(profile)
         self.learning_states = FakeLearningStates()
         self.engagement_states = FakeEngagementStates()
@@ -202,6 +204,13 @@ class FakeLearningEngineUOW:
 
     async def _list_since(self, user_id: int, since):
         return self._recent_events
+
+    async def _record_event(self, *, user_id: int, event_type: str, payload: dict, created_at=None):
+        self.events.records.append((user_id, event_type, payload))
+
+    async def _create_trace(self, **kwargs):
+        self.decision_traces.records.append(kwargs)
+        return SimpleNamespace(id=len(self.decision_traces.records), created_at=utc_now(), **kwargs)
 
 
 class FakeEventService:
@@ -418,6 +427,8 @@ def test_update_knowledge_updates_decay_and_emits_event():
     assert uow.engagement_states.state.total_sessions == 1
     assert uow.progress_states.state.xp > 0
     assert event_service.events[-1][1] == "knowledge_updated"
+    assert uow.events.records[-1][1] == "knowledge_updated"
+    assert uow.decision_traces.records[-1]["trace_type"] == "knowledge_update"
 
 
 async def _retention_assessment(state: str):

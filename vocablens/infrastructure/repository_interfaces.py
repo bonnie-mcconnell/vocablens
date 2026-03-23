@@ -2,6 +2,7 @@ from typing import Protocol, List, Optional, Any, Dict
 from datetime import datetime
 
 from vocablens.domain.models import (
+    DecisionTrace,
     LearningSession,
     LearningSessionAttempt,
     UserEngagementState,
@@ -169,3 +170,18 @@ class LearningSessionRepository(Protocol):
         improvement_score: float,
         feedback_payload: Dict[str, Any],
     ) -> LearningSessionAttempt: ...
+
+
+class DecisionTraceRepository(Protocol):
+    async def create(
+        self,
+        *,
+        user_id: int,
+        trace_type: str,
+        source: str,
+        reference_id: str | None,
+        policy_version: str,
+        inputs: Dict[str, Any],
+        outputs: Dict[str, Any],
+        reason: str | None = None,
+    ) -> DecisionTrace: ...

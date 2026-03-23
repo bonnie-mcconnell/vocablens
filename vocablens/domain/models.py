@@ -99,3 +99,17 @@ class LearningSessionAttempt:
     improvement_score: float
     feedback_payload: dict
     created_at: datetime
+
+
+@dataclass(slots=True)
+class DecisionTrace:
+    id: int
+    user_id: int
+    trace_type: str
+    source: str
+    reference_id: Optional[str]
+    policy_version: str
+    inputs: dict
+    outputs: dict
+    reason: Optional[str]
+    created_at: datetime

@@ -20,6 +20,7 @@ from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
 from vocablens.infrastructure.postgres_event_repository import PostgresEventRepository
+from vocablens.infrastructure.postgres_decision_trace_repository import PostgresDecisionTraceRepository
 from vocablens.infrastructure.postgres_learning_session_repository import PostgresLearningSessionRepository
 from vocablens.infrastructure.postgres_user_learning_state_repository import PostgresUserLearningStateRepository
 from vocablens.infrastructure.postgres_user_engagement_state_repository import PostgresUserEngagementStateRepository
@@ -40,6 +41,7 @@ class UnitOfWork:
         self._conversation: Optional[PostgresConversationRepository] = None
         self._learning_events: Optional[PostgresLearningEventRepository] = None
         self._events: Optional[PostgresEventRepository] = None
+        self._decision_traces: Optional[PostgresDecisionTraceRepository] = None
         self._skill_tracking: Optional[PostgresSkillTrackingRepository] = None
         self._users: Optional[PostgresUserRepository] = None
         self._knowledge_graph: Optional[KnowledgeGraphRepository] = None
@@ -113,6 +115,14 @@ class UnitOfWork:
         if self._events is None:
             self._events = PostgresEventRepository(self.session)
         return self._events
+
+    @property
+    def decision_traces(self) -> PostgresDecisionTraceRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._decision_traces is None:
+            self._decision_traces = PostgresDecisionTraceRepository(self.session)
+        return self._decision_traces
 
     @property
     def skill_tracking(self) -> PostgresSkillTrackingRepository:

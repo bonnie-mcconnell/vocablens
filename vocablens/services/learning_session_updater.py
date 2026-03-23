@@ -12,6 +12,7 @@ class AppliedLearningSession:
     reviewed_count: int
     learned_count: int
     updated_item_ids: list[int]
+    interaction_stats: dict[str, int]
 
 
 class LearningSessionUpdater:
@@ -131,6 +132,10 @@ class LearningSessionUpdater:
             accuracy_rate=projection.accuracy_rate,
             response_speed_seconds=projection.response_speed_seconds,
         )
+        interaction_stats = self._interaction_stats(
+            engagement_state=engagement_state,
+            reviewed_count=reviewed_count,
+        )
         await uow.engagement_states.update(
             user_id,
             current_streak=projection.current_streak,
@@ -139,6 +144,7 @@ class LearningSessionUpdater:
             total_sessions=projection.total_sessions,
             sessions_last_3_days=projection.sessions_last_3_days,
             last_session_at=now,
+            interaction_stats=interaction_stats,
         )
         await uow.progress_states.update(
             user_id,
@@ -151,8 +157,16 @@ class LearningSessionUpdater:
             reviewed_count=reviewed_count,
             learned_count=learned_count,
             updated_item_ids=updated_item_ids,
+            interaction_stats=interaction_stats,
         )
 
     def _rolling_success_rate(self, previous_success: float, previous_reviews: int, response_accuracy: float) -> float:
         total = (max(0.0, previous_success) * max(0, previous_reviews)) + response_accuracy
         return round(total / max(1, previous_reviews + 1), 4)
+
+    def _interaction_stats(self, *, engagement_state, reviewed_count: int) -> dict[str, int]:
+        stats = dict(getattr(engagement_state, "interaction_stats", {}) or {})
+        stats["lessons_completed"] = int(stats.get("lessons_completed", 0) or 0) + 1
+        if reviewed_count > 0:
+            stats["reviews_completed"] = int(stats.get("reviews_completed", 0) or 0) + reviewed_count
+        return stats
