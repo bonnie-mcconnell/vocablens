@@ -10,7 +10,12 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.paywall_service import PaywallService
-from vocablens.services.report_models import FunnelMetricsReport, FunnelStageMetrics
+from vocablens.services.report_models import (
+    FunnelMessaging,
+    FunnelMetricsReport,
+    FunnelPaywallState,
+    FunnelStageMetrics,
+)
 
 FunnelStage = Literal[
     "awareness",
@@ -39,8 +44,8 @@ class FunnelState:
     completed_stages: list[FunnelStage]
     next_action: str
     nudges: list[str]
-    messaging: dict
-    paywall: dict
+    messaging: FunnelMessaging
+    paywall: FunnelPaywallState
     experiment_variant: str | None
 
 
@@ -73,12 +78,12 @@ class ConversionFunnelService:
             next_action=self._next_action(stage, paywall),
             nudges=self._nudges(stage, paywall),
             messaging=self._messaging(stage, subscription, paywall, experiment_variant),
-            paywall={
-                "show": paywall.show_paywall,
-                "type": paywall.paywall_type,
-                "reason": paywall.reason,
-                "usage_percent": paywall.usage_percent,
-            },
+            paywall=FunnelPaywallState(
+                show=paywall.show_paywall,
+                type=paywall.paywall_type,
+                reason=paywall.reason,
+                usage_percent=paywall.usage_percent,
+            ),
             experiment_variant=experiment_variant,
         )
 
@@ -218,7 +223,7 @@ class ConversionFunnelService:
             return ["trial_countdown", "premium_anchor"]
         return ["retention_reinforcement"]
 
-    def _messaging(self, stage: FunnelStage, subscription, paywall, experiment_variant: str | None) -> dict:
+    def _messaging(self, stage: FunnelStage, subscription, paywall, experiment_variant: str | None) -> FunnelMessaging:
         urgency = ""
         if self._trial_active(subscription):
             urgency = "Your Pro trial is limited; unlock full access before it ends."
@@ -227,10 +232,10 @@ class ConversionFunnelService:
         anchoring = "Premium gives deeper tutor support; Pro unlocks the full core learning loop."
         if experiment_variant:
             anchoring = f"{anchoring} Active experiment: {experiment_variant}."
-        return {
-            "urgency_message": urgency,
-            "anchoring_message": anchoring,
-        }
+        return FunnelMessaging(
+            urgency_message=urgency,
+            anchoring_message=anchoring,
+        )
 
     async def _experiment_variant(self, user_id: int, stage: FunnelStage) -> str | None:
         if not self._experiments or stage not in {"usage_pressure", "paywall_exposure", "trial"}:

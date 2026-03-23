@@ -8,6 +8,11 @@ from vocablens.services.business_metrics_service import BusinessMetricsService
 from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.monetization_policy import MonetizationPolicy
 from vocablens.services.onboarding_flow_service import OnboardingFlowService
+from vocablens.services.report_models import (
+    MonetizationPricing,
+    MonetizationTrigger,
+    MonetizationValueDisplay,
+)
 
 
 @dataclass(frozen=True)
@@ -15,9 +20,9 @@ class MonetizationDecision:
     show_paywall: bool
     paywall_type: str | None
     offer_type: str
-    pricing: dict
-    trigger: dict
-    value_display: dict
+    pricing: MonetizationPricing
+    trigger: MonetizationTrigger
+    value_display: MonetizationValueDisplay
     strategy: str
     lifecycle_stage: str
     onboarding_step: str | None

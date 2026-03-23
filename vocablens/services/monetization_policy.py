@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from vocablens.services.business_metrics_service import TIER_MONTHLY_PRICES
+from vocablens.services.report_models import (
+    MonetizationBusinessContext,
+    MonetizationPricing,
+    MonetizationTrigger,
+    MonetizationValueDisplay,
+)
 
 
 GEOGRAPHY_MULTIPLIERS = {
@@ -34,7 +40,7 @@ class MonetizationPolicy:
         engagement_state,
         business_metrics: dict,
         geography: str,
-    ) -> dict:
+    ) -> MonetizationPricing:
         base_monthly = float(TIER_MONTHLY_PRICES["pro"])
         geography_multiplier = GEOGRAPHY_MULTIPLIERS.get(geography, 1.0)
         engagement_multiplier = self._engagement_multiplier(
@@ -63,20 +69,20 @@ class MonetizationPolicy:
         annual_price = round(monthly_price * 12 * (1 - annual_savings_percent / 100), 2)
         annual_monthly_equivalent = round(annual_price / 12, 2)
 
-        return {
-            "geography": geography,
-            "monthly_price": monthly_price,
-            "discounted_monthly_price": discounted_monthly,
-            "discount_percent": discount_percent,
-            "annual_price": annual_price,
-            "annual_monthly_equivalent": annual_monthly_equivalent,
-            "annual_savings_percent": annual_savings_percent,
-            "pricing_variant": paywall.pricing_variant,
-            "annual_anchor_message": (
+        return MonetizationPricing(
+            geography=geography,
+            monthly_price=monthly_price,
+            discounted_monthly_price=discounted_monthly,
+            discount_percent=discount_percent,
+            annual_price=annual_price,
+            annual_monthly_equivalent=annual_monthly_equivalent,
+            annual_savings_percent=annual_savings_percent,
+            pricing_variant=paywall.pricing_variant,
+            annual_anchor_message=(
                 f"Monthly is {monthly_price:.2f}; annual works out to {annual_monthly_equivalent:.2f} per month."
             ),
-            "business_context": {"ltv": round(ltv, 2), "mrr": round(mrr, 2)},
-        }
+            business_context=MonetizationBusinessContext(ltv=round(ltv, 2), mrr=round(mrr, 2)),
+        )
 
     def offer_type(self, *, paywall, lifecycle, onboarding_state: dict | None) -> str:
         if paywall.trial_active:
@@ -99,17 +105,17 @@ class MonetizationPolicy:
             return False
         return True
 
-    def trigger_payload(self, *, paywall, lifecycle, onboarding_step: str | None, show_paywall: bool) -> dict:
-        return {
-            "show_now": show_paywall,
-            "trigger_variant": paywall.trigger_variant,
-            "trigger_reason": paywall.reason,
-            "lifecycle_stage": lifecycle.stage,
-            "onboarding_step": onboarding_step,
-            "timing_policy": "deferred_for_activation"
+    def trigger_payload(self, *, paywall, lifecycle, onboarding_step: str | None, show_paywall: bool) -> MonetizationTrigger:
+        return MonetizationTrigger(
+            show_now=show_paywall,
+            trigger_variant=paywall.trigger_variant,
+            trigger_reason=paywall.reason,
+            lifecycle_stage=lifecycle.stage,
+            onboarding_step=onboarding_step,
+            timing_policy="deferred_for_activation"
             if paywall.show_paywall and not show_paywall
             else "adaptive_paywall",
-        }
+        )
 
     def value_display(
         self,
@@ -120,7 +126,7 @@ class MonetizationPolicy:
         learning_state,
         progress_state,
         offer_type: str,
-    ) -> dict:
+    ) -> MonetizationValueDisplay:
         progress_illusion = (onboarding_state or {}).get("progress_illusion", {})
         mastery = float(getattr(learning_state, "mastery_percent", 0.0) or 0.0)
         xp = int(getattr(progress_state, "xp", 0) or 0)
@@ -145,13 +151,13 @@ class MonetizationPolicy:
         if progress_illusion:
             locked_features.append("Keep your onboarding streak and fast XP gains")
 
-        return {
-            "show_locked_progress": offer_type != "none" or paywall.show_paywall,
-            "locked_progress_percent": min(99, locked_progress_percent),
-            "locked_features": locked_features,
-            "highlight": highlight,
-            "usage_percent": paywall.usage_percent,
-        }
+        return MonetizationValueDisplay(
+            show_locked_progress=offer_type != "none" or paywall.show_paywall,
+            locked_progress_percent=min(99, locked_progress_percent),
+            locked_features=locked_features,
+            highlight=highlight,
+            usage_percent=paywall.usage_percent,
+        )
 
     def strategy(self, *, paywall, offer_type: str, geography: str) -> str:
         return f"{paywall.strategy}:{offer_type}:{geography}"

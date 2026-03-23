@@ -159,3 +159,72 @@ class BusinessMetricsDashboard:
     revenue: RevenueMetrics
     funnel: BusinessFunnelSummary
     retention_visualization: RetentionVisualization
+
+
+@dataclass(frozen=True)
+class MonetizationBusinessContext:
+    ltv: float = 0.0
+    mrr: float = 0.0
+
+
+@dataclass(frozen=True)
+class MonetizationPricing:
+    geography: str
+    monthly_price: float
+    discounted_monthly_price: float
+    discount_percent: int
+    annual_price: float
+    annual_monthly_equivalent: float
+    annual_savings_percent: int
+    pricing_variant: str
+    annual_anchor_message: str
+    business_context: MonetizationBusinessContext
+
+
+@dataclass(frozen=True)
+class MonetizationTrigger:
+    show_now: bool
+    trigger_variant: str
+    trigger_reason: str | None
+    lifecycle_stage: str
+    onboarding_step: str | None
+    timing_policy: str
+
+
+@dataclass(frozen=True)
+class MonetizationValueDisplay:
+    show_locked_progress: bool
+    locked_progress_percent: int
+    locked_features: list[str] = field(default_factory=list)
+    highlight: str = ""
+    usage_percent: int = 0
+
+
+@dataclass(frozen=True)
+class FunnelMessaging:
+    urgency_message: str = ""
+    anchoring_message: str = ""
+
+
+@dataclass(frozen=True)
+class FunnelPaywallState:
+    show: bool
+    type: str | None
+    reason: str | None
+    usage_percent: int
+
+
+@dataclass(frozen=True)
+class AdaptivePaywallViewedEvent:
+    source: str
+    type: str | None
+    reason: str | None
+    usage_percent: int
+    user_segment: str
+    strategy: str
+    trigger_variant: str
+    pricing_variant: str
+    trial_days: int
+    wow_score: float
+    trial_recommended: bool
+    upsell_recommended: bool

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import timedelta
 
 from vocablens.core.time import utc_now
@@ -13,6 +13,7 @@ from vocablens.services.paywall_service import PaywallDecision, PaywallService
 from vocablens.services.report_models import (
     AdaptivePaywallConversionReport,
     AdaptivePaywallStrategyMetrics,
+    AdaptivePaywallViewedEvent,
 )
 
 
@@ -212,20 +213,7 @@ class AdaptivePaywallService(PaywallService):
             await self._events.track_event(
                 user_id,
                 "paywall_viewed",
-                {
-                    "source": "adaptive_paywall_service",
-                    "type": adaptive.paywall_type,
-                    "reason": adaptive.reason,
-                    "usage_percent": adaptive.usage_percent,
-                    "user_segment": adaptive.user_segment,
-                    "strategy": adaptive.strategy,
-                    "trigger_variant": adaptive.trigger_variant,
-                    "pricing_variant": adaptive.pricing_variant,
-                    "trial_days": adaptive.trial_days,
-                    "wow_score": adaptive.wow_score,
-                    "trial_recommended": adaptive.trial_recommended,
-                    "upsell_recommended": adaptive.upsell_recommended,
-                },
+                asdict(self._viewed_event_payload(adaptive)),
             )
         return adaptive
 
@@ -309,6 +297,22 @@ class AdaptivePaywallService(PaywallService):
         if not self._experiments or not self._experiments.has_experiment(experiment_key):
             return default
         return await self._experiments.assign(user_id, experiment_key)
+
+    def _viewed_event_payload(self, decision: AdaptivePaywallDecision) -> AdaptivePaywallViewedEvent:
+        return AdaptivePaywallViewedEvent(
+            source="adaptive_paywall_service",
+            type=decision.paywall_type,
+            reason=decision.reason,
+            usage_percent=decision.usage_percent,
+            user_segment=decision.user_segment,
+            strategy=decision.strategy,
+            trigger_variant=decision.trigger_variant,
+            pricing_variant=decision.pricing_variant,
+            trial_days=decision.trial_days,
+            wow_score=decision.wow_score,
+            trial_recommended=decision.trial_recommended,
+            upsell_recommended=decision.upsell_recommended,
+        )
 
     def _payload(self, event) -> dict:
         payload = getattr(event, "payload", None)

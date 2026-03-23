@@ -4,6 +4,7 @@ from tests.conftest import run_async
 from vocablens.services.content_engine import ContentEngine
 from vocablens.services.conversion_funnel_service import FunnelState
 from vocablens.services.gamification_service import Badge, GamificationProfile
+from vocablens.services.report_models import FunnelMessaging, FunnelPaywallState
 
 
 class FakeProgressService:
@@ -43,8 +44,8 @@ class FakeConversionFunnelService:
             completed_stages=["awareness", "value_realization"],
             next_action="highlight_wow_value",
             nudges=["show_value", "soft_nudge"],
-            messaging={},
-            paywall={"show": False},
+            messaging=FunnelMessaging(),
+            paywall=FunnelPaywallState(show=False, type=None, reason=None, usage_percent=0),
             experiment_variant=None,
         )
 

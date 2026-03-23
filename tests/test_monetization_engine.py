@@ -144,12 +144,12 @@ def test_monetization_engine_adjusts_pricing_by_geography_and_engagement():
     low_engagement = run_async(low_engagement_engine.evaluate(2, geography="india"))
 
     assert engaged.offer_type == "annual_anchor"
-    assert engaged.pricing["monthly_price"] == 22.03
-    assert engaged.pricing["annual_savings_percent"] == 20
+    assert engaged.pricing.monthly_price == 22.03
+    assert engaged.pricing.annual_savings_percent == 20
     assert low_engagement.offer_type == "discount"
-    assert low_engagement.pricing["monthly_price"] == 6.88
-    assert low_engagement.pricing["discounted_monthly_price"] == 5.5
-    assert low_engagement.pricing["annual_savings_percent"] == 25
+    assert low_engagement.pricing.monthly_price == 6.88
+    assert low_engagement.pricing.discounted_monthly_price == 5.5
+    assert low_engagement.pricing.annual_savings_percent == 25
 
 
 def test_monetization_engine_defers_paywall_during_early_onboarding_even_when_triggered():
@@ -169,8 +169,8 @@ def test_monetization_engine_defers_paywall_during_early_onboarding_even_when_tr
     assert decision.show_paywall is False
     assert decision.offer_type == "trial"
     assert decision.paywall_type is None
-    assert decision.trigger["timing_policy"] == "deferred_for_activation"
-    assert decision.value_display["locked_progress_percent"] == 82
+    assert decision.trigger.timing_policy == "deferred_for_activation"
+    assert decision.value_display.locked_progress_percent == 82
 
 
 def test_monetization_engine_surfaces_soft_paywall_once_onboarding_reaches_paywall_step():
@@ -189,6 +189,6 @@ def test_monetization_engine_surfaces_soft_paywall_once_onboarding_reaches_paywa
     assert decision.show_paywall is True
     assert decision.paywall_type == "soft_paywall"
     assert decision.offer_type == "trial"
-    assert decision.trigger["trigger_variant"] == "early"
+    assert decision.trigger.trigger_variant == "early"
     assert decision.strategy == "high_intent:early:value_anchor:trial:latam"
-    assert "Keep your onboarding streak" in decision.value_display["locked_features"][-1]
+    assert "Keep your onboarding streak" in decision.value_display.locked_features[-1]
