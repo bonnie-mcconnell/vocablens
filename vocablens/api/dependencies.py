@@ -46,6 +46,7 @@ from vocablens.api.dependencies_product import (
     get_decision_trace_service,
     get_event_service,
     get_experiment_results_service,
+    get_experiment_registry_service,
     get_experiment_service,
     get_gamification_service,
     get_global_decision_engine,

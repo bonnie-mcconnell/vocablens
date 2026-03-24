@@ -121,6 +121,21 @@ class ExperimentRegistryRepository(Protocol):
     ) -> Any: ...
 
 
+class ExperimentRegistryAuditRepository(Protocol):
+    async def create(
+        self,
+        *,
+        experiment_key: str,
+        action: str,
+        changed_by: str,
+        change_note: str,
+        previous_config: Dict[str, Any],
+        new_config: Dict[str, Any],
+    ) -> Any: ...
+    async def list_by_experiment(self, experiment_key: str, limit: int = 50) -> List[Any]: ...
+    async def latest_for_experiment(self, experiment_key: str) -> Optional[Any]: ...
+
+
 class UserLearningStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> UserLearningState: ...
     async def update(

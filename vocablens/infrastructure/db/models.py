@@ -350,6 +350,27 @@ class ExperimentRegistryORM(Base):
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class ExperimentRegistryAuditORM(Base):
+    __tablename__ = "experiment_registry_audits"
+    __table_args__ = (
+        Index("idx_experiment_registry_audits_experiment", "experiment_key", "created_at"),
+        Index("idx_experiment_registry_audits_action", "action", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    experiment_key = Column(
+        String,
+        ForeignKey("experiment_registries.experiment_key", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action = Column(String, nullable=False)
+    changed_by = Column(String, nullable=False)
+    change_note = Column(Text, nullable=False)
+    previous_config = Column(JSON, nullable=False, default=dict)
+    new_config = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class UserLearningStateORM(Base):
     __tablename__ = "user_learning_states"
     __table_args__ = (

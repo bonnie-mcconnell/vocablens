@@ -1,12 +1,13 @@
 from dataclasses import asdict, is_dataclass
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi import HTTPException
 
 from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
     get_decision_trace_service,
+    get_experiment_registry_service,
     get_experiment_results_service,
     get_subscription_service,
 )
@@ -14,6 +15,10 @@ from vocablens.api.schemas import (
     ConversionMetricsResponse,
     DecisionTraceDetailResponse,
     DecisionTraceListResponse,
+    ExperimentRegistryAuditResponse,
+    ExperimentRegistryDetailResponse,
+    ExperimentRegistryListResponse,
+    ExperimentRegistryUpsertRequest,
     ExperimentResultsResponse,
     LifecycleDiagnosticsResponse,
     MonetizationDiagnosticsResponse,
@@ -21,9 +26,14 @@ from vocablens.api.schemas import (
     RetentionAnalyticsResponse,
     UsageAnalyticsResponse,
 )
-from vocablens.domain.errors import NotFoundError
+from vocablens.domain.errors import NotFoundError, ValidationError
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.decision_trace_service import DecisionTraceService
+from vocablens.services.experiment_registry_service import (
+    ExperimentRegistryService,
+    ExperimentRegistryUpsert,
+    ExperimentRegistryVariantInput,
+)
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.subscription_service import SubscriptionService
 
@@ -82,6 +92,88 @@ def create_admin_router() -> APIRouter:
         return {
             "data": {"experiment_results": _response_payload(results)},
             "meta": {"source": "admin.experiments.results"},
+        }
+
+    @router.get("/experiments/registry", response_model=ExperimentRegistryListResponse)
+    async def experiment_registry_list(
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        registries = await service.list_registries()
+        return {
+            "data": registries,
+            "meta": {"source": "admin.experiments.registry.list"},
+        }
+
+    @router.get("/experiments/registry/{experiment_key}", response_model=ExperimentRegistryDetailResponse)
+    async def experiment_registry_detail(
+        experiment_key: str,
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            detail = await service.get_registry(experiment_key)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.experiments.registry.detail",
+                "experiment_key": experiment_key,
+            },
+        }
+
+    @router.put("/experiments/registry/{experiment_key}", response_model=ExperimentRegistryDetailResponse)
+    async def experiment_registry_upsert(
+        experiment_key: str,
+        request: ExperimentRegistryUpsertRequest,
+        admin_actor: str | None = Header(default=None, alias="X-Admin-Actor"),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            detail = await service.upsert_registry(
+                experiment_key=experiment_key,
+                command=ExperimentRegistryUpsert(
+                    status=request.status,
+                    rollout_percentage=request.rollout_percentage,
+                    is_killed=request.is_killed,
+                    description=request.description,
+                    variants=tuple(
+                        ExperimentRegistryVariantInput(name=item.name, weight=item.weight)
+                        for item in request.variants
+                    ),
+                    change_note=request.change_note,
+                ),
+                changed_by=admin_actor,
+            )
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.experiments.registry.update",
+                "experiment_key": experiment_key,
+            },
+        }
+
+    @router.get("/experiments/registry/{experiment_key}/audit", response_model=ExperimentRegistryAuditResponse)
+    async def experiment_registry_audit(
+        experiment_key: str,
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            audits = await service.list_audit_history(experiment_key, limit=limit)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": audits,
+            "meta": {
+                "source": "admin.experiments.registry.audit",
+                "experiment_key": experiment_key,
+            },
         }
 
     @router.get("/decision-traces", response_model=DecisionTraceListResponse)

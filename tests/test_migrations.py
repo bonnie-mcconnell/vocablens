@@ -41,6 +41,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "decision_traces" in tables
     assert "experiment_exposures" in tables
     assert "experiment_registries" in tables
+    assert "experiment_registry_audits" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -139,6 +140,25 @@ def test_upgrade_downgrade_upgrade_round_trip():
         "created_at",
         "updated_at",
     } <= experiment_registry_columns
+
+    experiment_registry_audit_indexes = {idx["name"] for idx in inspector.get_indexes("experiment_registry_audits")}
+    assert "idx_experiment_registry_audits_experiment" in experiment_registry_audit_indexes
+    assert "idx_experiment_registry_audits_action" in experiment_registry_audit_indexes
+
+    experiment_registry_audit_columns = {col["name"] for col in inspector.get_columns("experiment_registry_audits")}
+    assert {
+        "id",
+        "experiment_key",
+        "action",
+        "changed_by",
+        "change_note",
+        "previous_config",
+        "new_config",
+        "created_at",
+    } <= experiment_registry_audit_columns
+
+    experiment_registry_audit_fks = inspector.get_foreign_keys("experiment_registry_audits")
+    assert any(fk["referred_table"] == "experiment_registries" for fk in experiment_registry_audit_fks)
 
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
@@ -297,6 +317,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "decision_traces" not in tables
     assert "experiment_exposures" not in tables
     assert "experiment_registries" not in tables
+    assert "experiment_registry_audits" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -311,6 +332,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "decision_traces" in tables
     assert "experiment_exposures" in tables
     assert "experiment_registries" in tables
+    assert "experiment_registry_audits" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

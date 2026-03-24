@@ -19,6 +19,7 @@ from vocablens.services.event_processors.retention_processor import RetentionPro
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_results_service import ExperimentResultsService
+from vocablens.services.experiment_registry_service import ExperimentRegistryService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.gamification_service import GamificationService
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
@@ -91,6 +92,10 @@ def get_analytics_service(uow_factory=Depends(get_uow_factory)) -> AnalyticsServ
 
 def get_experiment_results_service(uow_factory=Depends(get_uow_factory)) -> ExperimentResultsService:
     return ExperimentResultsService(uow_factory)
+
+
+def get_experiment_registry_service(uow_factory=Depends(get_uow_factory)) -> ExperimentRegistryService:
+    return ExperimentRegistryService(uow_factory)
 
 
 async def get_experiment_service(

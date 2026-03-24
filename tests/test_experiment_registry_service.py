@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from tests.conftest import run_async
+from vocablens.domain.errors import NotFoundError, ValidationError
+from vocablens.services.experiment_registry_service import (
+    ExperimentRegistryService,
+    ExperimentRegistryUpsert,
+    ExperimentRegistryVariantInput,
+)
+
+
+class FakeExperimentRegistryRepo:
+    def __init__(self):
+        self.rows = {
+            "paywall_offer": SimpleNamespace(
+                experiment_key="paywall_offer",
+                status="active",
+                rollout_percentage=100,
+                is_killed=False,
+                description="Controls paywall offer composition.",
+                variants=[{"name": "control", "weight": 80}, {"name": "annual_anchor", "weight": 20}],
+                created_at=None,
+                updated_at=None,
+            )
+        }
+
+    async def get(self, experiment_key: str):
+        return self.rows.get(experiment_key)
+
+    async def list_all(self):
+        return list(self.rows.values())
+
+    async def upsert(self, **kwargs):
+        existing = self.rows.get(kwargs["experiment_key"])
+        row = SimpleNamespace(
+            experiment_key=kwargs["experiment_key"],
+            status=kwargs["status"],
+            rollout_percentage=kwargs["rollout_percentage"],
+            is_killed=kwargs["is_killed"],
+            description=kwargs["description"],
+            variants=list(kwargs["variants"]),
+            created_at=getattr(existing, "created_at", None),
+            updated_at=None,
+        )
+        self.rows[kwargs["experiment_key"]] = row
+        return row
+
+
+class FakeAssignmentRepo:
+    async def list_all(self, experiment_key: str | None = None):
+        rows = [
+            SimpleNamespace(experiment_key="paywall_offer", variant="control"),
+            SimpleNamespace(experiment_key="paywall_offer", variant="control"),
+            SimpleNamespace(experiment_key="paywall_offer", variant="annual_anchor"),
+        ]
+        if experiment_key is None:
+            return rows
+        return [row for row in rows if row.experiment_key == experiment_key]
+
+
+class FakeExposureRepo:
+    async def list_all(self, experiment_key: str | None = None):
+        rows = [
+            SimpleNamespace(experiment_key="paywall_offer", variant="control"),
+            SimpleNamespace(experiment_key="paywall_offer", variant="annual_anchor"),
+        ]
+        if experiment_key is None:
+            return rows
+        return [row for row in rows if row.experiment_key == experiment_key]
+
+
+class FakeAuditRepo:
+    def __init__(self):
+        self.entries = []
+
+    async def create(self, **kwargs):
+        row = SimpleNamespace(id=len(self.entries) + 1, created_at=None, **kwargs)
+        self.entries.append(row)
+        return row
+
+    async def list_by_experiment(self, experiment_key: str, limit: int = 50):
+        rows = [row for row in self.entries if row.experiment_key == experiment_key]
+        return list(reversed(rows))[:limit]
+
+    async def latest_for_experiment(self, experiment_key: str):
+        for row in reversed(self.entries):
+            if row.experiment_key == experiment_key:
+                return row
+        return None
+
+
+class FakeUOW:
+    def __init__(self):
+        self.experiment_registries = FakeExperimentRegistryRepo()
+        self.experiment_assignments = FakeAssignmentRepo()
+        self.experiment_exposures = FakeExposureRepo()
+        self.experiment_registry_audits = FakeAuditRepo()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def commit(self):
+        return None
+
+
+def test_experiment_registry_service_returns_health_summary():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(service.get_registry("paywall_offer"))
+
+    assert payload["experiment"]["health"]["assignment_count"] == 3
+    assert payload["experiment"]["health"]["exposure_count"] == 2
+    assert payload["experiment"]["health"]["exposure_gap"] == 1
+
+
+def test_experiment_registry_service_writes_audit_entry_on_update():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(
+        service.upsert_registry(
+            experiment_key="paywall_offer",
+            command=ExperimentRegistryUpsert(
+                status="paused",
+                rollout_percentage=100,
+                is_killed=False,
+                description="Controls paywall offer composition.",
+                variants=(
+                    ExperimentRegistryVariantInput(name="control", weight=70),
+                    ExperimentRegistryVariantInput(name="annual_anchor", weight=30),
+                ),
+                change_note="Paused rollout during diagnostics.",
+            ),
+            changed_by="ops@vocablens",
+        )
+    )
+
+    assert payload["experiment"]["status"] == "paused"
+    assert payload["experiment"]["audit_entries"][0]["action"] == "status_paused"
+    assert payload["experiment"]["audit_entries"][0]["changed_by"] == "ops@vocablens"
+
+
+def test_experiment_registry_service_rejects_missing_control_variant():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    with pytest.raises(ValidationError):
+        run_async(
+            service.upsert_registry(
+                experiment_key="paywall_offer",
+                command=ExperimentRegistryUpsert(
+                    status="active",
+                    rollout_percentage=100,
+                    is_killed=False,
+                    description="Controls paywall offer composition.",
+                    variants=(ExperimentRegistryVariantInput(name="annual_anchor", weight=100),),
+                    change_note="Testing invalid config.",
+                ),
+                changed_by="ops@vocablens",
+            )
+        )
+
+
+def test_experiment_registry_service_rejects_archived_reactivation():
+    uow = FakeUOW()
+    uow.experiment_registries.rows["paywall_offer"].status = "archived"
+    service = ExperimentRegistryService(lambda: uow)
+
+    with pytest.raises(ValidationError):
+        run_async(
+            service.upsert_registry(
+                experiment_key="paywall_offer",
+                command=ExperimentRegistryUpsert(
+                    status="active",
+                    rollout_percentage=100,
+                    is_killed=False,
+                    description="Controls paywall offer composition.",
+                    variants=(
+                        ExperimentRegistryVariantInput(name="control", weight=80),
+                        ExperimentRegistryVariantInput(name="annual_anchor", weight=20),
+                    ),
+                    change_note="Trying to reactivate an archived record.",
+                ),
+                changed_by="ops@vocablens",
+            )
+        )
+
+
+def test_experiment_registry_service_raises_on_unknown_experiment():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    with pytest.raises(NotFoundError):
+        run_async(service.get_registry("unknown_test"))

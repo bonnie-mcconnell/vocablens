@@ -6,6 +6,7 @@ from vocablens.api.dependencies import (
     get_analytics_service,
     get_current_user,
     get_decision_trace_service,
+    get_experiment_registry_service,
     get_experiment_results_service,
     get_frontend_service,
     get_onboarding_flow_service,
@@ -97,6 +98,123 @@ class FakeExperimentResultsService:
                     "comparisons": [],
                 }
             ]
+        }
+
+
+class FakeExperimentRegistryService:
+    async def list_registries(self):
+        return {
+            "experiments": [
+                {
+                    "experiment_key": "paywall_offer",
+                    "status": "active",
+                    "rollout_percentage": 100,
+                    "is_killed": False,
+                    "description": "Controls paywall offer composition.",
+                    "variants": [{"name": "control", "weight": 70}, {"name": "annual_anchor", "weight": 30}],
+                    "created_at": "2026-03-23T12:00:00",
+                    "updated_at": "2026-03-24T09:00:00",
+                    "assignment_count": 120,
+                    "exposure_count": 118,
+                    "exposure_gap": 2,
+                    "assignment_variants": {"annual_anchor": 31, "control": 89},
+                    "exposure_variants": {"annual_anchor": 30, "control": 88},
+                    "latest_change": {
+                        "id": 4,
+                        "experiment_key": "paywall_offer",
+                        "action": "updated",
+                        "changed_by": "ops@vocablens",
+                        "change_note": "Raised annual anchor weight after review.",
+                        "previous_config": {"rollout_percentage": 100},
+                        "new_config": {"rollout_percentage": 100},
+                        "created_at": "2026-03-24T09:00:00",
+                    },
+                }
+            ]
+        }
+
+    async def get_registry(self, experiment_key: str):
+        return {
+            "experiment": {
+                "experiment_key": experiment_key,
+                "status": "active",
+                "rollout_percentage": 100,
+                "is_killed": False,
+                "description": "Controls paywall offer composition.",
+                "variants": [{"name": "control", "weight": 70}, {"name": "annual_anchor", "weight": 30}],
+                "created_at": "2026-03-23T12:00:00",
+                "updated_at": "2026-03-24T09:00:00",
+                "health": {
+                    "assignment_count": 120,
+                    "exposure_count": 118,
+                    "exposure_gap": 2,
+                    "exposure_coverage_percent": 98.33,
+                    "assignment_variants": {"annual_anchor": 31, "control": 89},
+                    "exposure_variants": {"annual_anchor": 30, "control": 88},
+                },
+                "audit_entries": [
+                    {
+                        "id": 4,
+                        "experiment_key": experiment_key,
+                        "action": "updated",
+                        "changed_by": "ops@vocablens",
+                        "change_note": "Raised annual anchor weight after review.",
+                        "previous_config": {"variants": [{"name": "control", "weight": 80}]},
+                        "new_config": {"variants": [{"name": "control", "weight": 70}]},
+                        "created_at": "2026-03-24T09:00:00",
+                    }
+                ],
+            }
+        }
+
+    async def upsert_registry(self, *, experiment_key: str, command, changed_by: str | None):
+        return {
+            "experiment": {
+                "experiment_key": experiment_key,
+                "status": command.status,
+                "rollout_percentage": command.rollout_percentage,
+                "is_killed": command.is_killed,
+                "description": command.description,
+                "variants": [{"name": item.name, "weight": item.weight} for item in command.variants],
+                "created_at": "2026-03-23T12:00:00",
+                "updated_at": "2026-03-24T10:00:00",
+                "health": {
+                    "assignment_count": 120,
+                    "exposure_count": 118,
+                    "exposure_gap": 2,
+                    "exposure_coverage_percent": 98.33,
+                    "assignment_variants": {"annual_anchor": 31, "control": 89},
+                    "exposure_variants": {"annual_anchor": 30, "control": 88},
+                },
+                "audit_entries": [
+                    {
+                        "id": 5,
+                        "experiment_key": experiment_key,
+                        "action": "updated",
+                        "changed_by": changed_by or "system_admin",
+                        "change_note": command.change_note,
+                        "previous_config": {"status": "active"},
+                        "new_config": {"status": command.status},
+                        "created_at": "2026-03-24T10:00:00",
+                    }
+                ],
+            }
+        }
+
+    async def list_audit_history(self, experiment_key: str, *, limit: int = 50):
+        return {
+            "audit_entries": [
+                {
+                    "id": 5,
+                    "experiment_key": experiment_key,
+                    "action": "updated",
+                    "changed_by": "ops@vocablens",
+                    "change_note": "Raised annual anchor weight after review.",
+                    "previous_config": {"status": "active"},
+                    "new_config": {"status": "active"},
+                    "created_at": "2026-03-24T10:00:00",
+                }
+            ][:limit]
         }
 
 
@@ -635,6 +753,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_subscription_service] = lambda: FakeSubscriptionService()
     app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
     app.dependency_overrides[get_experiment_results_service] = lambda: FakeExperimentResultsService()
+    app.dependency_overrides[get_experiment_registry_service] = lambda: FakeExperimentRegistryService()
     app.dependency_overrides[get_decision_trace_service] = lambda: FakeDecisionTraceService()
     client = TestClient(app)
 
@@ -642,6 +761,21 @@ def test_admin_conversion_report_is_protected_and_standardized():
     retention = client.get("/admin/analytics/retention", headers={"X-Admin-Token": "secret"})
     usage = client.get("/admin/analytics/usage", headers={"X-Admin-Token": "secret"})
     experiments = client.get("/admin/experiments/results?experiment_key=paywall_offer", headers={"X-Admin-Token": "secret"})
+    registry_list = client.get("/admin/experiments/registry", headers={"X-Admin-Token": "secret"})
+    registry_detail = client.get("/admin/experiments/registry/paywall_offer", headers={"X-Admin-Token": "secret"})
+    registry_update = client.put(
+        "/admin/experiments/registry/paywall_offer",
+        json={
+            "status": "active",
+            "rollout_percentage": 100,
+            "is_killed": False,
+            "description": "Controls paywall offer composition.",
+            "variants": [{"name": "control", "weight": 60}, {"name": "annual_anchor", "weight": 40}],
+            "change_note": "Raised annual anchor weight after review.",
+        },
+        headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+    )
+    registry_audit = client.get("/admin/experiments/registry/paywall_offer/audit?limit=10", headers={"X-Admin-Token": "secret"})
     traces = client.get(
         "/admin/decision-traces?user_id=1&trace_type=session_evaluation&reference_id=sess_123&limit=25",
         headers={"X-Admin-Token": "secret"},
@@ -676,6 +810,19 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert experiments.status_code == 200
     assert experiments.json()["meta"]["source"] == "admin.experiments.results"
     assert experiments.json()["data"]["experiment_results"]["experiments"][0]["experiment_key"] == "paywall_offer"
+    assert registry_list.status_code == 200
+    assert registry_list.json()["meta"]["source"] == "admin.experiments.registry.list"
+    assert registry_list.json()["data"]["experiments"][0]["assignment_count"] == 120
+    assert registry_detail.status_code == 200
+    assert registry_detail.json()["meta"]["source"] == "admin.experiments.registry.detail"
+    assert registry_detail.json()["data"]["experiment"]["health"]["exposure_gap"] == 2
+    assert registry_update.status_code == 200
+    assert registry_update.json()["meta"]["source"] == "admin.experiments.registry.update"
+    assert registry_update.json()["data"]["experiment"]["audit_entries"][0]["changed_by"] == "ops@vocablens"
+    assert registry_update.json()["data"]["experiment"]["variants"][1]["weight"] == 40
+    assert registry_audit.status_code == 200
+    assert registry_audit.json()["meta"]["source"] == "admin.experiments.registry.audit"
+    assert registry_audit.json()["data"]["audit_entries"][0]["action"] == "updated"
     assert traces.status_code == 200
     assert traces.json()["meta"]["source"] == "admin.decision_traces"
     assert traces.json()["meta"]["filters"]["trace_type"] == "session_evaluation"

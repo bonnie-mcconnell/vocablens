@@ -20,3 +20,7 @@ class NotFoundError(Exception):
 
 class ConflictError(VocabLensError):
     pass
+
+
+class ValidationError(VocabLensError):
+    pass

@@ -198,6 +198,116 @@ class ExperimentResultsResponse(BaseModel):
     meta: ExperimentResultsMetaResponse
 
 
+class ExperimentRegistryVariantRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    weight: int = Field(..., ge=1, le=100000)
+
+
+class ExperimentRegistryUpsertRequest(BaseModel):
+    status: Literal["draft", "active", "paused", "archived"]
+    rollout_percentage: int = Field(..., ge=0, le=100)
+    is_killed: bool = False
+    description: str | None = Field(default=None, max_length=1000)
+    variants: list[ExperimentRegistryVariantRequest] = Field(..., min_length=1, max_length=20)
+    change_note: str = Field(..., min_length=8, max_length=500)
+
+
+class ExperimentRegistryVariantResponse(BaseModel):
+    name: str
+    weight: int
+
+
+class ExperimentRegistryAuditEntryResponse(BaseModel):
+    id: int
+    experiment_key: str
+    action: str
+    changed_by: str
+    change_note: str
+    previous_config: dict[str, Any] = Field(default_factory=dict)
+    new_config: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class ExperimentRegistryHealthResponse(BaseModel):
+    assignment_count: int = 0
+    exposure_count: int = 0
+    exposure_gap: int = 0
+    exposure_coverage_percent: float = 100.0
+    assignment_variants: dict[str, int] = Field(default_factory=dict)
+    exposure_variants: dict[str, int] = Field(default_factory=dict)
+
+
+class ExperimentRegistrySummaryResponse(BaseModel):
+    experiment_key: str
+    status: str
+    rollout_percentage: int
+    is_killed: bool = False
+    description: str | None = None
+    variants: list[ExperimentRegistryVariantResponse] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    assignment_count: int = 0
+    exposure_count: int = 0
+    exposure_gap: int = 0
+    assignment_variants: dict[str, int] = Field(default_factory=dict)
+    exposure_variants: dict[str, int] = Field(default_factory=dict)
+    latest_change: ExperimentRegistryAuditEntryResponse | None = None
+
+
+class ExperimentRegistryDetailResponseModel(BaseModel):
+    experiment_key: str
+    status: str
+    rollout_percentage: int
+    is_killed: bool = False
+    description: str | None = None
+    variants: list[ExperimentRegistryVariantResponse] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    health: ExperimentRegistryHealthResponse
+    audit_entries: list[ExperimentRegistryAuditEntryResponse] = Field(default_factory=list)
+
+
+class ExperimentRegistryListDataResponse(BaseModel):
+    experiments: list[ExperimentRegistrySummaryResponse] = Field(default_factory=list)
+
+
+class ExperimentRegistryListMetaResponse(BaseModel):
+    source: Literal["admin.experiments.registry.list"]
+
+
+class ExperimentRegistryListResponse(BaseModel):
+    data: ExperimentRegistryListDataResponse
+    meta: ExperimentRegistryListMetaResponse
+
+
+class ExperimentRegistryDetailDataResponse(BaseModel):
+    experiment: ExperimentRegistryDetailResponseModel
+
+
+class ExperimentRegistryDetailMetaResponse(BaseModel):
+    source: Literal["admin.experiments.registry.detail", "admin.experiments.registry.update"]
+    experiment_key: str
+
+
+class ExperimentRegistryDetailResponse(BaseModel):
+    data: ExperimentRegistryDetailDataResponse
+    meta: ExperimentRegistryDetailMetaResponse
+
+
+class ExperimentRegistryAuditDataResponse(BaseModel):
+    audit_entries: list[ExperimentRegistryAuditEntryResponse] = Field(default_factory=list)
+
+
+class ExperimentRegistryAuditMetaResponse(BaseModel):
+    source: Literal["admin.experiments.registry.audit"]
+    experiment_key: str
+
+
+class ExperimentRegistryAuditResponse(BaseModel):
+    data: ExperimentRegistryAuditDataResponse
+    meta: ExperimentRegistryAuditMetaResponse
+
+
 class DecisionTraceRecordResponse(BaseModel):
     id: int
     user_id: int

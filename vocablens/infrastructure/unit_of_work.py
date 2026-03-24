@@ -25,6 +25,9 @@ from vocablens.infrastructure.postgres_experiment_exposure_repository import (
 from vocablens.infrastructure.postgres_experiment_registry_repository import (
     PostgresExperimentRegistryRepository,
 )
+from vocablens.infrastructure.postgres_experiment_registry_audit_repository import (
+    PostgresExperimentRegistryAuditRepository,
+)
 from vocablens.infrastructure.postgres_event_repository import PostgresEventRepository
 from vocablens.infrastructure.postgres_decision_trace_repository import PostgresDecisionTraceRepository
 from vocablens.infrastructure.postgres_learning_session_repository import PostgresLearningSessionRepository
@@ -63,6 +66,7 @@ class UnitOfWork:
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
         self._experiment_registries: Optional[PostgresExperimentRegistryRepository] = None
+        self._experiment_registry_audits: Optional[PostgresExperimentRegistryAuditRepository] = None
         self._learning_sessions: Optional[PostgresLearningSessionRepository] = None
         self._learning_states: Optional[PostgresUserLearningStateRepository] = None
         self._engagement_states: Optional[PostgresUserEngagementStateRepository] = None
@@ -231,6 +235,14 @@ class UnitOfWork:
         if self._experiment_registries is None:
             self._experiment_registries = PostgresExperimentRegistryRepository(self.session)
         return self._experiment_registries
+
+    @property
+    def experiment_registry_audits(self) -> PostgresExperimentRegistryAuditRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._experiment_registry_audits is None:
+            self._experiment_registry_audits = PostgresExperimentRegistryAuditRepository(self.session)
+        return self._experiment_registry_audits
 
     @property
     def learning_sessions(self) -> PostgresLearningSessionRepository:
