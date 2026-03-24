@@ -34,7 +34,13 @@ def create_session_router() -> APIRouter:
         service: SessionEngine = Depends(get_session_engine),
     ):
         try:
-            feedback = await service.evaluate_session(user.id, request.session_id, request.learner_response)
+            feedback = await service.evaluate_session(
+                user.id,
+                request.session_id,
+                request.learner_response,
+                submission_id=request.submission_id,
+                contract_version=request.contract_version,
+            )
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         except ConflictError as exc:

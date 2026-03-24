@@ -13,6 +13,7 @@ class FakeUOW:
         self.learning_sessions = SimpleNamespace(
             create=self._create_session,
             get=self._get_session,
+            get_attempt_by_submission=self._get_attempt_by_submission,
             record_attempt=self._record_attempt,
             mark_completed=self._mark_completed,
             mark_expired=self._mark_expired,
@@ -63,6 +64,16 @@ class FakeUOW:
     async def _record_attempt(self, **kwargs):
         self.attempts.append(kwargs)
         return SimpleNamespace(id=len(self.attempts), created_at=None, **kwargs)
+
+    async def _get_attempt_by_submission(self, *, session_id: str, user_id: int, submission_id: str):
+        for attempt in self.attempts:
+            if (
+                attempt["session_id"] == session_id
+                and attempt["user_id"] == user_id
+                and attempt["submission_id"] == submission_id
+            ):
+                return SimpleNamespace(id=1, created_at=None, **attempt)
+        return None
 
     async def _mark_completed(self, *, user_id: int, session_id: str, completed_at):
         session = self.created_sessions[session_id]
@@ -161,6 +172,7 @@ def test_session_engine_always_builds_structured_five_phase_round():
     assert session.goal_label
     assert session.success_criteria
     assert session.review_window_minutes == 15
+    assert session.max_response_words == 12
     assert [phase.name for phase in session.phases] == [
         "warmup",
         "core_challenge",
@@ -246,12 +258,109 @@ def test_session_engine_persists_server_owned_session_and_evaluates_by_session_i
     )
 
     started = run_async(engine.start_session(1))
-    feedback = run_async(engine.evaluate_session(1, started["session_id"], "I goed there yesterday"))
+    feedback = run_async(
+        engine.evaluate_session(
+            1,
+            started["session_id"],
+            "I goed there yesterday",
+            submission_id="submit_12345678",
+            contract_version=started["contract_version"],
+        )
+    )
 
     assert started["status"] == "active"
+    assert started["contract_version"] == "v2"
     assert started["session_id"] in uow.created_sessions
+    assert uow.created_sessions[started["session_id"]].contract_version == "v2"
     assert uow.attempts[0]["session_id"] == started["session_id"]
+    assert uow.attempts[0]["submission_id"] == "submit_12345678"
     assert started["session_id"] in uow.completed_sessions
     assert uow.events.records[-1][1] == "lesson_completed"
     assert uow.decision_traces.records[-1]["trace_type"] == "session_evaluation"
     assert feedback.corrected_response == "I went there yesterday."
+
+
+def test_session_engine_replays_same_submission_idempotently():
+    recommendation = SimpleNamespace(
+        action="practice_grammar",
+        target="grammar",
+        reason="Grammar skill below threshold",
+        skill_focus="grammar",
+    )
+    uow = FakeUOW()
+    engine = SessionEngine(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeWowEngine(),
+        FakeGamificationService(),
+    )
+
+    started = run_async(engine.start_session(2))
+    first = run_async(
+        engine.evaluate_session(
+            2,
+            started["session_id"],
+            "I goed there yesterday",
+            submission_id="submit_same_1",
+            contract_version=started["contract_version"],
+        )
+    )
+    second = run_async(
+        engine.evaluate_session(
+            2,
+            started["session_id"],
+            "I goed there yesterday",
+            submission_id="submit_same_1",
+            contract_version=started["contract_version"],
+        )
+    )
+
+    assert len(uow.attempts) == 1
+    assert first.corrected_response == second.corrected_response
+
+
+def test_session_engine_rejects_stale_contract_and_long_submission():
+    recommendation = SimpleNamespace(
+        action="review_word",
+        target="travel",
+        reason="Review is due",
+        skill_focus="vocabulary",
+    )
+    uow = FakeUOW()
+    engine = SessionEngine(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeWowEngine(),
+        FakeGamificationService(),
+    )
+    started = run_async(engine.start_session(3))
+
+    from vocablens.domain.errors import ConflictError
+
+    try:
+        run_async(
+            engine.evaluate_session(
+                3,
+                started["session_id"],
+                "travel",
+                submission_id="submit_bad_contract",
+                contract_version="v1",
+            )
+        )
+        assert False, "expected stale contract conflict"
+    except ConflictError as exc:
+        assert "stale" in str(exc)
+
+    try:
+        run_async(
+            engine.evaluate_session(
+                3,
+                started["session_id"],
+                "this answer is much too long for a one word review round today",
+                submission_id="submit_too_long",
+                contract_version=started["contract_version"],
+            )
+        )
+        assert False, "expected format conflict"
+    except ConflictError as exc:
+        assert "format" in str(exc) or "allowed length" in str(exc)

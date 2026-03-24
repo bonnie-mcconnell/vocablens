@@ -10,6 +10,7 @@ class FakeSessionEngine:
         return {
             "session_id": "sess_12345678",
             "status": "active",
+            "contract_version": "v2",
             "expires_at": "2026-03-23T12:15:00",
             "duration_seconds": 220,
             "mode": "game_round",
@@ -18,6 +19,7 @@ class FakeSessionEngine:
             "goal_label": "Fix one grammar pattern cleanly",
             "success_criteria": "Use the corrected form without carrying the original mistake forward.",
             "review_window_minutes": 15,
+            "max_response_words": 12,
             "phases": [
                 {
                     "name": "warmup",
@@ -57,7 +59,15 @@ class FakeSessionEngine:
             ],
         }
 
-    async def evaluate_session(self, user_id: int, session_id: str, learner_response: str):
+    async def evaluate_session(
+        self,
+        user_id: int,
+        session_id: str,
+        learner_response: str,
+        *,
+        submission_id: str,
+        contract_version: str,
+    ):
         return type(
             "Feedback",
             (),
@@ -111,6 +121,7 @@ def test_session_endpoints_return_standardized_envelopes():
     start_payload = start.json()
     assert start_payload["meta"]["source"] == "session.start"
     assert start_payload["data"]["session_id"] == "sess_12345678"
+    assert start_payload["data"]["contract_version"] == "v2"
     assert start_payload["data"]["mode"] == "game_round"
     assert "goal_label" in start_payload["data"]
     assert [phase["name"] for phase in start_payload["data"]["phases"]] == [
@@ -125,6 +136,8 @@ def test_session_endpoints_return_standardized_envelopes():
         "/session/evaluate",
         json={
             "session_id": start_payload["data"]["session_id"],
+            "submission_id": "submit_12345678",
+            "contract_version": start_payload["data"]["contract_version"],
             "learner_response": "I goed there yesterday",
         },
         headers={"Authorization": "Bearer ignored"},

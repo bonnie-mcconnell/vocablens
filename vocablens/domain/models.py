@@ -74,6 +74,7 @@ class LearningSession:
     session_id: str
     user_id: int
     status: str
+    contract_version: str
     duration_seconds: int
     mode: str
     weak_area: str
@@ -81,6 +82,7 @@ class LearningSession:
     goal_label: str
     success_criteria: str
     review_window_minutes: int
+    max_response_words: int
     session_payload: dict
     created_at: datetime
     expires_at: datetime
@@ -94,9 +96,13 @@ class LearningSessionAttempt:
     id: int
     session_id: str
     user_id: int
+    submission_id: str
     learner_response: str
+    response_word_count: int
+    response_char_count: int
     is_correct: bool
     improvement_score: float
+    validation_payload: dict
     feedback_payload: dict
     created_at: datetime
 

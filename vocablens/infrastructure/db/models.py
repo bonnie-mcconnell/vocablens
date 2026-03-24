@@ -626,6 +626,10 @@ class LearningSessionORM(Base):
             "review_window_minutes >= 1",
             name="ck_learning_sessions_review_window_minutes_positive",
         ),
+        CheckConstraint(
+            "max_response_words >= 1",
+            name="ck_learning_sessions_max_response_words_positive",
+        ),
         Index("idx_learning_sessions_user_status", "user_id", "status"),
         Index("idx_learning_sessions_user_created", "user_id", "created_at"),
         Index("idx_learning_sessions_expires_at", "expires_at"),
@@ -634,6 +638,7 @@ class LearningSessionORM(Base):
     session_id = Column(String, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     status = Column(String, default="active", nullable=False)
+    contract_version = Column(String, nullable=False, default="v2")
     duration_seconds = Column(Integer, nullable=False)
     mode = Column(String, nullable=False)
     weak_area = Column(String, nullable=False)
@@ -641,6 +646,7 @@ class LearningSessionORM(Base):
     goal_label = Column(String, nullable=False)
     success_criteria = Column(Text, nullable=False)
     review_window_minutes = Column(Integer, nullable=False)
+    max_response_words = Column(Integer, nullable=False, default=12)
     session_payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     expires_at = Column(DateTime, nullable=False)
@@ -656,6 +662,15 @@ class LearningSessionAttemptORM(Base):
             "improvement_score >= 0 AND improvement_score <= 1",
             name="ck_learning_session_attempts_improvement_score_range",
         ),
+        CheckConstraint(
+            "response_word_count >= 0",
+            name="ck_learning_session_attempts_word_count_nonnegative",
+        ),
+        CheckConstraint(
+            "response_char_count >= 0",
+            name="ck_learning_session_attempts_char_count_nonnegative",
+        ),
+        UniqueConstraint("session_id", "submission_id", name="uq_learning_session_attempts_submission"),
         Index("idx_learning_session_attempts_session", "session_id", "created_at"),
         Index("idx_learning_session_attempts_user", "user_id", "created_at"),
     )
@@ -663,9 +678,13 @@ class LearningSessionAttemptORM(Base):
     id = Column(Integer, primary_key=True)
     session_id = Column(String, ForeignKey("learning_sessions.session_id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    submission_id = Column(String, nullable=False)
     learner_response = Column(Text, nullable=False)
+    response_word_count = Column(Integer, nullable=False, default=0)
+    response_char_count = Column(Integer, nullable=False, default=0)
     is_correct = Column(Boolean, nullable=False)
     improvement_score = Column(Float, nullable=False)
+    validation_payload = Column(JSON, nullable=False, default=dict)
     feedback_payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=utc_now, nullable=False)
 

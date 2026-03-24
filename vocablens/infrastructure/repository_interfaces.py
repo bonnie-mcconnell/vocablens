@@ -273,6 +273,7 @@ class LearningSessionRepository(Protocol):
         *,
         session_id: str,
         user_id: int,
+        contract_version: str,
         duration_seconds: int,
         mode: str,
         weak_area: str,
@@ -280,10 +281,18 @@ class LearningSessionRepository(Protocol):
         goal_label: str,
         success_criteria: str,
         review_window_minutes: int,
+        max_response_words: int,
         session_payload: Dict[str, Any],
         expires_at: datetime,
     ) -> LearningSession: ...
     async def get(self, *, user_id: int, session_id: str) -> Optional[LearningSession]: ...
+    async def get_attempt_by_submission(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        submission_id: str,
+    ) -> Optional[LearningSessionAttempt]: ...
     async def mark_completed(
         self,
         *,
@@ -296,9 +305,13 @@ class LearningSessionRepository(Protocol):
         *,
         session_id: str,
         user_id: int,
+        submission_id: str,
         learner_response: str,
+        response_word_count: int,
+        response_char_count: int,
         is_correct: bool,
         improvement_score: float,
+        validation_payload: Dict[str, Any],
         feedback_payload: Dict[str, Any],
     ) -> LearningSessionAttempt: ...
 

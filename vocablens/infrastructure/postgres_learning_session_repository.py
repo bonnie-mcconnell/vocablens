@@ -12,6 +12,7 @@ def _map_session(row: LearningSessionORM) -> LearningSession:
         session_id=row.session_id,
         user_id=row.user_id,
         status=str(row.status),
+        contract_version=str(row.contract_version),
         duration_seconds=int(row.duration_seconds),
         mode=str(row.mode),
         weak_area=str(row.weak_area),
@@ -19,6 +20,7 @@ def _map_session(row: LearningSessionORM) -> LearningSession:
         goal_label=str(row.goal_label),
         success_criteria=str(row.success_criteria),
         review_window_minutes=int(row.review_window_minutes),
+        max_response_words=int(row.max_response_words or 0),
         session_payload=dict(row.session_payload or {}),
         created_at=row.created_at,
         expires_at=row.expires_at,
@@ -33,9 +35,13 @@ def _map_attempt(row: LearningSessionAttemptORM) -> LearningSessionAttempt:
         id=int(row.id),
         session_id=str(row.session_id),
         user_id=int(row.user_id),
+        submission_id=str(row.submission_id),
         learner_response=str(row.learner_response),
+        response_word_count=int(row.response_word_count or 0),
+        response_char_count=int(row.response_char_count or 0),
         is_correct=bool(row.is_correct),
         improvement_score=float(row.improvement_score),
+        validation_payload=dict(row.validation_payload or {}),
         feedback_payload=dict(row.feedback_payload or {}),
         created_at=row.created_at,
     )
@@ -50,6 +56,7 @@ class PostgresLearningSessionRepository:
         *,
         session_id: str,
         user_id: int,
+        contract_version: str,
         duration_seconds: int,
         mode: str,
         weak_area: str,
@@ -57,6 +64,7 @@ class PostgresLearningSessionRepository:
         goal_label: str,
         success_criteria: str,
         review_window_minutes: int,
+        max_response_words: int,
         session_payload: dict,
         expires_at,
     ) -> LearningSession:
@@ -65,6 +73,7 @@ class PostgresLearningSessionRepository:
                 session_id=session_id,
                 user_id=user_id,
                 status="active",
+                contract_version=contract_version,
                 duration_seconds=duration_seconds,
                 mode=mode,
                 weak_area=weak_area,
@@ -72,6 +81,7 @@ class PostgresLearningSessionRepository:
                 goal_label=goal_label,
                 success_criteria=success_criteria,
                 review_window_minutes=review_window_minutes,
+                max_response_words=max_response_words,
                 session_payload=dict(session_payload),
                 expires_at=expires_at,
             )
@@ -97,6 +107,23 @@ class PostgresLearningSessionRepository:
         )
         row = result.scalar_one_or_none()
         return _map_session(row) if row is not None else None
+
+    async def get_attempt_by_submission(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        submission_id: str,
+    ) -> LearningSessionAttempt | None:
+        result = await self.session.execute(
+            select(LearningSessionAttemptORM).where(
+                LearningSessionAttemptORM.session_id == session_id,
+                LearningSessionAttemptORM.user_id == user_id,
+                LearningSessionAttemptORM.submission_id == submission_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _map_attempt(row) if row is not None else None
 
     async def mark_completed(self, *, user_id: int, session_id: str, completed_at) -> LearningSession:
         await self.session.execute(
@@ -145,9 +172,13 @@ class PostgresLearningSessionRepository:
         *,
         session_id: str,
         user_id: int,
+        submission_id: str,
         learner_response: str,
+        response_word_count: int,
+        response_char_count: int,
         is_correct: bool,
         improvement_score: float,
+        validation_payload: dict,
         feedback_payload: dict,
     ) -> LearningSessionAttempt:
         result = await self.session.execute(
@@ -155,9 +186,13 @@ class PostgresLearningSessionRepository:
             .values(
                 session_id=session_id,
                 user_id=user_id,
+                submission_id=submission_id,
                 learner_response=learner_response,
+                response_word_count=response_word_count,
+                response_char_count=response_char_count,
                 is_correct=is_correct,
                 improvement_score=improvement_score,
+                validation_payload=dict(validation_payload),
                 feedback_payload=dict(feedback_payload),
             )
             .returning(LearningSessionAttemptORM)

@@ -346,6 +346,7 @@ class SessionDiagnosticsResponse(BaseModel):
     session_id: str
     user_id: int
     status: str
+    contract_version: str
     duration_seconds: int
     mode: str
     weak_area: str
@@ -353,6 +354,7 @@ class SessionDiagnosticsResponse(BaseModel):
     goal_label: str
     success_criteria: str
     review_window_minutes: int
+    max_response_words: int
     session_payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     expires_at: datetime
@@ -365,9 +367,13 @@ class SessionAttemptDiagnosticsResponse(BaseModel):
     id: int
     session_id: str
     user_id: int
+    submission_id: str
     learner_response: str
+    response_word_count: int
+    response_char_count: int
     is_correct: bool
     improvement_score: float
+    validation_payload: dict[str, Any] = Field(default_factory=dict)
     feedback_payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
@@ -774,4 +780,6 @@ class SessionStartRequest(BaseModel):
 
 class SessionEvaluateRequest(BaseModel):
     session_id: str = Field(..., min_length=8, max_length=128)
+    submission_id: str = Field(..., min_length=8, max_length=128)
+    contract_version: str = Field(..., min_length=2, max_length=16)
     learner_response: str = Field(..., min_length=1, max_length=500)

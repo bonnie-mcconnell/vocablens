@@ -14,6 +14,7 @@ from vocablens.services.gamification_service import GamificationService
 from vocablens.services.learning_engine import LearningEngine, ReviewedKnowledge, SessionResult
 from vocablens.services.wow_engine import WowEngine
 
+SESSION_CONTRACT_VERSION = "v2"
 SessionMode = Literal["review", "drill", "sentence", "rewrite"]
 SessionPhaseName = Literal["warmup", "core_challenge", "correction_engine", "reinforcement", "win_moment"]
 
@@ -47,6 +48,7 @@ class StructuredSession:
     goal_label: str
     success_criteria: str
     review_window_minutes: int
+    max_response_words: int
     phases: list[SessionPhase]
 
 
@@ -97,6 +99,7 @@ class SessionEngine:
 
     async def start_session(self, user_id: int) -> dict[str, Any]:
         session = await self.build_session(user_id)
+        self._assert_session_quality(session)
         payload = self.to_payload(session)
         session_id = uuid4().hex
         created_at = utc_now()
@@ -106,6 +109,7 @@ class SessionEngine:
             await uow.learning_sessions.create(
                 session_id=session_id,
                 user_id=user_id,
+                contract_version=SESSION_CONTRACT_VERSION,
                 duration_seconds=session.duration_seconds,
                 mode=session.mode,
                 weak_area=session.weak_area,
@@ -113,6 +117,7 @@ class SessionEngine:
                 goal_label=session.goal_label,
                 success_criteria=session.success_criteria,
                 review_window_minutes=session.review_window_minutes,
+                max_response_words=session.max_response_words,
                 session_payload=payload,
                 expires_at=expires_at,
             )
@@ -133,6 +138,7 @@ class SessionEngine:
         response = dict(payload)
         response["session_id"] = session_id
         response["status"] = "active"
+        response["contract_version"] = SESSION_CONTRACT_VERSION
         response["expires_at"] = expires_at.isoformat()
         return response
 
@@ -211,15 +217,34 @@ class SessionEngine:
             goal_label=str(getattr(recommendation, "goal_label", None) or self._goal_label(weak_area)),
             success_criteria=self._success_criteria(core_prompt),
             review_window_minutes=int(getattr(recommendation, "review_window_minutes", None) or 15),
+            max_response_words=12,
             phases=phases,
         )
 
-    async def evaluate_session(self, user_id: int, session_id: str, learner_response: str) -> SessionFeedback:
+    async def evaluate_session(
+        self,
+        user_id: int,
+        session_id: str,
+        learner_response: str,
+        *,
+        submission_id: str,
+        contract_version: str,
+    ) -> SessionFeedback:
         now = utc_now()
         async with self._uow_factory() as uow:
             stored_session = await uow.learning_sessions.get(user_id=user_id, session_id=session_id)
             if stored_session is None:
                 raise NotFoundError("Session not found")
+            prior_attempt = await uow.learning_sessions.get_attempt_by_submission(
+                session_id=session_id,
+                user_id=user_id,
+                submission_id=submission_id,
+            )
+            if prior_attempt is not None:
+                await uow.commit()
+                return self.feedback_from_payload(prior_attempt.feedback_payload)
+            if stored_session.contract_version != contract_version:
+                raise ConflictError("Session contract is stale")
             if stored_session.status == "completed":
                 raise ConflictError("Session already completed")
             if stored_session.expires_at <= now:
@@ -232,9 +257,15 @@ class SessionEngine:
                 raise ConflictError("Session expired")
 
         session = self.from_payload(stored_session.session_payload)
+        validation = self._validate_submission(session, learner_response, stored_session.max_response_words)
         evaluation = await self._evaluate_session(user_id, session, learner_response)
         feedback = evaluation.feedback
-        feedback_payload = self.feedback_to_payload(feedback)
+        feedback_payload = {
+            **self.feedback_to_payload(feedback),
+            "submission_id": submission_id,
+            "contract_version": contract_version,
+            "validation": validation,
+        }
 
         async with self._uow_factory() as uow:
             summary = await self._learning_engine.apply_session_result(
@@ -247,9 +278,13 @@ class SessionEngine:
             await uow.learning_sessions.record_attempt(
                 session_id=session_id,
                 user_id=user_id,
+                submission_id=submission_id,
                 learner_response=learner_response,
+                response_word_count=validation["response_word_count"],
+                response_char_count=validation["response_char_count"],
                 is_correct=feedback.is_correct,
                 improvement_score=feedback.improvement_score,
+                validation_payload=validation,
                 feedback_payload={
                     **feedback_payload,
                     "knowledge_update": {
@@ -294,6 +329,8 @@ class SessionEngine:
                 policy_version="v1",
                 inputs={
                     "session_id": session_id,
+                    "submission_id": submission_id,
+                    "contract_version": contract_version,
                     "weak_area": session.weak_area,
                     "lesson_target": session.lesson_target,
                     "learner_response": learner_response,
@@ -316,6 +353,25 @@ class SessionEngine:
     def feedback_to_payload(self, feedback: SessionFeedback) -> dict[str, Any]:
         return asdict(feedback)
 
+    def feedback_from_payload(self, payload: dict[str, Any]) -> SessionFeedback:
+        return SessionFeedback(
+            structured=bool(payload.get("structured", True)),
+            targeted_weak_area=str(payload.get("targeted_weak_area") or ""),
+            is_correct=bool(payload.get("is_correct", False)),
+            improvement_score=float(payload.get("improvement_score", 0.0)),
+            corrected_response=str(payload.get("corrected_response") or ""),
+            highlighted_mistakes=[str(item) for item in payload.get("highlighted_mistakes", [])],
+            reinforcement_prompt=str(payload.get("reinforcement_prompt") or ""),
+            variation_prompt=str(payload.get("variation_prompt") or ""),
+            win_message=str(payload.get("win_message") or ""),
+            wow_score=float(payload.get("wow_score", 0.0)),
+            xp_preview=int(payload.get("xp_preview", 0) or 0),
+            badges_preview=[str(item) for item in payload.get("badges_preview", [])],
+            progress_summary=str(payload.get("progress_summary") or ""),
+            recommended_next_step=str(payload.get("recommended_next_step") or ""),
+            review_window_minutes=int(payload.get("review_window_minutes", 0) or 0),
+        )
+
     def from_payload(self, payload: dict[str, Any]) -> StructuredSession:
         phases = [
             SessionPhase(
@@ -335,6 +391,7 @@ class SessionEngine:
             goal_label=str(payload.get("goal_label", self._goal_label(str(payload.get("weak_area", "vocabulary"))))),
             success_criteria=str(payload.get("success_criteria", "Hit the target once with a short correct answer.")),
             review_window_minutes=int(payload.get("review_window_minutes", 15)),
+            max_response_words=int(payload.get("max_response_words", 12)),
             phases=phases,
         )
 
@@ -530,6 +587,39 @@ class SessionEngine:
         if prompt.mode == "review":
             return "Recall the answer quickly without a full explanation."
         return "Give one short correct answer with the target keyword."
+
+    def _assert_session_quality(self, session: StructuredSession) -> None:
+        phase_names = [phase.name for phase in session.phases]
+        if phase_names != ["warmup", "core_challenge", "correction_engine", "reinforcement", "win_moment"]:
+            raise ConflictError("Session contract is invalid")
+        core = self._phase(session, "core_challenge")
+        if not str(core.payload.get("prompt") or "").strip():
+            raise ConflictError("Session content failed quality validation")
+        if not list(core.payload.get("accepted_keywords", []) or []):
+            raise ConflictError("Session content failed quality validation")
+        if session.max_response_words > 24:
+            raise ConflictError("Session content failed quality validation")
+
+    def _validate_submission(self, session: StructuredSession, learner_response: str, max_response_words: int) -> dict[str, Any]:
+        response = (learner_response or "").strip()
+        response_word_count = len([part for part in response.split() if part])
+        response_char_count = len(response)
+        if not response:
+            raise ConflictError("Session answer is empty")
+        if "\n" in response or "\r" in response:
+            raise ConflictError("Session answer must be a single short response")
+        if response_word_count > max_response_words:
+            raise ConflictError("Session answer exceeds the allowed length")
+        core = self._phase(session, "core_challenge")
+        payload_mode = str(core.payload.get("mode") or "")
+        if payload_mode in {"drill", "review"} and response_word_count > 4:
+            raise ConflictError("Session answer does not match the round format")
+        return {
+            "response_word_count": response_word_count,
+            "response_char_count": response_char_count,
+            "max_response_words": max_response_words,
+            "payload_mode": payload_mode,
+        }
 
     def _highlighted_mistakes(self, response: str, accepted_keywords: list[str], payload: dict[str, Any]) -> list[str]:
         if not response:
