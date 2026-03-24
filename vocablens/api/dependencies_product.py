@@ -28,6 +28,7 @@ from vocablens.services.knowledge_graph_service import KnowledgeGraphService
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.lifecycle_service import LifecycleService
+from vocablens.services.lifecycle_state_service import LifecycleStateService
 from vocablens.services.monetization_engine import MonetizationEngine
 from vocablens.services.monetization_state_service import MonetizationStateService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
@@ -101,6 +102,10 @@ def get_experiment_registry_service(uow_factory=Depends(get_uow_factory)) -> Exp
 
 def get_monetization_state_service(uow_factory=Depends(get_uow_factory)) -> MonetizationStateService:
     return MonetizationStateService(uow_factory)
+
+
+def get_lifecycle_state_service(uow_factory=Depends(get_uow_factory)) -> LifecycleStateService:
+    return LifecycleStateService(uow_factory)
 
 
 async def get_experiment_service(
@@ -232,6 +237,7 @@ def get_lifecycle_service(
     paywall_service=Depends(get_paywall_service),
     global_decision_engine=Depends(get_global_decision_engine),
     onboarding_service=Depends(get_onboarding_service),
+    lifecycle_state_service=Depends(get_lifecycle_state_service),
 ) -> LifecycleService:
     return LifecycleService(
         uow_factory,
@@ -241,6 +247,7 @@ def get_lifecycle_service(
         paywall_service,
         global_decision_engine,
         onboarding_service,
+        lifecycle_state_service,
     )
 
 

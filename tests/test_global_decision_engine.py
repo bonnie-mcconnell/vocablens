@@ -33,6 +33,9 @@ class FakeDecisionUOW:
     def __init__(self, *, learning_state, engagement_state):
         self.learning_states = FakeLearningStates(learning_state)
         self.engagement_states = FakeEngagementStates(engagement_state)
+        self.lifecycle_states = FakeLifecycleStates()
+        self.lifecycle_transitions = FakeLifecycleTransitions()
+        self.decision_traces = SimpleNamespace(create=self._create_decision_trace)
 
     async def __aenter__(self):
         return self
@@ -42,6 +45,39 @@ class FakeDecisionUOW:
 
     async def commit(self):
         return None
+
+    async def _create_decision_trace(self, **kwargs):
+        return None
+
+
+class FakeLifecycleStates:
+    def __init__(self):
+        self.row = None
+
+    async def get(self, user_id: int):
+        if self.row is None or self.row.user_id != user_id:
+            return None
+        return self.row
+
+    async def create(self, **kwargs):
+        self.row = SimpleNamespace(**kwargs)
+        return self.row
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(self.row, key, value)
+        return self.row
+
+
+class FakeLifecycleTransitions:
+    def __init__(self):
+        self.rows = []
+
+    async def create(self, **kwargs):
+        row = SimpleNamespace(**kwargs)
+        self.rows.append(row)
+        return row
 
 
 class FakeRetentionEngine:
@@ -98,7 +134,7 @@ class FakeNotificationEngine:
             reason="retention action selected",
         )
 
-    async def decide(self, user_id: int, assessment):
+    async def decide(self, user_id: int, assessment, *, reference_id: str | None = None, source_context: str = ""):
         return self.decision
 
 

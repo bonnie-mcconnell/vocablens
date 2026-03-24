@@ -44,6 +44,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_registry_audits" in tables
     assert {"user_monetization_states", "monetization_offer_events"} <= tables
     assert {"daily_missions", "reward_chests"} <= tables
+    assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -247,6 +248,43 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert any(fk["referred_table"] == "users" for fk in reward_chest_fks)
     assert any(fk["referred_table"] == "daily_missions" for fk in reward_chest_fks)
 
+    lifecycle_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_lifecycle_states")}
+    assert "idx_user_lifecycle_states_user" in lifecycle_state_indexes
+    assert "idx_user_lifecycle_states_stage" in lifecycle_state_indexes
+    assert "idx_user_lifecycle_states_entered_at" in lifecycle_state_indexes
+    lifecycle_state_columns = {col["name"] for col in inspector.get_columns("user_lifecycle_states")}
+    assert {
+        "user_id",
+        "current_stage",
+        "previous_stage",
+        "current_reasons",
+        "entered_at",
+        "last_transition_at",
+        "last_transition_source",
+        "last_transition_reference_id",
+        "transition_count",
+        "updated_at",
+    } <= lifecycle_state_columns
+    lifecycle_state_fks = inspector.get_foreign_keys("user_lifecycle_states")
+    assert any(fk["referred_table"] == "users" for fk in lifecycle_state_fks)
+
+    lifecycle_transition_indexes = {idx["name"] for idx in inspector.get_indexes("lifecycle_transitions")}
+    assert "idx_lifecycle_transitions_user_created" in lifecycle_transition_indexes
+    assert "idx_lifecycle_transitions_to_stage" in lifecycle_transition_indexes
+    lifecycle_transition_columns = {col["name"] for col in inspector.get_columns("lifecycle_transitions")}
+    assert {
+        "user_id",
+        "from_stage",
+        "to_stage",
+        "reasons",
+        "source",
+        "reference_id",
+        "payload",
+        "created_at",
+    } <= lifecycle_transition_columns
+    lifecycle_transition_fks = inspector.get_foreign_keys("lifecycle_transitions")
+    assert any(fk["referred_table"] == "users" for fk in lifecycle_transition_fks)
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -409,6 +447,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "monetization_offer_events" not in tables
     assert "daily_missions" not in tables
     assert "reward_chests" not in tables
+    assert "user_lifecycle_states" not in tables
+    assert "lifecycle_transitions" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -426,6 +466,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_registry_audits" in tables
     assert {"user_monetization_states", "monetization_offer_events"} <= tables
     assert {"daily_missions", "reward_chests"} <= tables
+    assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

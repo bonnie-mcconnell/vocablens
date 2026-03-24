@@ -49,6 +49,12 @@ from vocablens.infrastructure.postgres_daily_mission_repository import (
 from vocablens.infrastructure.postgres_reward_chest_repository import (
     PostgresRewardChestRepository,
 )
+from vocablens.infrastructure.postgres_user_lifecycle_state_repository import (
+    PostgresUserLifecycleStateRepository,
+)
+from vocablens.infrastructure.postgres_lifecycle_transition_repository import (
+    PostgresLifecycleTransitionRepository,
+)
 
 
 class UnitOfWork:
@@ -88,6 +94,8 @@ class UnitOfWork:
         self._monetization_offer_events: Optional[PostgresMonetizationOfferEventRepository] = None
         self._daily_missions: Optional[PostgresDailyMissionRepository] = None
         self._reward_chests: Optional[PostgresRewardChestRepository] = None
+        self._lifecycle_states: Optional[PostgresUserLifecycleStateRepository] = None
+        self._lifecycle_transitions: Optional[PostgresLifecycleTransitionRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -331,6 +339,22 @@ class UnitOfWork:
         if self._reward_chests is None:
             self._reward_chests = PostgresRewardChestRepository(self.session)
         return self._reward_chests
+
+    @property
+    def lifecycle_states(self) -> PostgresUserLifecycleStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._lifecycle_states is None:
+            self._lifecycle_states = PostgresUserLifecycleStateRepository(self.session)
+        return self._lifecycle_states
+
+    @property
+    def lifecycle_transitions(self) -> PostgresLifecycleTransitionRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._lifecycle_transitions is None:
+            self._lifecycle_transitions = PostgresLifecycleTransitionRepository(self.session)
+        return self._lifecycle_transitions
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

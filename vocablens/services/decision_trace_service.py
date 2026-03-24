@@ -8,9 +8,11 @@ from sqlalchemy import select
 from vocablens.domain.errors import NotFoundError
 from vocablens.infrastructure.db.models import (
     ExperimentAssignmentORM,
+    LifecycleTransitionORM,
     OnboardingFlowStateORM,
     SubscriptionORM,
     UserEngagementStateORM,
+    UserLifecycleStateORM,
     UserLearningStateORM,
     UserMonetizationStateORM,
     UserProfileORM,
@@ -175,6 +177,10 @@ class DecisionTraceService:
             "onboarding_state": self._onboarding_state_orm_payload(snapshot["onboarding_state"]),
             "learning_state": self._learning_state_payload(snapshot["learning_state"]),
             "engagement_state": self._engagement_state_payload(snapshot["engagement_state"]),
+            "lifecycle_state": self._lifecycle_state_payload(snapshot["lifecycle_state"]),
+            "lifecycle_transitions": [
+                self._lifecycle_transition_payload(item) for item in snapshot["lifecycle_transitions"]
+            ],
             "profile": self._profile_payload(snapshot["profile"]),
             "retention": retention,
             "lifecycle": lifecycle,
@@ -377,6 +383,17 @@ class DecisionTraceService:
                 uow,
                 select(OnboardingFlowStateORM).where(OnboardingFlowStateORM.user_id == user_id),
             )
+            lifecycle_state = await self._one_or_none(
+                uow,
+                select(UserLifecycleStateORM).where(UserLifecycleStateORM.user_id == user_id),
+            )
+            lifecycle_transitions = await self._all(
+                uow,
+                select(LifecycleTransitionORM)
+                .where(LifecycleTransitionORM.user_id == user_id)
+                .order_by(LifecycleTransitionORM.created_at.desc(), LifecycleTransitionORM.id.desc())
+                .limit(50),
+            )
             assignments = await self._all(
                 uow,
                 select(ExperimentAssignmentORM).where(ExperimentAssignmentORM.user_id == user_id),
@@ -402,6 +419,8 @@ class DecisionTraceService:
             "subscription": subscription,
             "monetization_state": monetization_state,
             "onboarding_state": onboarding_state,
+            "lifecycle_state": lifecycle_state,
+            "lifecycle_transitions": lifecycle_transitions,
             "experiments": experiments,
             "monetization_events": monetization_events,
             "used_requests": used_requests,
@@ -872,6 +891,35 @@ class DecisionTraceService:
             "last_trigger": dict(row.last_trigger or {}),
             "last_value_display": dict(row.last_value_display or {}),
             "updated_at": self._timestamp(row.updated_at),
+        }
+
+    def _lifecycle_state_payload(self, row) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        return {
+            "user_id": row.user_id,
+            "current_stage": row.current_stage,
+            "previous_stage": row.previous_stage,
+            "current_reasons": list(row.current_reasons or []),
+            "entered_at": self._timestamp(row.entered_at),
+            "last_transition_at": self._timestamp(row.last_transition_at),
+            "last_transition_source": row.last_transition_source,
+            "last_transition_reference_id": row.last_transition_reference_id,
+            "transition_count": int(row.transition_count or 0),
+            "updated_at": self._timestamp(row.updated_at),
+        }
+
+    def _lifecycle_transition_payload(self, row) -> dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "user_id": row.user_id,
+            "from_stage": row.from_stage,
+            "to_stage": row.to_stage,
+            "reasons": list(row.reasons or []),
+            "source": row.source,
+            "reference_id": row.reference_id,
+            "payload": dict(row.payload or {}),
+            "created_at": self._timestamp(row.created_at),
         }
 
     def _monetization_event_payload(self, row) -> dict[str, Any]:

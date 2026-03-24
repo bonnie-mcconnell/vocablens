@@ -493,6 +493,63 @@ class RewardChestORM(Base):
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class UserLifecycleStateORM(Base):
+    __tablename__ = "user_lifecycle_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_lifecycle_states_user_id"),
+        CheckConstraint(
+            "current_stage IN ('new_user', 'activating', 'engaged', 'at_risk', 'churned')",
+            name="ck_user_lifecycle_states_stage_valid",
+        ),
+        CheckConstraint(
+            "previous_stage IS NULL OR previous_stage IN ('new_user', 'activating', 'engaged', 'at_risk', 'churned')",
+            name="ck_user_lifecycle_states_previous_stage_valid",
+        ),
+        CheckConstraint("transition_count >= 0", name="ck_user_lifecycle_states_transition_count_nonnegative"),
+        Index("idx_user_lifecycle_states_user", "user_id"),
+        Index("idx_user_lifecycle_states_stage", "current_stage", "updated_at"),
+        Index("idx_user_lifecycle_states_entered_at", "entered_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    current_stage = Column(String, nullable=False)
+    previous_stage = Column(String)
+    current_reasons = Column(JSON, nullable=False, default=list)
+    entered_at = Column(DateTime, default=utc_now, nullable=False)
+    last_transition_at = Column(DateTime, default=utc_now, nullable=False)
+    last_transition_source = Column(String, nullable=False)
+    last_transition_reference_id = Column(String)
+    transition_count = Column(Integer, default=0, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class LifecycleTransitionORM(Base):
+    __tablename__ = "lifecycle_transitions"
+    __table_args__ = (
+        CheckConstraint(
+            "from_stage IS NULL OR from_stage IN ('new_user', 'activating', 'engaged', 'at_risk', 'churned')",
+            name="ck_lifecycle_transitions_from_stage_valid",
+        ),
+        CheckConstraint(
+            "to_stage IN ('new_user', 'activating', 'engaged', 'at_risk', 'churned')",
+            name="ck_lifecycle_transitions_to_stage_valid",
+        ),
+        Index("idx_lifecycle_transitions_user_created", "user_id", "created_at"),
+        Index("idx_lifecycle_transitions_to_stage", "to_stage", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    from_stage = Column(String)
+    to_stage = Column(String, nullable=False)
+    reasons = Column(JSON, nullable=False, default=list)
+    source = Column(String, nullable=False)
+    reference_id = Column(String)
+    payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class UserLearningStateORM(Base):
     __tablename__ = "user_learning_states"
     __table_args__ = (

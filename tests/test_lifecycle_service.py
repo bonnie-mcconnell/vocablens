@@ -30,6 +30,8 @@ class FakeUOW:
         self.learning_states = FakeLearningStates(learning_state)
         self.engagement_states = FakeEngagementStates(engagement_state)
         self.decision_traces = FakeDecisionTraces()
+        self.lifecycle_states = FakeLifecycleStates()
+        self.lifecycle_transitions = FakeLifecycleTransitions()
 
     async def __aenter__(self):
         return self
@@ -42,6 +44,35 @@ class FakeUOW:
 
 
 class FakeDecisionTraces:
+    def __init__(self):
+        self.created = []
+
+    async def create(self, **kwargs):
+        self.created.append(kwargs)
+        return SimpleNamespace(**kwargs)
+
+
+class FakeLifecycleStates:
+    def __init__(self):
+        self.row = None
+
+    async def get(self, user_id: int):
+        if self.row is None or self.row.user_id != user_id:
+            return None
+        return self.row
+
+    async def create(self, **kwargs):
+        self.row = SimpleNamespace(**kwargs)
+        return self.row
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(self.row, key, value)
+        return self.row
+
+
+class FakeLifecycleTransitions:
     def __init__(self):
         self.created = []
 
@@ -196,11 +227,14 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
     assert new_user_uow.decision_traces.created[0]["trace_type"] == "lifecycle_action_plan"
     assert new_user_uow.decision_traces.created[1]["trace_type"] == "lifecycle_decision"
     assert new_user_uow.decision_traces.created[1]["reference_id"] == "lifecycle:1"
+    assert new_user_uow.lifecycle_states.row.current_stage == "new_user"
+    assert new_user_uow.lifecycle_transitions.created[0]["to_stage"] == "new_user"
     assert activating_plan.actions[0].type == "wow_moment_push"
     assert "mastery at 25.0%" in activating_plan.actions[1].message
     assert activating_notifier.calls == [(2, "active")]
     assert activating_uow.decision_traces.created[0]["outputs"]["action_types"] == ["wow_moment_push", "progress_visibility"]
     assert activating_uow.decision_traces.created[1]["outputs"]["stage"] == "activating"
+    assert activating_uow.lifecycle_states.row.current_stage == "activating"
 
 
 def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():

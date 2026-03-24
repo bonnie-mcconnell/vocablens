@@ -559,6 +559,31 @@ class MonetizationOfferEventDiagnosticsResponse(BaseModel):
     created_at: datetime
 
 
+class UserLifecycleStateDiagnosticsResponse(BaseModel):
+    user_id: int
+    current_stage: str
+    previous_stage: str | None = None
+    current_reasons: list[str] = Field(default_factory=list)
+    entered_at: datetime | None = None
+    last_transition_at: datetime | None = None
+    last_transition_source: str
+    last_transition_reference_id: str | None = None
+    transition_count: int = 0
+    updated_at: datetime | None = None
+
+
+class LifecycleTransitionDiagnosticsResponse(BaseModel):
+    id: int
+    user_id: int
+    from_stage: str | None = None
+    to_stage: str
+    reasons: list[str] = Field(default_factory=list)
+    source: str
+    reference_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
 class RetentionSuggestedActionResponse(BaseModel):
     kind: str
     reason: str
@@ -677,6 +702,8 @@ class LifecycleDiagnosticsDataResponse(BaseModel):
     onboarding_state: OnboardingDiagnosticsStateResponse | None = None
     learning_state: UserLearningStateDiagnosticsResponse | None = None
     engagement_state: UserEngagementStateDiagnosticsResponse | None = None
+    lifecycle_state: UserLifecycleStateDiagnosticsResponse | None = None
+    lifecycle_transitions: list[LifecycleTransitionDiagnosticsResponse] = Field(default_factory=list)
     profile: UserProfileDiagnosticsResponse | None = None
     retention: RetentionDiagnosticsResponse
     lifecycle: LifecycleDecisionDiagnosticsResponse

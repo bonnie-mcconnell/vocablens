@@ -189,6 +189,40 @@ class RewardChestRepository(Protocol):
     async def mark_unlocked(self, chest_id: int, *, unlocked_at: datetime) -> Any: ...
 
 
+class UserLifecycleStateRepository(Protocol):
+    async def get(self, user_id: int) -> Any | None: ...
+    async def create(
+        self,
+        *,
+        user_id: int,
+        current_stage: str,
+        previous_stage: str | None,
+        current_reasons: List[str],
+        entered_at: datetime,
+        last_transition_at: datetime,
+        last_transition_source: str,
+        last_transition_reference_id: str | None,
+        transition_count: int,
+    ) -> Any: ...
+    async def update(self, user_id: int, **kwargs) -> Any: ...
+
+
+class LifecycleTransitionRepository(Protocol):
+    async def create(
+        self,
+        *,
+        user_id: int,
+        from_stage: str | None,
+        to_stage: str,
+        reasons: List[str],
+        source: str,
+        reference_id: str | None,
+        payload: Dict[str, Any],
+        created_at: datetime,
+    ) -> Any: ...
+    async def list_by_user(self, user_id: int, limit: int = 50) -> List[Any]: ...
+
+
 class UserLearningStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> UserLearningState: ...
     async def update(

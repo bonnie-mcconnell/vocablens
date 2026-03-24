@@ -6,6 +6,7 @@ from typing import Literal
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.lifecycle_stage_policy import LifecycleSnapshot, classify_lifecycle_stage
+from vocablens.services.lifecycle_state_service import LifecycleStateService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
@@ -39,6 +40,7 @@ class LifecycleService:
         paywall_service: PaywallService,
         global_decision_engine: GlobalDecisionEngine | None = None,
         onboarding_service: OnboardingService | None = None,
+        lifecycle_state_service: LifecycleStateService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine
@@ -47,6 +49,7 @@ class LifecycleService:
         self._paywall = paywall_service
         self._global_decision = global_decision_engine
         self._onboarding = onboarding_service
+        self._lifecycle_states = lifecycle_state_service or LifecycleStateService(uow_factory)
 
     async def evaluate(self, user_id: int) -> LifecyclePlan:
         if self._global_decision:
@@ -69,6 +72,15 @@ class LifecycleService:
             stage=stage,
             reasons=reasons,
             actions=actions,
+            source="lifecycle_service.evaluate",
+        )
+        await self._record_canonical_state(
+            user_id=user_id,
+            stage=stage,
+            reasons=reasons,
+            retention=retention,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
             source="lifecycle_service.evaluate",
         )
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
@@ -163,6 +175,15 @@ class LifecycleService:
             stage=stage,
             reasons=reasons,
             actions=actions,
+            source="lifecycle_service.global_decision",
+        )
+        await self._record_canonical_state(
+            user_id=user_id,
+            stage=stage,
+            reasons=reasons,
+            retention=retention,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
             source="lifecycle_service.global_decision",
         )
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
@@ -260,6 +281,33 @@ class LifecycleService:
                 reason=plan.reasons[0] if plan.reasons else global_reason,
             )
             await uow.commit()
+
+    async def _record_canonical_state(
+        self,
+        *,
+        user_id: int,
+        stage: LifecycleStage,
+        reasons: list[str],
+        retention: RetentionAssessment,
+        learning_state,
+        engagement_state,
+        source: str,
+    ) -> None:
+        await self._lifecycle_states.record_stage(
+            user_id=user_id,
+            stage=stage,
+            reasons=reasons,
+            source=source,
+            reference_id=f"lifecycle:{user_id}",
+            payload={
+                "retention_state": retention.state,
+                "drop_off_risk": round(float(retention.drop_off_risk or 0.0), 3),
+                "total_sessions": int(getattr(engagement_state, "total_sessions", 0) or 0),
+                "sessions_last_3_days": int(getattr(engagement_state, "sessions_last_3_days", 0) or 0),
+                "mastery_percent": round(float(getattr(learning_state, "mastery_percent", 0.0) or 0.0), 2),
+                "weak_areas": list(getattr(learning_state, "weak_areas", []) or []),
+            },
+        )
 
     async def _record_action_trace(
         self,
