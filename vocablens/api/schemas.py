@@ -809,6 +809,42 @@ class LifecycleDiagnosticsResponse(BaseModel):
     meta: LifecycleDiagnosticsMetaResponse
 
 
+class DiagnosticsEventSummaryResponse(BaseModel):
+    total_events: int = 0
+    counts_by_type: dict[str, int] = Field(default_factory=dict)
+    latest_event_at: datetime | None = None
+
+
+class DiagnosticsTraceSummaryResponse(BaseModel):
+    total_traces: int = 0
+    counts_by_type: dict[str, int] = Field(default_factory=dict)
+    latest_trace_at: datetime | None = None
+
+
+class LifecycleOperatorLatestDecisionsResponse(BaseModel):
+    lifecycle_decision: DecisionTraceRecordResponse | None = None
+    lifecycle_action_plan: DecisionTraceRecordResponse | None = None
+    notification_selection: DecisionTraceRecordResponse | None = None
+    latest_transition: LifecycleTransitionDiagnosticsResponse | None = None
+
+
+class LifecycleOperatorReportDataResponse(BaseModel):
+    detail: LifecycleDiagnosticsDataResponse
+    latest_decisions: LifecycleOperatorLatestDecisionsResponse
+    event_summary: DiagnosticsEventSummaryResponse
+    trace_summary: DiagnosticsTraceSummaryResponse
+
+
+class LifecycleOperatorReportMetaResponse(BaseModel):
+    source: Literal["admin.lifecycle.report"]
+    user_id: int
+
+
+class LifecycleOperatorReportResponse(BaseModel):
+    data: LifecycleOperatorReportDataResponse
+    meta: LifecycleOperatorReportMetaResponse
+
+
 class MonetizationDiagnosticsDataResponse(BaseModel):
     onboarding_state: OnboardingDiagnosticsStateResponse | None = None
     learning_state: UserLearningStateDiagnosticsResponse | None = None
@@ -836,6 +872,32 @@ class MonetizationDiagnosticsMetaResponse(BaseModel):
 class MonetizationDiagnosticsResponse(BaseModel):
     data: MonetizationDiagnosticsDataResponse
     meta: MonetizationDiagnosticsMetaResponse
+
+
+class MonetizationOperatorLatestDecisionsResponse(BaseModel):
+    monetization_decision: DecisionTraceRecordResponse | None = None
+    lifecycle_decision: DecisionTraceRecordResponse | None = None
+    notification_selection: DecisionTraceRecordResponse | None = None
+    latest_monetization_event: MonetizationOfferEventDiagnosticsResponse | None = None
+
+
+class MonetizationOperatorReportDataResponse(BaseModel):
+    detail: MonetizationDiagnosticsDataResponse
+    latest_decisions: MonetizationOperatorLatestDecisionsResponse
+    event_summary: DiagnosticsEventSummaryResponse
+    trace_summary: DiagnosticsTraceSummaryResponse
+    monetization_event_summary: DiagnosticsEventSummaryResponse
+
+
+class MonetizationOperatorReportMetaResponse(BaseModel):
+    source: Literal["admin.monetization.report"]
+    user_id: int
+    geography: str | None = None
+
+
+class MonetizationOperatorReportResponse(BaseModel):
+    data: MonetizationOperatorReportDataResponse
+    meta: MonetizationOperatorReportMetaResponse
 
 
 class OnboardingStartRequest(BaseModel):

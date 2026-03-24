@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
@@ -189,6 +190,23 @@ class DecisionTraceService:
             "traces": relevant_traces,
         }
 
+    async def lifecycle_report(self, user_id: int) -> dict:
+        detail = await self.lifecycle_detail(user_id)
+        traces = list(detail.get("traces", []))
+        events = list(detail.get("events", []))
+        transitions = list(detail.get("lifecycle_transitions", []))
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "lifecycle_decision": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_decision"),
+                "lifecycle_action_plan": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_action_plan"),
+                "notification_selection": self._latest_trace_payload_from_dicts(traces, trace_type="notification_selection"),
+                "latest_transition": transitions[0] if transitions else None,
+            },
+            "event_summary": self._event_summary_payload(events),
+            "trace_summary": self._trace_summary_payload(traces),
+        }
+
     async def monetization_detail(self, user_id: int, *, geography: str | None = None) -> dict:
         snapshot = await self._user_snapshot(user_id)
         retention = self._retention_payload(snapshot)
@@ -234,6 +252,24 @@ class DecisionTraceService:
             "monetization_events": [self._monetization_event_payload(item) for item in snapshot["monetization_events"]],
             "events": relevant_events,
             "traces": relevant_traces,
+        }
+
+    async def monetization_report(self, user_id: int, *, geography: str | None = None) -> dict:
+        detail = await self.monetization_detail(user_id, geography=geography)
+        traces = list(detail.get("traces", []))
+        events = list(detail.get("events", []))
+        monetization_events = list(detail.get("monetization_events", []))
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "monetization_decision": self._latest_trace_payload_from_dicts(traces, trace_type="monetization_decision"),
+                "lifecycle_decision": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_decision"),
+                "notification_selection": self._latest_trace_payload_from_dicts(traces, trace_type="notification_selection"),
+                "latest_monetization_event": monetization_events[0] if monetization_events else None,
+            },
+            "event_summary": self._event_summary_payload(events),
+            "trace_summary": self._trace_summary_payload(traces),
+            "monetization_event_summary": self._event_summary_payload(monetization_events),
         }
 
     def _trace_payload(self, trace) -> dict[str, Any]:
@@ -783,6 +819,36 @@ class DecisionTraceService:
         filtered = [self._trace_payload(trace) for trace in traces if predicate(trace)]
         filtered.sort(key=lambda item: (item["created_at"], item["id"]))
         return filtered
+
+    def _latest_trace_payload_from_dicts(self, traces: list[dict[str, Any]], *, trace_type: str) -> dict[str, Any] | None:
+        for trace in reversed(traces):
+            if str(trace.get("trace_type") or "") == trace_type:
+                return trace
+        return None
+
+    def _event_summary_payload(self, events: list[dict[str, Any]]) -> dict[str, Any]:
+        counts = Counter(str(item.get("event_type") or "") for item in events)
+        latest_event_at = max(
+            (item.get("created_at") for item in events if item.get("created_at")),
+            default=None,
+        )
+        return {
+            "total_events": len(events),
+            "counts_by_type": dict(sorted(counts.items())),
+            "latest_event_at": latest_event_at,
+        }
+
+    def _trace_summary_payload(self, traces: list[dict[str, Any]]) -> dict[str, Any]:
+        counts = Counter(str(item.get("trace_type") or "") for item in traces)
+        latest_trace_at = max(
+            (item.get("created_at") for item in traces if item.get("created_at")),
+            default=None,
+        )
+        return {
+            "total_traces": len(traces),
+            "counts_by_type": dict(sorted(counts.items())),
+            "latest_trace_at": latest_trace_at,
+        }
 
     def _latest_trace(self, traces, *, trace_type: str):
         for trace in traces:

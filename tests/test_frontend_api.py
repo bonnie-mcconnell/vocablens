@@ -612,6 +612,49 @@ class FakeDecisionTraceService:
             ],
         }
 
+    async def lifecycle_report(self, user_id: int):
+        detail = await self.lifecycle_detail(user_id)
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "lifecycle_decision": detail["traces"][0],
+                "lifecycle_action_plan": {
+                    "id": 7,
+                    "user_id": user_id,
+                    "trace_type": "lifecycle_action_plan",
+                    "source": "lifecycle_service.evaluate",
+                    "reference_id": f"lifecycle:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {"retention": {"state": "active"}},
+                    "outputs": {"action_types": ["wow_moment_push"]},
+                    "reason": "Built the lifecycle action bundle before the final lifecycle decision.",
+                    "created_at": "2026-03-23T12:04:20",
+                },
+                "notification_selection": None,
+                "latest_transition": {
+                    "id": 4,
+                    "user_id": user_id,
+                    "from_stage": "new_user",
+                    "to_stage": "activating",
+                    "reasons": ["user is building toward activation"],
+                    "source": "lifecycle_service.evaluate",
+                    "reference_id": f"lifecycle:{user_id}",
+                    "payload": {"retention_state": "active"},
+                    "created_at": "2026-03-23T12:04:30",
+                },
+            },
+            "event_summary": {
+                "total_events": 1,
+                "counts_by_type": {"paywall_viewed": 1},
+                "latest_event_at": "2026-03-23T12:01:00",
+            },
+            "trace_summary": {
+                "total_traces": 2,
+                "counts_by_type": {"lifecycle_decision": 1, "onboarding_paywall_entry": 1},
+                "latest_trace_at": "2026-03-23T12:04:30",
+            },
+        }
+
     async def monetization_detail(self, user_id: int, *, geography: str | None = None):
         return {
             "onboarding_state": {
@@ -852,6 +895,33 @@ class FakeDecisionTraceService:
             ],
         }
 
+    async def monetization_report(self, user_id: int, *, geography: str | None = None):
+        detail = await self.monetization_detail(user_id, geography=geography)
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "monetization_decision": detail["traces"][0],
+                "lifecycle_decision": None,
+                "notification_selection": None,
+                "latest_monetization_event": detail["monetization_events"][0],
+            },
+            "event_summary": {
+                "total_events": 1,
+                "counts_by_type": {"paywall_viewed": 1},
+                "latest_event_at": "2026-03-23T12:01:00",
+            },
+            "trace_summary": {
+                "total_traces": 2,
+                "counts_by_type": {"monetization_decision": 1, "onboarding_paywall_entry": 1},
+                "latest_trace_at": "2026-03-23T12:01:10",
+            },
+            "monetization_event_summary": {
+                "total_events": 1,
+                "counts_by_type": {"decision_evaluated": 1},
+                "latest_event_at": "2026-03-23T12:01:10",
+            },
+        }
+
 
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
@@ -928,8 +998,16 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/lifecycle/1",
         headers={"X-Admin-Token": "secret"},
     )
+    lifecycle_report = client.get(
+        "/admin/lifecycle/1/report",
+        headers={"X-Admin-Token": "secret"},
+    )
     monetization = client.get(
         "/admin/monetization/1?geography=us",
+        headers={"X-Admin-Token": "secret"},
+    )
+    monetization_report = client.get(
+        "/admin/monetization/1/report?geography=us",
         headers={"X-Admin-Token": "secret"},
     )
 
@@ -988,6 +1066,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert lifecycle.json()["data"]["adaptive_paywall"]["strategy"] == "high_intent:early:premium_anchor"
     assert lifecycle.json()["data"]["traces"][0]["trace_type"] == "lifecycle_decision"
     assert lifecycle.json()["data"]["events"][0]["event_type"] == "paywall_viewed"
+    assert lifecycle_report.status_code == 200
+    assert lifecycle_report.json()["meta"]["source"] == "admin.lifecycle.report"
+    assert lifecycle_report.json()["data"]["latest_decisions"]["lifecycle_decision"]["trace_type"] == "lifecycle_decision"
+    assert lifecycle_report.json()["data"]["event_summary"]["counts_by_type"]["paywall_viewed"] == 1
     assert monetization.status_code == 200
     assert monetization.json()["meta"]["source"] == "admin.monetization.detail"
     assert monetization.json()["meta"]["geography"] == "us"
@@ -997,6 +1079,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert monetization.json()["data"]["monetization_events"][0]["event_type"] == "decision_evaluated"
     assert monetization.json()["data"]["experiments"]["paywall_trigger_timing"] == "early"
     assert monetization.json()["data"]["traces"][0]["trace_type"] == "monetization_decision"
+    assert monetization_report.status_code == 200
+    assert monetization_report.json()["meta"]["source"] == "admin.monetization.report"
+    assert monetization_report.json()["data"]["latest_decisions"]["monetization_decision"]["trace_type"] == "monetization_decision"
+    assert monetization_report.json()["data"]["monetization_event_summary"]["counts_by_type"]["decision_evaluated"] == 1
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():

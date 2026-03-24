@@ -22,7 +22,9 @@ from vocablens.api.schemas import (
     ExperimentRegistryUpsertRequest,
     ExperimentResultsResponse,
     LifecycleDiagnosticsResponse,
+    LifecycleOperatorReportResponse,
     MonetizationDiagnosticsResponse,
+    MonetizationOperatorReportResponse,
     OnboardingDiagnosticsResponse,
     RetentionAnalyticsResponse,
     UsageAnalyticsResponse,
@@ -286,6 +288,24 @@ def create_admin_router() -> APIRouter:
             },
         }
 
+    @router.get("/lifecycle/{user_id}/report", response_model=LifecycleOperatorReportResponse)
+    async def lifecycle_report(
+        user_id: int,
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.lifecycle_report(user_id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.lifecycle.report",
+                "user_id": user_id,
+            },
+        }
+
     @router.get("/monetization/{user_id}", response_model=MonetizationDiagnosticsResponse)
     async def monetization_detail(
         user_id: int,
@@ -301,6 +321,26 @@ def create_admin_router() -> APIRouter:
             "data": detail,
             "meta": {
                 "source": "admin.monetization.detail",
+                "user_id": user_id,
+                "geography": geography,
+            },
+        }
+
+    @router.get("/monetization/{user_id}/report", response_model=MonetizationOperatorReportResponse)
+    async def monetization_report(
+        user_id: int,
+        geography: str | None = Query(default=None, min_length=2, max_length=16),
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.monetization_report(user_id, geography=geography)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.monetization.report",
                 "user_id": user_id,
                 "geography": geography,
             },
