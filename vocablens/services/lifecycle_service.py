@@ -64,6 +64,13 @@ class LifecycleService:
         )
         actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
+        await self._record_action_trace(
+            user_id=user_id,
+            stage=stage,
+            reasons=reasons,
+            actions=actions,
+            source="lifecycle_service.evaluate",
+        )
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
 
         plan = LifecyclePlan(
@@ -128,7 +135,12 @@ class LifecycleService:
     ) -> LifecycleNotification:
         if stage not in {"at_risk", "churned", "new_user", "activating"}:
             return LifecycleNotification(should_send=False, reason="stage does not require proactive lifecycle messaging")
-        decision = await self._notifications.decide(user_id, retention)
+        decision = await self._notifications.decide(
+            user_id,
+            retention,
+            reference_id=f"lifecycle:{user_id}",
+            source_context="lifecycle_service.notification",
+        )
         return LifecycleNotification(
             should_send=decision.should_send,
             reason=decision.reason,
@@ -146,6 +158,13 @@ class LifecycleService:
         reasons = [decision.reason]
         actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
+        await self._record_action_trace(
+            user_id=user_id,
+            stage=stage,
+            reasons=reasons,
+            actions=actions,
+            source="lifecycle_service.global_decision",
+        )
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
         plan = LifecyclePlan(
             stage=stage,
@@ -239,5 +258,33 @@ class LifecycleService:
                     "notification": asdict(plan.notification),
                 },
                 reason=plan.reasons[0] if plan.reasons else global_reason,
+            )
+            await uow.commit()
+
+    async def _record_action_trace(
+        self,
+        *,
+        user_id: int,
+        stage: LifecycleStage,
+        reasons: list[str],
+        actions: list[LifecycleAction],
+        source: str,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="lifecycle_action_plan",
+                source=source,
+                reference_id=f"lifecycle:{user_id}",
+                policy_version="v1",
+                inputs={
+                    "stage": stage,
+                    "reasons": list(reasons),
+                },
+                outputs={
+                    "action_types": [action.type for action in actions],
+                    "actions": [asdict(action) for action in actions],
+                },
+                reason=reasons[0] if reasons else f"Lifecycle stage {stage} generated action plan.",
             )
             await uow.commit()

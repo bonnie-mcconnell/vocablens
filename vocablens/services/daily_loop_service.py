@@ -125,6 +125,44 @@ class DailyLoopService:
                 badge_hint=str(reward_preview["badge_hint"]),
                 payload=dict(reward_preview),
             )
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="daily_mission_generation",
+                source="daily_loop_service.build_daily_loop",
+                reference_id=f"daily_mission:{user_id}:{mission_date}",
+                policy_version="v1",
+                inputs={
+                    "recommendation": {
+                        "action": recommendation.action,
+                        "target": getattr(recommendation, "target", None),
+                        "skill_focus": getattr(recommendation, "skill_focus", None),
+                        "difficulty": getattr(recommendation, "lesson_difficulty", "medium"),
+                    },
+                    "retention": {
+                        "state": retention.state,
+                        "drop_off_risk": round(float(retention.drop_off_risk or 0.0), 3),
+                        "current_streak": int(retention.current_streak or 0),
+                    },
+                    "engagement": {
+                        "momentum_score": momentum_score,
+                        "current_streak": int(getattr(engagement_state, "current_streak", 0) or 0),
+                        "sessions_last_3_days": int(getattr(engagement_state, "sessions_last_3_days", 0) or 0),
+                    },
+                    "learning_state": {
+                        "weak_areas": list(getattr(learning_state, "weak_areas", []) or []),
+                        "due_items_count": len(due_items),
+                    },
+                },
+                outputs={
+                    "mission_date": mission_date,
+                    "weak_area": weak_area,
+                    "mission_max_sessions": mission_max_sessions,
+                    "steps": [asdict(step) for step in mission],
+                    "notification_preview": notification_preview,
+                    "reward_preview": dict(reward_preview),
+                },
+                reason=f"Generated canonical daily mission for {weak_area}.",
+            )
             await uow.commit()
 
         if self._events:
@@ -153,13 +191,16 @@ class DailyLoopService:
                 return self._completion_from_rows(mission, chest, current_streak=None, momentum_score=mission.momentum_score)
             engagement_state = await uow.engagement_states.get_or_create(user_id)
             progress_state = await uow.progress_states.get_or_create(user_id)
-            momentum_score = round(min(1.0, float(engagement_state.momentum_score or 0.0) + 0.2), 3)
+            previous_momentum_score = round(float(engagement_state.momentum_score or 0.0), 3)
+            previous_xp = int(progress_state.xp or 0)
+            previous_level = int(progress_state.level or 1)
+            momentum_score = round(min(1.0, previous_momentum_score + 0.2), 3)
             engagement_state = await uow.engagement_states.update(
                 user_id,
                 momentum_score=momentum_score,
                 daily_mission_completed_at=now,
             )
-            xp = int(progress_state.xp or 0) + 25
+            xp = previous_xp + 25
             level = max(1, (xp // 250) + 1)
             milestones = [milestone for milestone in (2, 3, 5, 10) if level >= milestone]
             progress_state = await uow.progress_states.update(
@@ -170,6 +211,30 @@ class DailyLoopService:
             )
             mission = await uow.daily_missions.mark_completed(mission.id, completed_at=now)
             chest = await uow.reward_chests.mark_unlocked(chest.id, unlocked_at=now)
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="reward_chest_resolution",
+                source="daily_loop_service.complete_daily_mission",
+                reference_id=f"reward_chest:{chest.id}",
+                policy_version="v1",
+                inputs={
+                    "mission_id": int(mission.id),
+                    "mission_date": str(mission.mission_date),
+                    "previous_momentum_score": previous_momentum_score,
+                    "previous_xp": previous_xp,
+                    "previous_level": previous_level,
+                },
+                outputs={
+                    "mission_status": str(mission.status),
+                    "reward_chest_status": str(chest.status),
+                    "xp_reward": int(chest.xp_reward),
+                    "badge_hint": str(chest.badge_hint),
+                    "updated_momentum_score": momentum_score,
+                    "updated_xp": xp,
+                    "updated_level": level,
+                },
+                reason="Completed daily mission and unlocked canonical reward chest.",
+            )
             await uow.commit()
         reward_preview = self._reward_preview_from_chest(chest)
 

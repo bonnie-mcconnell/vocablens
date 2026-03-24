@@ -22,6 +22,7 @@ class FakeUOW:
             create=self._create_reward_chest,
             mark_unlocked=self._mark_reward_chest_unlocked,
         )
+        self.decision_traces = SimpleNamespace(create=self._create_decision_trace)
         self._due_items = due_items or []
         self._profile = profile or SimpleNamespace(current_streak=4)
         self._learning_state = learning_state or SimpleNamespace(weak_areas=["vocabulary"])
@@ -38,6 +39,7 @@ class FakeUOW:
         self._progress_state = progress_state or SimpleNamespace(xp=120, level=1, milestones=[], updated_at=utc_now())
         self._daily_mission = None
         self._reward_chest = None
+        self._decision_traces = []
 
     async def __aenter__(self):
         return self
@@ -98,6 +100,10 @@ class FakeUOW:
         self._reward_chest.status = "unlocked"
         self._reward_chest.unlocked_at = unlocked_at
         return self._reward_chest
+
+    async def _create_decision_trace(self, **kwargs):
+        self._decision_traces.append(kwargs)
+        return SimpleNamespace(**kwargs)
 
 
 class FakeLearningEngine:
@@ -201,6 +207,7 @@ def test_daily_loop_service_always_generates_a_mission():
     assert plan.reward_preview["badge_hint"] == "Accuracy Ace"
     assert service._uow_factory()._daily_mission is not None
     assert service._uow_factory()._reward_chest is not None
+    assert service._uow_factory()._decision_traces[0]["trace_type"] == "daily_mission_generation"
 
 
 def test_daily_loop_service_skip_shield_updates_correctly():
@@ -258,6 +265,7 @@ def test_daily_loop_service_rewards_trigger_after_completion():
     assert "daily_mission_completed" in emitted_types
     assert "reward_chest_unlocked" in emitted_types
     assert retention.recorded[0][0] == 1
+    assert service._uow_factory()._decision_traces[-1]["trace_type"] == "reward_chest_resolution"
 
 
 def test_daily_loop_service_reuses_existing_mission_for_same_day():

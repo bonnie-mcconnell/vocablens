@@ -34,7 +34,14 @@ class NotificationDecisionEngine:
         self._uow_factory = uow_factory
         self._cooldown = timedelta(hours=cooldown_hours)
 
-    async def decide(self, user_id: int, assessment: RetentionAssessment) -> NotificationDecision:
+    async def decide(
+        self,
+        user_id: int,
+        assessment: RetentionAssessment,
+        *,
+        reference_id: str | None = None,
+        source_context: str = "notification_decision_engine.decide",
+    ) -> NotificationDecision:
         async with self._uow_factory() as uow:
             profile = await uow.profiles.get_or_create(user_id)
             recent_deliveries = await uow.notification_deliveries.list_recent(user_id, limit=50)
@@ -47,18 +54,78 @@ class NotificationDecisionEngine:
         day_cutoff = utc_now() - timedelta(days=1)
         sent_today = [row for row in recent_deliveries if row.created_at and row.created_at >= day_cutoff]
         if frequency_limit == 0:
-            return NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "notifications disabled")
+            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "notifications disabled")
+            await self._record_trace(
+                user_id=user_id,
+                assessment=assessment,
+                profile=profile,
+                recent_deliveries=recent_deliveries,
+                session_events=session_events,
+                weak_clusters=weak_clusters,
+                mistakes=mistakes,
+                action=None,
+                decision=decision,
+                predicted_hour=None,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
+            return decision
         if len(sent_today) >= frequency_limit:
-            return NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "daily frequency limit reached")
+            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "daily frequency limit reached")
+            await self._record_trace(
+                user_id=user_id,
+                assessment=assessment,
+                profile=profile,
+                recent_deliveries=recent_deliveries,
+                session_events=session_events,
+                weak_clusters=weak_clusters,
+                mistakes=mistakes,
+                action=None,
+                decision=decision,
+                predicted_hour=None,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
+            return decision
 
         last_delivery = recent_deliveries[0] if recent_deliveries else None
         if last_delivery and last_delivery.created_at and (utc_now() - last_delivery.created_at) < self._cooldown:
             cooldown_until = last_delivery.created_at + self._cooldown
-            return NotificationDecision(False, cooldown_until, profile.preferred_channel, cooldown_until, None, "cooldown active")
+            decision = NotificationDecision(False, cooldown_until, profile.preferred_channel, cooldown_until, None, "cooldown active")
+            await self._record_trace(
+                user_id=user_id,
+                assessment=assessment,
+                profile=profile,
+                recent_deliveries=recent_deliveries,
+                session_events=session_events,
+                weak_clusters=weak_clusters,
+                mistakes=mistakes,
+                action=None,
+                decision=decision,
+                predicted_hour=None,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
+            return decision
 
         action = self._pick_action(assessment)
         if action is None:
-            return NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "no retention action")
+            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "no retention action")
+            await self._record_trace(
+                user_id=user_id,
+                assessment=assessment,
+                profile=profile,
+                recent_deliveries=recent_deliveries,
+                session_events=session_events,
+                weak_clusters=weak_clusters,
+                mistakes=mistakes,
+                action=None,
+                decision=decision,
+                predicted_hour=None,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
+            return decision
 
         predicted_hour = self._predicted_hour(profile, session_events)
         send_at = self._send_time(predicted_hour)
@@ -70,7 +137,7 @@ class NotificationDecisionEngine:
             weak_clusters=weak_clusters,
             mistakes=mistakes,
         )
-        return NotificationDecision(
+        decision = NotificationDecision(
             should_send=True,
             send_at=send_at,
             channel=profile.preferred_channel,
@@ -78,6 +145,21 @@ class NotificationDecisionEngine:
             message=message,
             reason="retention action selected",
         )
+        await self._record_trace(
+            user_id=user_id,
+            assessment=assessment,
+            profile=profile,
+            recent_deliveries=recent_deliveries,
+            session_events=session_events,
+            weak_clusters=weak_clusters,
+            mistakes=mistakes,
+            action=action,
+            decision=decision,
+            predicted_hour=predicted_hour,
+            reference_id=reference_id,
+            source_context=source_context,
+        )
+        return decision
 
     def _pick_action(self, assessment: RetentionAssessment):
         actions = sorted(
@@ -148,3 +230,73 @@ class NotificationDecisionEngine:
         if action_kind == "review_reminder" and details[-1][-1] != ".":
             details[-1] = details[-1] + "."
         return " ".join(details)
+
+    async def _record_trace(
+        self,
+        *,
+        user_id: int,
+        assessment: RetentionAssessment,
+        profile,
+        recent_deliveries,
+        session_events,
+        weak_clusters,
+        mistakes,
+        action,
+        decision: NotificationDecision,
+        predicted_hour: int | None,
+        reference_id: str | None,
+        source_context: str,
+    ) -> None:
+        resolved_reference = reference_id or f"notification:{user_id}"
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="notification_selection",
+                source=source_context,
+                reference_id=resolved_reference,
+                policy_version="v1",
+                inputs={
+                    "retention": {
+                        "state": assessment.state,
+                        "drop_off_risk": round(float(assessment.drop_off_risk or 0.0), 3),
+                        "current_streak": int(assessment.current_streak or 0),
+                        "suggested_action_types": [item.kind for item in assessment.suggested_actions],
+                    },
+                    "profile": {
+                        "preferred_channel": getattr(profile, "preferred_channel", None),
+                        "preferred_time_of_day": getattr(profile, "preferred_time_of_day", None),
+                        "frequency_limit": int(getattr(profile, "frequency_limit", 0) or 0),
+                    },
+                    "delivery_context": {
+                        "recent_delivery_count": len(recent_deliveries),
+                        "sent_today_count": len(
+                            [row for row in recent_deliveries if row.created_at and row.created_at >= utc_now() - timedelta(days=1)]
+                        ),
+                    },
+                    "session_history": {
+                        "session_event_count": len(session_events),
+                        "predicted_hour": predicted_hour,
+                    },
+                    "weak_clusters": list(weak_clusters or []),
+                    "mistakes": [
+                        {"category": getattr(item, "category", None), "pattern": getattr(item, "pattern", None)}
+                        for item in list(mistakes or [])
+                    ],
+                    "selected_action": {
+                        "kind": getattr(action, "kind", None),
+                        "reason": getattr(action, "reason", None),
+                        "target": getattr(action, "target", None),
+                    },
+                },
+                outputs={
+                    "should_send": bool(decision.should_send),
+                    "channel": decision.channel,
+                    "send_at": decision.send_at.isoformat(),
+                    "cooldown_until": decision.cooldown_until.isoformat() if decision.cooldown_until else None,
+                    "message_category": decision.message.category if decision.message else None,
+                    "message_title": decision.message.title if decision.message else None,
+                    "reason": decision.reason,
+                },
+                reason=decision.reason,
+            )
+            await uow.commit()

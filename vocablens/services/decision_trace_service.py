@@ -165,7 +165,11 @@ class DecisionTraceService:
         relevant_traces = self._filtered_traces(
             snapshot["traces"],
             predicate=lambda trace: str(trace.trace_type).startswith("onboarding_")
-            or str(trace.trace_type).startswith("lifecycle_"),
+            or str(trace.trace_type).startswith("lifecycle_")
+            or (
+                str(getattr(trace, "trace_type", "") or "") == "notification_selection"
+                and str(getattr(trace, "reference_id", "") or "") == f"lifecycle:{user_id}"
+            ),
         )
         return {
             "onboarding_state": self._onboarding_state_orm_payload(snapshot["onboarding_state"]),

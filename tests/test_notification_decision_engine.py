@@ -53,6 +53,7 @@ class FakeUOW:
         self.learning_events = FakeLearningEventsRepo(events)
         self.knowledge_graph = FakeKnowledgeGraphRepo(weak_clusters)
         self.mistake_patterns = FakeMistakePatternsRepo(mistakes)
+        self.decision_traces = FakeDecisionTraces()
 
     async def __aenter__(self):
         return self
@@ -62,6 +63,15 @@ class FakeUOW:
 
     async def commit(self):
         return None
+
+
+class FakeDecisionTraces:
+    def __init__(self):
+        self.created = []
+
+    async def create(self, **kwargs):
+        self.created.append(kwargs)
+        return SimpleNamespace(**kwargs)
 
 
 def test_notification_decision_engine_respects_daily_limit_and_prevents_spam():
@@ -74,12 +84,15 @@ def test_notification_decision_engine_respects_daily_limit_and_prevents_spam():
         current_streak=3,
         suggested_actions=[SimpleNamespace(kind="streak_nudge", reason="Keep it going", target=None)],
     )
-    engine = NotificationDecisionEngine(lambda: FakeUOW(profile, deliveries=deliveries))
+    uow = FakeUOW(profile, deliveries=deliveries)
+    engine = NotificationDecisionEngine(lambda: uow)
 
     decision = run_async(engine.decide(1, assessment))
 
     assert decision.should_send is False
     assert "limit" in decision.reason
+    assert uow.decision_traces.created[0]["trace_type"] == "notification_selection"
+    assert uow.decision_traces.created[0]["outputs"]["should_send"] is False
 
 
 def test_notification_decision_engine_prioritizes_streak_over_review():
@@ -93,13 +106,12 @@ def test_notification_decision_engine_prioritizes_streak_over_review():
             SimpleNamespace(kind="streak_nudge", reason="Your streak is alive", target=None),
         ],
     )
-    engine = NotificationDecisionEngine(
-        lambda: FakeUOW(
-            profile,
-            weak_clusters=[{"cluster": "travel"}],
-            mistakes=[SimpleNamespace(pattern="verb tense")],
-        )
+    uow = FakeUOW(
+        profile,
+        weak_clusters=[{"cluster": "travel"}],
+        mistakes=[SimpleNamespace(pattern="verb tense")],
     )
+    engine = NotificationDecisionEngine(lambda: uow)
 
     decision = run_async(engine.decide(2, assessment))
 
@@ -107,6 +119,8 @@ def test_notification_decision_engine_prioritizes_streak_over_review():
     assert decision.message is not None
     assert decision.message.category == "retention:streak_nudge"
     assert decision.message.metadata["priority"] > 0
+    assert uow.decision_traces.created[0]["inputs"]["selected_action"]["kind"] == "streak_nudge"
+    assert uow.decision_traces.created[0]["outputs"]["message_category"] == "retention:streak_nudge"
 
 
 def test_notification_decision_engine_uses_session_history_for_send_time():
@@ -122,10 +136,12 @@ def test_notification_decision_engine_uses_session_history_for_send_time():
         current_streak=0,
         suggested_actions=[SimpleNamespace(kind="review_reminder", reason="Come back to review", target="bonjour")],
     )
-    engine = NotificationDecisionEngine(lambda: FakeUOW(profile, events=session_events))
+    uow = FakeUOW(profile, events=session_events)
+    engine = NotificationDecisionEngine(lambda: uow)
 
     decision = run_async(engine.decide(3, assessment))
 
     assert decision.should_send is True
     assert decision.channel == "email"
     assert decision.send_at.hour == 10
+    assert uow.decision_traces.created[0]["inputs"]["session_history"]["predicted_hour"] == 10
