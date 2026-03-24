@@ -11,6 +11,8 @@ from vocablens.infrastructure.db.models import (
     DailyMissionORM,
     ExperimentAssignmentORM,
     LifecycleTransitionORM,
+    NotificationDeliveryORM,
+    NotificationPolicyRegistryORM,
     NotificationSuppressionEventORM,
     OnboardingFlowStateORM,
     RewardChestORM,
@@ -58,6 +60,9 @@ class DecisionTraceService:
         "session_started",
         "session_ended",
         "skip_shield_used",
+    }
+    _NOTIFICATION_EVENT_TYPES = {
+        "notification_emitted",
     }
 
     def __init__(self, uow_factory: type[UnitOfWork], business_metrics_service=None):
@@ -361,6 +366,51 @@ class DecisionTraceService:
             "reward_chest_summary": self._reward_chest_summary_payload(reward_chests),
         }
 
+    async def notification_detail(self, user_id: int, *, policy_key: str = "default") -> dict:
+        snapshot = await self._user_snapshot(user_id, notification_policy_key=policy_key)
+        relevant_events = self._filtered_events(
+            snapshot["events"],
+            allowed_types=self._NOTIFICATION_EVENT_TYPES,
+        )
+        relevant_traces = self._filtered_traces(
+            snapshot["traces"],
+            predicate=lambda trace: str(getattr(trace, "trace_type", "") or "") == "notification_selection",
+        )
+        return {
+            "notification_policy": self._notification_policy_payload(snapshot["notification_policy"]),
+            "notification_state": self._notification_state_payload(snapshot["notification_state"]),
+            "notification_suppression_events": [
+                self._notification_suppression_event_payload(item)
+                for item in snapshot["notification_suppression_events"]
+            ],
+            "notification_deliveries": [
+                self._notification_delivery_payload(item)
+                for item in snapshot["notification_deliveries"]
+            ],
+            "events": relevant_events,
+            "traces": relevant_traces,
+        }
+
+    async def notification_report(self, user_id: int, *, policy_key: str = "default") -> dict:
+        detail = await self.notification_detail(user_id, policy_key=policy_key)
+        traces = list(detail.get("traces", []))
+        events = list(detail.get("events", []))
+        suppression_events = list(detail.get("notification_suppression_events", []))
+        deliveries = list(detail.get("notification_deliveries", []))
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "notification_selection": self._latest_trace_payload_from_dicts(traces, trace_type="notification_selection"),
+                "active_policy": detail.get("notification_policy"),
+                "latest_delivery": deliveries[0] if deliveries else None,
+                "latest_suppression_event": suppression_events[0] if suppression_events else None,
+            },
+            "event_summary": self._event_summary_payload(events),
+            "trace_summary": self._trace_summary_payload(traces),
+            "delivery_summary": self._notification_delivery_summary_payload(deliveries),
+            "suppression_summary": self._notification_suppression_summary_payload(suppression_events),
+        }
+
     def _trace_payload(self, trace) -> dict[str, Any]:
         return {
             "id": trace.id,
@@ -477,7 +527,7 @@ class DecisionTraceService:
             "habit_lock_in": self._as_dict(state.habit_lock_in),
         }
 
-    async def _user_snapshot(self, user_id: int) -> dict[str, Any]:
+    async def _user_snapshot(self, user_id: int, *, notification_policy_key: str = "default") -> dict[str, Any]:
         async with self._uow_factory() as uow:
             user = await uow.users.get_by_id(user_id)
             if user is None:
@@ -522,6 +572,10 @@ class DecisionTraceService:
                 uow,
                 select(UserNotificationStateORM).where(UserNotificationStateORM.user_id == user_id),
             )
+            notification_policy = await self._one_or_none(
+                uow,
+                select(NotificationPolicyRegistryORM).where(NotificationPolicyRegistryORM.policy_key == notification_policy_key),
+            )
             lifecycle_transitions = await self._all(
                 uow,
                 select(LifecycleTransitionORM)
@@ -534,6 +588,13 @@ class DecisionTraceService:
                 select(NotificationSuppressionEventORM)
                 .where(NotificationSuppressionEventORM.user_id == user_id)
                 .order_by(NotificationSuppressionEventORM.created_at.desc(), NotificationSuppressionEventORM.id.desc())
+                .limit(50),
+            )
+            notification_deliveries = await self._all(
+                uow,
+                select(NotificationDeliveryORM)
+                .where(NotificationDeliveryORM.user_id == user_id)
+                .order_by(NotificationDeliveryORM.created_at.desc(), NotificationDeliveryORM.id.desc())
                 .limit(50),
             )
             assignments = await self._all(
@@ -563,8 +624,10 @@ class DecisionTraceService:
             "onboarding_state": onboarding_state,
             "lifecycle_state": lifecycle_state,
             "notification_state": notification_state,
+            "notification_policy": notification_policy,
             "lifecycle_transitions": lifecycle_transitions,
             "notification_suppression_events": notification_suppression_events,
+            "notification_deliveries": notification_deliveries,
             "experiments": experiments,
             "monetization_events": monetization_events,
             "used_requests": used_requests,
@@ -1148,6 +1211,46 @@ class DecisionTraceService:
             "created_at": self._timestamp(row.created_at),
         }
 
+    def _notification_policy_payload(self, row) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        return {
+            "policy_key": row.policy_key,
+            "status": row.status,
+            "is_killed": bool(row.is_killed),
+            "description": row.description,
+            "policy": dict(row.policy or {}),
+            "created_at": self._timestamp(row.created_at),
+            "updated_at": self._timestamp(row.updated_at),
+        }
+
+    def _notification_delivery_payload(self, row) -> dict[str, Any]:
+        payload_json = getattr(row, "payload_json", None)
+        payload: dict[str, Any]
+        if isinstance(payload_json, str) and payload_json:
+            try:
+                import json
+
+                payload = dict(json.loads(payload_json) or {})
+            except (TypeError, ValueError):
+                payload = {}
+        else:
+            payload = {}
+        return {
+            "id": int(row.id),
+            "user_id": row.user_id,
+            "category": row.category,
+            "provider": row.provider,
+            "status": row.status,
+            "title": row.title,
+            "body": row.body,
+            "payload": payload,
+            "error_message": row.error_message,
+            "attempt_count": int(row.attempt_count or 0),
+            "created_at": self._timestamp(row.created_at),
+            "updated_at": self._timestamp(row.updated_at),
+        }
+
     def _daily_mission_payload(self, row) -> dict[str, Any]:
         return {
             "id": int(row.id),
@@ -1203,6 +1306,34 @@ class DecisionTraceService:
             "total_reward_chests": len(reward_chests),
             "counts_by_status": dict(sorted(counts.items())),
             "latest_unlocked_at": latest_unlocked_at,
+        }
+
+    def _notification_delivery_summary_payload(self, deliveries: list[dict[str, Any]]) -> dict[str, Any]:
+        counts = Counter(str(item.get("status") or "") for item in deliveries)
+        provider_counts = Counter(str(item.get("provider") or "") for item in deliveries)
+        category_counts = Counter(str(item.get("category") or "") for item in deliveries)
+        latest_delivery_at = max(
+            (item.get("created_at") for item in deliveries if item.get("created_at")),
+            default=None,
+        )
+        return {
+            "total_deliveries": len(deliveries),
+            "counts_by_status": dict(sorted(counts.items())),
+            "counts_by_provider": dict(sorted(provider_counts.items())),
+            "counts_by_category": dict(sorted(category_counts.items())),
+            "latest_delivery_at": latest_delivery_at,
+        }
+
+    def _notification_suppression_summary_payload(self, suppression_events: list[dict[str, Any]]) -> dict[str, Any]:
+        counts = Counter(str(item.get("event_type") or "") for item in suppression_events)
+        latest_suppression_at = max(
+            (item.get("created_at") for item in suppression_events if item.get("created_at")),
+            default=None,
+        )
+        return {
+            "total_suppressions": len(suppression_events),
+            "counts_by_type": dict(sorted(counts.items())),
+            "latest_suppression_at": latest_suppression_at,
         }
 
     def _onboarding_state_orm_payload(self, row) -> dict[str, Any] | None:

@@ -1216,6 +1216,188 @@ class FakeDecisionTraceService:
             },
         }
 
+    async def notification_report(self, user_id: int, *, policy_key: str = "default"):
+        return {
+            "detail": {
+                "notification_policy": {
+                    "policy_key": policy_key,
+                    "status": "active",
+                    "is_killed": False,
+                    "description": "Canonical notification policy.",
+                    "policy": {
+                        "cooldown_hours": 4,
+                        "default_frequency_limit": 2,
+                        "default_preferred_time_of_day": 18,
+                    },
+                    "created_at": "2026-03-24T12:00:00",
+                    "updated_at": "2026-03-24T12:30:00",
+                },
+                "notification_state": {
+                    "user_id": user_id,
+                    "preferred_channel": "push",
+                    "preferred_time_of_day": 18,
+                    "frequency_limit": 2,
+                    "lifecycle_stage": "at_risk",
+                    "lifecycle_policy_version": "v1",
+                    "lifecycle_policy": {"lifecycle_notifications_enabled": True},
+                    "suppression_reason": None,
+                    "suppressed_until": None,
+                    "cooldown_until": "2026-03-24T18:00:00",
+                    "sent_count_day": "2026-03-24",
+                    "sent_count_today": 1,
+                    "last_sent_at": "2026-03-24T12:08:00",
+                    "last_delivery_channel": "push",
+                    "last_delivery_status": "sent",
+                    "last_delivery_category": "reengagement",
+                    "last_reference_id": f"lifecycle:{user_id}",
+                    "last_decision_at": "2026-03-24T12:07:50",
+                    "last_decision_reason": "At-risk user matched the reengagement policy.",
+                    "updated_at": "2026-03-24T12:08:00",
+                },
+                "notification_suppression_events": [
+                    {
+                        "id": 73,
+                        "user_id": user_id,
+                        "event_type": "lifecycle_notification_suppressed",
+                        "source": "notification_state_service.apply_lifecycle_policy",
+                        "reference_id": f"lifecycle:{user_id}",
+                        "lifecycle_stage": "engaged",
+                        "suppression_reason": "quiet engaged users",
+                        "suppressed_until": "2026-03-23T10:00:00",
+                        "payload": {"recovery_window_hours": 24},
+                        "created_at": "2026-03-23T10:00:00",
+                    }
+                ],
+                "notification_deliveries": [
+                    {
+                        "id": 81,
+                        "user_id": user_id,
+                        "category": "reengagement",
+                        "provider": "push",
+                        "status": "sent",
+                        "title": "Pick up your streak",
+                        "body": "One short round keeps your progress moving.",
+                        "payload": {"campaign": "at_risk_recovery"},
+                        "error_message": None,
+                        "attempt_count": 1,
+                        "created_at": "2026-03-24T12:08:00",
+                        "updated_at": "2026-03-24T12:08:03",
+                    },
+                    {
+                        "id": 80,
+                        "user_id": user_id,
+                        "category": "reengagement",
+                        "provider": "push",
+                        "status": "skipped",
+                        "title": "Keep going",
+                        "body": "You are close to another clean streak day.",
+                        "payload": {"campaign": "at_risk_recovery"},
+                        "error_message": "cooldown_active",
+                        "attempt_count": 1,
+                        "created_at": "2026-03-24T09:00:00",
+                        "updated_at": "2026-03-24T09:00:01",
+                    },
+                ],
+                "events": [
+                    {
+                        "id": 91,
+                        "event_type": "notification_emitted",
+                        "payload": {"provider": "push", "status": "sent"},
+                        "created_at": "2026-03-24T12:08:03",
+                    }
+                ],
+                "traces": [
+                    {
+                        "id": 71,
+                        "user_id": user_id,
+                        "trace_type": "notification_selection",
+                        "source": "notification_decision_engine",
+                        "reference_id": f"lifecycle:{user_id}",
+                        "policy_version": "v1",
+                        "inputs": {"lifecycle_stage": "at_risk"},
+                        "outputs": {"should_send": True, "category": "reengagement", "channel": "push"},
+                        "reason": "At-risk user matched the reengagement policy.",
+                        "created_at": "2026-03-24T12:07:50",
+                    }
+                ],
+            },
+            "latest_decisions": {
+                "notification_selection": {
+                    "id": 71,
+                    "user_id": user_id,
+                    "trace_type": "notification_selection",
+                    "source": "notification_decision_engine",
+                    "reference_id": f"lifecycle:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {"lifecycle_stage": "at_risk"},
+                    "outputs": {"should_send": True, "category": "reengagement", "channel": "push"},
+                    "reason": "At-risk user matched the reengagement policy.",
+                    "created_at": "2026-03-24T12:07:50",
+                },
+                "active_policy": {
+                    "policy_key": policy_key,
+                    "status": "active",
+                    "is_killed": False,
+                    "description": "Canonical notification policy.",
+                    "policy": {
+                        "cooldown_hours": 4,
+                        "default_frequency_limit": 2,
+                        "default_preferred_time_of_day": 18,
+                    },
+                    "created_at": "2026-03-24T12:00:00",
+                    "updated_at": "2026-03-24T12:30:00",
+                },
+                "latest_delivery": {
+                    "id": 81,
+                    "user_id": user_id,
+                    "category": "reengagement",
+                    "provider": "push",
+                    "status": "sent",
+                    "title": "Pick up your streak",
+                    "body": "One short round keeps your progress moving.",
+                    "payload": {"campaign": "at_risk_recovery"},
+                    "error_message": None,
+                    "attempt_count": 1,
+                    "created_at": "2026-03-24T12:08:00",
+                    "updated_at": "2026-03-24T12:08:03",
+                },
+                "latest_suppression_event": {
+                    "id": 73,
+                    "user_id": user_id,
+                    "event_type": "lifecycle_notification_suppressed",
+                    "source": "notification_state_service.apply_lifecycle_policy",
+                    "reference_id": f"lifecycle:{user_id}",
+                    "lifecycle_stage": "engaged",
+                    "suppression_reason": "quiet engaged users",
+                    "suppressed_until": "2026-03-23T10:00:00",
+                    "payload": {"recovery_window_hours": 24},
+                    "created_at": "2026-03-23T10:00:00",
+                },
+            },
+            "event_summary": {
+                "total_events": 1,
+                "counts_by_type": {"notification_emitted": 1},
+                "latest_event_at": "2026-03-24T12:08:03",
+            },
+            "trace_summary": {
+                "total_traces": 1,
+                "counts_by_type": {"notification_selection": 1},
+                "latest_trace_at": "2026-03-24T12:07:50",
+            },
+            "delivery_summary": {
+                "total_deliveries": 2,
+                "counts_by_status": {"sent": 1, "skipped": 1},
+                "counts_by_provider": {"push": 2},
+                "counts_by_category": {"reengagement": 2},
+                "latest_delivery_at": "2026-03-24T12:08:00",
+            },
+            "suppression_summary": {
+                "total_suppressions": 1,
+                "counts_by_type": {"lifecycle_notification_suppressed": 1},
+                "latest_suppression_at": "2026-03-23T10:00:00",
+            },
+        }
+
 
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
@@ -1335,6 +1517,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/daily-loop/1/report",
         headers={"X-Admin-Token": "secret"},
     )
+    notification_report = client.get(
+        "/admin/notifications/1/report?policy_key=default",
+        headers={"X-Admin-Token": "secret"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -1425,6 +1611,12 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert daily_loop_report.json()["data"]["latest_decisions"]["daily_mission_generation"]["trace_type"] == "daily_mission_generation"
     assert daily_loop_report.json()["data"]["latest_decisions"]["latest_reward_chest"]["status"] == "unlocked"
     assert daily_loop_report.json()["data"]["mission_summary"]["counts_by_status"]["completed"] == 1
+    assert notification_report.status_code == 200
+    assert notification_report.json()["meta"]["source"] == "admin.notifications.report"
+    assert notification_report.json()["meta"]["policy_key"] == "default"
+    assert notification_report.json()["data"]["latest_decisions"]["active_policy"]["policy_key"] == "default"
+    assert notification_report.json()["data"]["delivery_summary"]["counts_by_status"]["sent"] == 1
+    assert notification_report.json()["data"]["suppression_summary"]["counts_by_type"]["lifecycle_notification_suppressed"] == 1
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():

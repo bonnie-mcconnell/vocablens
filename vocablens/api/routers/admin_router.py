@@ -27,6 +27,7 @@ from vocablens.api.schemas import (
     LifecycleOperatorReportResponse,
     MonetizationDiagnosticsResponse,
     MonetizationOperatorReportResponse,
+    NotificationOperatorReportResponse,
     NotificationPolicyAuditResponse,
     NotificationPolicyDetailResponse,
     NotificationPolicyListResponse,
@@ -290,6 +291,26 @@ def create_admin_router() -> APIRouter:
             "data": audits,
             "meta": {
                 "source": "admin.notifications.policies.audit",
+                "policy_key": policy_key,
+            },
+        }
+
+    @router.get("/notifications/{user_id}/report", response_model=NotificationOperatorReportResponse)
+    async def notification_report(
+        user_id: int,
+        policy_key: str = Query(default="default", min_length=1, max_length=128),
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.notification_report(user_id, policy_key=policy_key)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.notifications.report",
+                "user_id": user_id,
                 "policy_key": policy_key,
             },
         }

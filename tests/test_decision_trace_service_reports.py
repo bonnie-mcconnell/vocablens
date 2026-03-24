@@ -193,6 +193,110 @@ class StubDecisionTraceService(DecisionTraceService):
             ],
         }
 
+    async def notification_detail(self, user_id: int, *, policy_key: str = "default") -> dict:
+        return {
+            "notification_policy": {
+                "policy_key": policy_key,
+                "status": "active",
+                "is_killed": False,
+                "description": "Canonical notification policy.",
+                "policy": {
+                    "cooldown_hours": 4,
+                    "default_frequency_limit": 2,
+                },
+                "created_at": "2026-03-23T07:00:00",
+                "updated_at": "2026-03-23T12:00:00",
+            },
+            "notification_state": {
+                "user_id": user_id,
+                "preferred_channel": "push",
+                "preferred_time_of_day": 18,
+                "frequency_limit": 2,
+                "lifecycle_stage": "at_risk",
+                "lifecycle_policy_version": "v1",
+                "lifecycle_policy": {"lifecycle_notifications_enabled": True},
+                "suppression_reason": None,
+                "suppressed_until": None,
+                "cooldown_until": "2026-03-23T16:00:00",
+                "sent_count_day": "2026-03-23",
+                "sent_count_today": 1,
+                "last_sent_at": "2026-03-23T12:08:00",
+                "last_delivery_channel": "push",
+                "last_delivery_status": "sent",
+                "last_delivery_category": "reengagement",
+                "last_reference_id": f"lifecycle:{user_id}",
+                "last_decision_at": "2026-03-23T12:07:50",
+                "last_decision_reason": "At-risk user matched the reengagement policy.",
+                "updated_at": "2026-03-23T12:08:00",
+            },
+            "notification_suppression_events": [
+                {
+                    "id": 73,
+                    "user_id": user_id,
+                    "event_type": "lifecycle_notification_suppressed",
+                    "source": "notification_state_service.apply_lifecycle_policy",
+                    "reference_id": f"lifecycle:{user_id}",
+                    "lifecycle_stage": "engaged",
+                    "suppression_reason": "quiet engaged users",
+                    "suppressed_until": "2026-03-23T10:00:00",
+                    "payload": {"recovery_window_hours": 24},
+                    "created_at": "2026-03-22T10:00:00",
+                }
+            ],
+            "notification_deliveries": [
+                {
+                    "id": 81,
+                    "user_id": user_id,
+                    "category": "reengagement",
+                    "provider": "push",
+                    "status": "sent",
+                    "title": "Pick up your streak",
+                    "body": "One short round keeps your progress moving.",
+                    "payload": {"campaign": "at_risk_recovery"},
+                    "error_message": None,
+                    "attempt_count": 1,
+                    "created_at": "2026-03-23T12:08:00",
+                    "updated_at": "2026-03-23T12:08:03",
+                },
+                {
+                    "id": 80,
+                    "user_id": user_id,
+                    "category": "reengagement",
+                    "provider": "push",
+                    "status": "skipped",
+                    "title": "Keep going",
+                    "body": "You are close to another clean streak day.",
+                    "payload": {"campaign": "at_risk_recovery"},
+                    "error_message": "cooldown_active",
+                    "attempt_count": 1,
+                    "created_at": "2026-03-23T09:00:00",
+                    "updated_at": "2026-03-23T09:00:01",
+                },
+            ],
+            "events": [
+                {
+                    "id": 91,
+                    "event_type": "notification_emitted",
+                    "payload": {"provider": "push", "status": "sent"},
+                    "created_at": "2026-03-23T12:08:03",
+                }
+            ],
+            "traces": [
+                {
+                    "id": 71,
+                    "user_id": user_id,
+                    "trace_type": "notification_selection",
+                    "source": "notification_decision_engine",
+                    "reference_id": f"lifecycle:{user_id}",
+                    "policy_version": "v1",
+                    "inputs": {"lifecycle_stage": "at_risk"},
+                    "outputs": {"should_send": True, "category": "reengagement", "channel": "push"},
+                    "reason": "At-risk user matched the reengagement policy.",
+                    "created_at": "2026-03-23T12:07:50",
+                }
+            ],
+        }
+
 
 def test_lifecycle_report_promotes_latest_artifacts_and_summaries():
     service = StubDecisionTraceService()
@@ -224,3 +328,15 @@ def test_daily_loop_report_promotes_latest_artifacts_and_summaries():
     assert report["latest_decisions"]["reward_chest_resolution"]["trace_type"] == "reward_chest_resolution"
     assert report["latest_decisions"]["latest_mission"]["status"] == "completed"
     assert report["reward_chest_summary"]["counts_by_status"]["unlocked"] == 1
+
+
+def test_notification_report_promotes_policy_delivery_and_suppression_artifacts():
+    service = StubDecisionTraceService()
+
+    report = run_async(service.notification_report(11))
+
+    assert report["latest_decisions"]["notification_selection"]["trace_type"] == "notification_selection"
+    assert report["latest_decisions"]["active_policy"]["policy_key"] == "default"
+    assert report["latest_decisions"]["latest_delivery"]["status"] == "sent"
+    assert report["delivery_summary"]["counts_by_status"]["skipped"] == 1
+    assert report["suppression_summary"]["counts_by_type"]["lifecycle_notification_suppressed"] == 1

@@ -1115,6 +1115,81 @@ class DailyLoopOperatorReportResponse(BaseModel):
     meta: DailyLoopOperatorReportMetaResponse
 
 
+class NotificationPolicyDiagnosticsResponse(BaseModel):
+    policy_key: str
+    status: str
+    is_killed: bool = False
+    description: str | None = None
+    policy: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class NotificationDeliveryDiagnosticsResponse(BaseModel):
+    id: int
+    user_id: int
+    category: str
+    provider: str
+    status: str
+    title: str
+    body: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    attempt_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class NotificationDiagnosticsDataResponse(BaseModel):
+    notification_policy: NotificationPolicyDiagnosticsResponse | None = None
+    notification_state: NotificationStateDiagnosticsResponse | None = None
+    notification_suppression_events: list[NotificationSuppressionEventDiagnosticsResponse] = Field(default_factory=list)
+    notification_deliveries: list[NotificationDeliveryDiagnosticsResponse] = Field(default_factory=list)
+    events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
+    traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class NotificationDeliverySummaryResponse(BaseModel):
+    total_deliveries: int = 0
+    counts_by_status: dict[str, int] = Field(default_factory=dict)
+    counts_by_provider: dict[str, int] = Field(default_factory=dict)
+    counts_by_category: dict[str, int] = Field(default_factory=dict)
+    latest_delivery_at: datetime | None = None
+
+
+class NotificationSuppressionSummaryResponse(BaseModel):
+    total_suppressions: int = 0
+    counts_by_type: dict[str, int] = Field(default_factory=dict)
+    latest_suppression_at: datetime | None = None
+
+
+class NotificationOperatorLatestDecisionsResponse(BaseModel):
+    notification_selection: DecisionTraceRecordResponse | None = None
+    active_policy: NotificationPolicyDiagnosticsResponse | None = None
+    latest_delivery: NotificationDeliveryDiagnosticsResponse | None = None
+    latest_suppression_event: NotificationSuppressionEventDiagnosticsResponse | None = None
+
+
+class NotificationOperatorReportDataResponse(BaseModel):
+    detail: NotificationDiagnosticsDataResponse
+    latest_decisions: NotificationOperatorLatestDecisionsResponse
+    event_summary: DiagnosticsEventSummaryResponse
+    trace_summary: DiagnosticsTraceSummaryResponse
+    delivery_summary: NotificationDeliverySummaryResponse
+    suppression_summary: NotificationSuppressionSummaryResponse
+
+
+class NotificationOperatorReportMetaResponse(BaseModel):
+    source: Literal["admin.notifications.report"]
+    user_id: int
+    policy_key: str
+
+
+class NotificationOperatorReportResponse(BaseModel):
+    data: NotificationOperatorReportDataResponse
+    meta: NotificationOperatorReportMetaResponse
+
+
 class OnboardingStartRequest(BaseModel):
     pass
 
