@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
+import math
 import re
 
 from vocablens.domain.errors import NotFoundError, ValidationError
@@ -146,6 +147,42 @@ class ExperimentRegistryService:
             await uow.commit()
         return {"audit_entries": [self._audit_payload(item) for item in audits]}
 
+    async def get_operator_report(self, experiment_key: str, *, limit: int = 50) -> dict:
+        normalized_key = self._validate_experiment_key(experiment_key)
+        normalized_limit = max(1, min(limit, 200))
+        async with self._uow_factory() as uow:
+            registry = await uow.experiment_registries.get(normalized_key)
+            if registry is None:
+                raise NotFoundError(f"Experiment '{normalized_key}' not found")
+            assignments = await uow.experiment_assignments.list_all(normalized_key)
+            exposures = await uow.experiment_exposures.list_all(normalized_key)
+            audits = await uow.experiment_registry_audits.list_by_experiment(normalized_key, limit=20)
+            attributions = await uow.experiment_outcome_attributions.list_all(normalized_key)
+            traces = await uow.decision_traces.list_recent(
+                trace_type="experiment_assignment",
+                reference_id=normalized_key,
+                limit=normalized_limit,
+            )
+            await uow.commit()
+
+        assignment_counts = self._variant_counts(assignments).get(normalized_key, Counter())
+        exposure_counts = self._variant_counts(exposures).get(normalized_key, Counter())
+        return {
+            "experiment": {
+                **self._registry_detail_payload(
+                    registry=registry,
+                    assignment_counts=assignment_counts,
+                    exposure_counts=exposure_counts,
+                    audits=audits,
+                ),
+                "results": self._results_payload(registry=registry, attributions=attributions),
+                "attribution_summary": self._attribution_summary_payload(attributions),
+                "recent_exposures": self._recent_attributions_payload(attributions, limit=normalized_limit),
+                "latest_assignment_trace": self._trace_payload(traces[0]) if traces else None,
+                "assignment_traces": [self._trace_payload(item) for item in traces],
+            }
+        }
+
     def _validate_command(self, experiment_key: str, command: ExperimentRegistryUpsert) -> None:
         if command.status not in _VALID_STATUSES:
             raise ValidationError(f"Experiment '{experiment_key}' has invalid status '{command.status}'")
@@ -275,6 +312,159 @@ class ExperimentRegistryService:
             **self._registry_config(registry),
             "health": health,
             "audit_entries": [self._audit_payload(item) for item in audits],
+        }
+
+    def _results_payload(self, *, registry, attributions: list) -> dict:
+        grouped: dict[str, list] = {}
+        for row in attributions:
+            grouped.setdefault(str(row.variant), []).append(row)
+        baseline_variant = str(getattr(registry, "baseline_variant", "control") or "control")
+        raw_variants = [
+            self._result_variant_payload(
+                experiment_key=str(registry.experiment_key),
+                variant=variant,
+                rows=rows,
+            )
+            for variant, rows in sorted(
+                grouped.items(),
+                key=lambda item: (0 if item[0] == baseline_variant else 1, item[0]),
+            )
+        ]
+        return {
+            "experiment_key": str(registry.experiment_key),
+            "variants": [self._public_result_variant_payload(item) for item in raw_variants],
+            "comparisons": self._comparison_payloads(raw_variants),
+        }
+
+    def _result_variant_payload(self, *, experiment_key: str, variant: str, rows: list) -> dict:
+        user_count = len(rows)
+        retained = sum(1 for row in rows if bool(getattr(row, "retained_d1", False)))
+        converted = sum(1 for row in rows if bool(getattr(row, "converted", False)))
+        denominator = max(1, user_count)
+        return {
+            "experiment_key": experiment_key,
+            "variant": variant,
+            "users": user_count,
+            "retention_rate": round((retained / denominator) * 100, 1),
+            "conversion_rate": round((converted / denominator) * 100, 1),
+            "engagement": {
+                "sessions_per_user": round(sum(int(getattr(row, "session_count", 0) or 0) for row in rows) / denominator, 2),
+                "messages_per_user": round(sum(int(getattr(row, "message_count", 0) or 0) for row in rows) / denominator, 2),
+                "learning_actions_per_user": round(
+                    sum(int(getattr(row, "learning_action_count", 0) or 0) for row in rows) / denominator,
+                    2,
+                ),
+            },
+            "_retained": retained,
+            "_converted": converted,
+        }
+
+    def _public_result_variant_payload(self, variant: dict) -> dict:
+        return {
+            "experiment_key": variant["experiment_key"],
+            "variant": variant["variant"],
+            "users": variant["users"],
+            "retention_rate": variant["retention_rate"],
+            "conversion_rate": variant["conversion_rate"],
+            "engagement": dict(variant["engagement"]),
+        }
+
+    def _comparison_payloads(self, variants: list[dict]) -> list[dict]:
+        if len(variants) < 2:
+            return []
+        base = variants[0]
+        comparisons = []
+        for candidate in variants[1:]:
+            comparisons.append(
+                {
+                    "baseline_variant": base["variant"],
+                    "candidate_variant": candidate["variant"],
+                    "retention_lift": round(candidate["retention_rate"] - base["retention_rate"], 1),
+                    "conversion_lift": round(candidate["conversion_rate"] - base["conversion_rate"], 1),
+                    "retention_significance": self._significance_payload(
+                        base["_retained"],
+                        base["users"],
+                        candidate["_retained"],
+                        candidate["users"],
+                    ),
+                    "conversion_significance": self._significance_payload(
+                        base["_converted"],
+                        base["users"],
+                        candidate["_converted"],
+                        candidate["users"],
+                    ),
+                }
+            )
+        return comparisons
+
+    def _significance_payload(self, success_a: int, total_a: int, success_b: int, total_b: int) -> dict:
+        if total_a <= 0 or total_b <= 0:
+            return {"z_score": 0.0, "is_significant": False}
+        pooled = (success_a + success_b) / (total_a + total_b)
+        variance = pooled * (1 - pooled) * ((1 / total_a) + (1 / total_b))
+        if variance <= 0:
+            return {"z_score": 0.0, "is_significant": False}
+        z_score = ((success_b / total_b) - (success_a / total_a)) / math.sqrt(variance)
+        return {
+            "z_score": round(z_score, 3),
+            "is_significant": abs(z_score) >= 1.96,
+        }
+
+    def _attribution_summary_payload(self, attributions: list) -> dict:
+        total_users = len(attributions)
+        return {
+            "users": total_users,
+            "retained_d1_users": sum(1 for row in attributions if bool(getattr(row, "retained_d1", False))),
+            "retained_d7_users": sum(1 for row in attributions if bool(getattr(row, "retained_d7", False))),
+            "converted_users": sum(1 for row in attributions if bool(getattr(row, "converted", False))),
+            "sessions": sum(int(getattr(row, "session_count", 0) or 0) for row in attributions),
+            "messages": sum(int(getattr(row, "message_count", 0) or 0) for row in attributions),
+            "learning_actions": sum(int(getattr(row, "learning_action_count", 0) or 0) for row in attributions),
+            "upgrade_clicks": sum(int(getattr(row, "upgrade_click_count", 0) or 0) for row in attributions),
+        }
+
+    def _recent_attributions_payload(self, attributions: list, *, limit: int) -> list[dict]:
+        rows = sorted(
+            attributions,
+            key=lambda item: (
+                self._timestamp(getattr(item, "exposed_at", None)) or "",
+                int(getattr(item, "user_id", 0) or 0),
+            ),
+            reverse=True,
+        )
+        return [self._attribution_payload(item) for item in rows[:limit]]
+
+    def _attribution_payload(self, attribution) -> dict:
+        return {
+            "user_id": int(attribution.user_id),
+            "variant": str(attribution.variant),
+            "assignment_reason": str(getattr(attribution, "assignment_reason", "rollout") or "rollout"),
+            "attribution_version": str(getattr(attribution, "attribution_version", "v1") or "v1"),
+            "exposed_at": self._timestamp(getattr(attribution, "exposed_at", None)),
+            "window_end_at": self._timestamp(getattr(attribution, "window_end_at", None)),
+            "retained_d1": bool(getattr(attribution, "retained_d1", False)),
+            "retained_d7": bool(getattr(attribution, "retained_d7", False)),
+            "converted": bool(getattr(attribution, "converted", False)),
+            "first_conversion_at": self._timestamp(getattr(attribution, "first_conversion_at", None)),
+            "session_count": int(getattr(attribution, "session_count", 0) or 0),
+            "message_count": int(getattr(attribution, "message_count", 0) or 0),
+            "learning_action_count": int(getattr(attribution, "learning_action_count", 0) or 0),
+            "upgrade_click_count": int(getattr(attribution, "upgrade_click_count", 0) or 0),
+            "last_event_at": self._timestamp(getattr(attribution, "last_event_at", None)),
+        }
+
+    def _trace_payload(self, trace) -> dict:
+        return {
+            "id": int(trace.id),
+            "user_id": int(trace.user_id),
+            "trace_type": str(trace.trace_type),
+            "source": str(trace.source),
+            "reference_id": str(trace.reference_id) if getattr(trace, "reference_id", None) is not None else None,
+            "policy_version": str(trace.policy_version),
+            "inputs": dict(getattr(trace, "inputs", {}) or {}),
+            "outputs": dict(getattr(trace, "outputs", {}) or {}),
+            "reason": str(trace.reason) if getattr(trace, "reason", None) is not None else None,
+            "created_at": self._timestamp(getattr(trace, "created_at", None)),
         }
 
     def _health_payload(self, *, assignment_counts: Counter, exposure_counts: Counter) -> dict:

@@ -68,7 +68,35 @@ class ExperimentService:
             assignment = await uow.experiment_assignments.get(user_id, experiment_key)
             if assignment is not None:
                 await uow.commit()
-                return assignment.variant
+                variant, exposure_created = await self._ensure_assignment_and_exposure(
+                    user_id=user_id,
+                    experiment_key=experiment_key,
+                    variant=assignment.variant,
+                    assigned_at=getattr(assignment, "assigned_at", None) or assigned_at,
+                    assignment_reason="existing_assignment",
+                )
+                if exposure_created and self._events:
+                    await self._events.record(
+                        event_type="experiment_exposure",
+                        user_id=user_id,
+                        payload={
+                            "experiment_key": experiment_key,
+                            "variant": variant,
+                            "assigned_at": assigned_at.isoformat(),
+                            "assignment_reason": "existing_assignment",
+                        },
+                    )
+                if exposure_created:
+                    await self._record_assignment_trace(
+                        user_id=user_id,
+                        experiment_key=experiment_key,
+                        definition=definition,
+                        variant=variant,
+                        assignment_reason="existing_assignment",
+                        assigned_at=getattr(assignment, "assigned_at", None) or assigned_at,
+                        context=ExperimentContext(),
+                    )
+                return variant
             resolved_context = await self._resolved_context(uow=uow, user_id=user_id, context=context)
             is_eligible = await self._is_eligible(uow=uow, user_id=user_id, definition=definition, context=resolved_context)
             if not is_eligible:
@@ -97,6 +125,16 @@ class ExperimentService:
                             "assignment_reason": "holdout",
                         },
                     )
+                if exposure_created:
+                    await self._record_assignment_trace(
+                        user_id=user_id,
+                        experiment_key=experiment_key,
+                        definition=definition,
+                        variant=variant,
+                        assignment_reason="holdout",
+                        assigned_at=assigned_at,
+                        context=resolved_context,
+                    )
                 return variant
             await uow.commit()
         variant, exposure_created = await self._ensure_assignment_and_exposure(
@@ -114,8 +152,18 @@ class ExperimentService:
                     "experiment_key": experiment_key,
                     "variant": variant,
                     "assigned_at": assigned_at.isoformat(),
-                    "assignment_reason": "rollout",
+                "assignment_reason": "rollout",
                 },
+            )
+        if exposure_created:
+            await self._record_assignment_trace(
+                user_id=user_id,
+                experiment_key=experiment_key,
+                definition=definition,
+                variant=variant,
+                assignment_reason="rollout",
+                assigned_at=assigned_at,
+                context=resolved_context,
             )
         return variant
 
@@ -357,6 +405,50 @@ class ExperimentService:
             str(key): tuple(str(item) for item in list(values or []))
             for key, values in dict(raw or {}).items()
         }
+
+    async def _record_assignment_trace(
+        self,
+        *,
+        user_id: int,
+        experiment_key: str,
+        definition: ExperimentDefinition,
+        variant: str,
+        assignment_reason: str,
+        assigned_at: datetime,
+        context: ExperimentContext,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="experiment_assignment",
+                source="experiment_service",
+                reference_id=experiment_key,
+                policy_version="v1",
+                inputs={
+                    "experiment_key": experiment_key,
+                    "status": definition.status,
+                    "rollout_percentage": definition.rollout_percentage,
+                    "holdout_percentage": definition.holdout_percentage,
+                    "baseline_variant": self._baseline_variant(definition),
+                    "eligibility": {key: list(values) for key, values in definition.eligibility.items()},
+                    "mutually_exclusive_with": list(definition.mutually_exclusive_with),
+                    "prerequisite_experiments": list(definition.prerequisite_experiments),
+                    "context": {
+                        "geography": context.geography,
+                        "subscription_tier": context.subscription_tier,
+                        "lifecycle_stage": context.lifecycle_stage,
+                        "platform": context.platform,
+                        "surface": context.surface,
+                    },
+                },
+                outputs={
+                    "variant": variant,
+                    "assignment_reason": assignment_reason,
+                    "assigned_at": assigned_at.isoformat(),
+                },
+                reason="Persisted the first canonical assignment and exposure for this experiment.",
+            )
+            await uow.commit()
 
     async def _resolved_context(
         self,

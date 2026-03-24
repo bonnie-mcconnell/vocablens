@@ -217,6 +217,94 @@ class FakeExperimentRegistryService:
             ][:limit]
         }
 
+    async def get_operator_report(self, experiment_key: str, *, limit: int = 50):
+        return {
+            "experiment": {
+                "experiment_key": experiment_key,
+                "status": "active",
+                "rollout_percentage": 100,
+                "holdout_percentage": 10,
+                "is_killed": False,
+                "baseline_variant": "control",
+                "description": "Controls paywall offer composition.",
+                "variants": [{"name": "control", "weight": 70}, {"name": "annual_anchor", "weight": 30}],
+                "eligibility": {},
+                "mutually_exclusive_with": [],
+                "prerequisite_experiments": [],
+                "created_at": None,
+                "updated_at": None,
+                "health": {
+                    "assignment_count": 120,
+                    "exposure_count": 118,
+                    "exposure_gap": 2,
+                    "exposure_coverage_percent": 98.33,
+                    "assignment_variants": {"annual_anchor": 36, "control": 84},
+                    "exposure_variants": {"annual_anchor": 35, "control": 83},
+                },
+                "audit_entries": [],
+                "results": {
+                    "experiment_key": experiment_key,
+                    "variants": [
+                        {
+                            "experiment_key": experiment_key,
+                            "variant": "control",
+                            "users": 83,
+                            "retention_rate": 40.0,
+                            "conversion_rate": 10.0,
+                            "engagement": {
+                                "sessions_per_user": 1.5,
+                                "messages_per_user": 0.8,
+                                "learning_actions_per_user": 0.6,
+                            },
+                        }
+                    ],
+                    "comparisons": [],
+                },
+                "attribution_summary": {
+                    "users": 118,
+                    "retained_d1_users": 47,
+                    "retained_d7_users": 22,
+                    "converted_users": 12,
+                    "sessions": 177,
+                    "messages": 94,
+                    "learning_actions": 71,
+                    "upgrade_clicks": 19,
+                },
+                "recent_exposures": [
+                    {
+                        "user_id": 91,
+                        "variant": "annual_anchor",
+                        "assignment_reason": "rollout",
+                        "attribution_version": "v1",
+                        "exposed_at": None,
+                        "window_end_at": None,
+                        "retained_d1": True,
+                        "retained_d7": False,
+                        "converted": False,
+                        "first_conversion_at": None,
+                        "session_count": 2,
+                        "message_count": 1,
+                        "learning_action_count": 1,
+                        "upgrade_click_count": 0,
+                        "last_event_at": None,
+                    }
+                ],
+                "latest_assignment_trace": {
+                    "id": 12,
+                    "user_id": 91,
+                    "trace_type": "experiment_assignment",
+                    "source": "experiment_service",
+                    "reference_id": experiment_key,
+                    "policy_version": "v1",
+                    "inputs": {"context": {"subscription_tier": "free"}},
+                    "outputs": {"variant": "annual_anchor", "assignment_reason": "rollout"},
+                    "reason": "Persisted the first canonical assignment and exposure for this experiment.",
+                    "created_at": "2026-03-24T10:15:00",
+                },
+                "assignment_traces": [],
+            }
+        }
+
 
 class FakeOnboardingFlowService:
     async def start(self, user_id: int):
@@ -823,6 +911,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
         headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
     )
     registry_audit = client.get("/admin/experiments/registry/paywall_offer/audit?limit=10", headers={"X-Admin-Token": "secret"})
+    registry_report = client.get("/admin/experiments/registry/paywall_offer/report?limit=10", headers={"X-Admin-Token": "secret"})
     traces = client.get(
         "/admin/decision-traces?user_id=1&trace_type=session_evaluation&reference_id=sess_123&limit=25",
         headers={"X-Admin-Token": "secret"},
@@ -870,6 +959,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert registry_audit.status_code == 200
     assert registry_audit.json()["meta"]["source"] == "admin.experiments.registry.audit"
     assert registry_audit.json()["data"]["audit_entries"][0]["action"] == "updated"
+    assert registry_report.status_code == 200
+    assert registry_report.json()["meta"]["source"] == "admin.experiments.registry.report"
+    assert registry_report.json()["data"]["experiment"]["attribution_summary"]["users"] == 118
+    assert registry_report.json()["data"]["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
     assert traces.status_code == 200
     assert traces.json()["meta"]["source"] == "admin.decision_traces"
     assert traces.json()["meta"]["filters"]["trace_type"] == "session_evaluation"

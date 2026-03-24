@@ -336,6 +336,72 @@ class DecisionTraceRecordResponse(BaseModel):
     created_at: datetime
 
 
+class ExperimentAttributionSummaryResponse(BaseModel):
+    users: int = 0
+    retained_d1_users: int = 0
+    retained_d7_users: int = 0
+    converted_users: int = 0
+    sessions: int = 0
+    messages: int = 0
+    learning_actions: int = 0
+    upgrade_clicks: int = 0
+
+
+class ExperimentExposureDiagnosticsResponse(BaseModel):
+    user_id: int
+    variant: str
+    assignment_reason: str
+    attribution_version: str
+    exposed_at: datetime | None = None
+    window_end_at: datetime | None = None
+    retained_d1: bool = False
+    retained_d7: bool = False
+    converted: bool = False
+    first_conversion_at: datetime | None = None
+    session_count: int = 0
+    message_count: int = 0
+    learning_action_count: int = 0
+    upgrade_click_count: int = 0
+    last_event_at: datetime | None = None
+
+
+class ExperimentOperatorReportResponseModel(BaseModel):
+    experiment_key: str
+    status: str
+    rollout_percentage: int
+    holdout_percentage: int = 0
+    is_killed: bool = False
+    baseline_variant: str = "control"
+    description: str | None = None
+    variants: list[ExperimentRegistryVariantResponse] = Field(default_factory=list)
+    eligibility: dict[str, list[str]] = Field(default_factory=dict)
+    mutually_exclusive_with: list[str] = Field(default_factory=list)
+    prerequisite_experiments: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    health: ExperimentRegistryHealthResponse
+    audit_entries: list[ExperimentRegistryAuditEntryResponse] = Field(default_factory=list)
+    results: ExperimentResultItemResponse
+    attribution_summary: ExperimentAttributionSummaryResponse
+    recent_exposures: list[ExperimentExposureDiagnosticsResponse] = Field(default_factory=list)
+    latest_assignment_trace: DecisionTraceRecordResponse | None = None
+    assignment_traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class ExperimentOperatorReportDataResponse(BaseModel):
+    experiment: ExperimentOperatorReportResponseModel
+
+
+class ExperimentOperatorReportMetaResponse(BaseModel):
+    source: Literal["admin.experiments.registry.report"]
+    experiment_key: str
+
+
+class ExperimentOperatorReportResponse(BaseModel):
+    data: ExperimentOperatorReportDataResponse
+    meta: ExperimentOperatorReportMetaResponse
+
+
 class DecisionTraceListDataResponse(BaseModel):
     traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
 

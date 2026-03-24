@@ -18,6 +18,7 @@ from vocablens.api.schemas import (
     ExperimentRegistryAuditResponse,
     ExperimentRegistryDetailResponse,
     ExperimentRegistryListResponse,
+    ExperimentOperatorReportResponse,
     ExperimentRegistryUpsertRequest,
     ExperimentResultsResponse,
     LifecycleDiagnosticsResponse,
@@ -180,6 +181,25 @@ def create_admin_router() -> APIRouter:
             "data": audits,
             "meta": {
                 "source": "admin.experiments.registry.audit",
+                "experiment_key": experiment_key,
+            },
+        }
+
+    @router.get("/experiments/registry/{experiment_key}/report", response_model=ExperimentOperatorReportResponse)
+    async def experiment_registry_report(
+        experiment_key: str,
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            report = await service.get_operator_report(experiment_key, limit=limit)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": report,
+            "meta": {
+                "source": "admin.experiments.registry.report",
                 "experiment_key": experiment_key,
             },
         }

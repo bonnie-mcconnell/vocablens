@@ -102,11 +102,22 @@ class FakeExperimentOutcomeAttributions:
         return row
 
 
+class FakeDecisionTraces:
+    def __init__(self):
+        self.rows = []
+
+    async def create(self, **kwargs):
+        row = SimpleNamespace(id=len(self.rows) + 1, created_at=None, **kwargs)
+        self.rows.append(row)
+        return row
+
+
 class FakeUOW:
     def __init__(self, *, tier: str = "free", stage: str = "activating"):
         self.experiment_assignments = FakeAssignments()
         self.experiment_exposures = FakeExposures()
         self.experiment_outcome_attributions = FakeExperimentOutcomeAttributions()
+        self.decision_traces = FakeDecisionTraces()
         self.subscriptions = FakeSubscriptions(tier)
         self.lifecycle_states = FakeLifecycleStates(stage)
         self.experiment_registries = FakeRegistries()
@@ -235,3 +246,4 @@ def test_experiment_service_seeds_canonical_outcome_attribution_on_exposure():
     assert attribution.assignment_reason == "rollout"
     assert attribution.exposed_at <= utc_now()
     assert attribution.window_end_at == attribution.exposed_at + timedelta(days=30)
+    assert uow.decision_traces.rows[0].trace_type == "experiment_assignment"

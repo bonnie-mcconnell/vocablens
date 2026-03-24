@@ -83,6 +83,51 @@ class FakeExposureRepo:
         return [row for row in rows if row.experiment_key == experiment_key]
 
 
+class FakeOutcomeAttributionRepo:
+    async def list_all(self, experiment_key: str | None = None):
+        rows = [
+            SimpleNamespace(
+                user_id=1,
+                experiment_key="paywall_offer",
+                variant="control",
+                assignment_reason="rollout",
+                attribution_version="v1",
+                exposed_at=None,
+                window_end_at=None,
+                retained_d1=True,
+                retained_d7=False,
+                converted=False,
+                first_conversion_at=None,
+                session_count=1,
+                message_count=1,
+                learning_action_count=0,
+                upgrade_click_count=0,
+                last_event_at=None,
+            ),
+            SimpleNamespace(
+                user_id=2,
+                experiment_key="paywall_offer",
+                variant="annual_anchor",
+                assignment_reason="rollout",
+                attribution_version="v1",
+                exposed_at=None,
+                window_end_at=None,
+                retained_d1=True,
+                retained_d7=True,
+                converted=True,
+                first_conversion_at=None,
+                session_count=2,
+                message_count=0,
+                learning_action_count=1,
+                upgrade_click_count=1,
+                last_event_at=None,
+            ),
+        ]
+        if experiment_key is None:
+            return rows
+        return [row for row in rows if row.experiment_key == experiment_key]
+
+
 class FakeAuditRepo:
     def __init__(self):
         self.entries = []
@@ -103,12 +148,39 @@ class FakeAuditRepo:
         return None
 
 
+class FakeDecisionTraceRepo:
+    async def list_recent(self, *, user_id=None, trace_type: str | None = None, reference_id: str | None = None, limit: int = 100):
+        rows = [
+            SimpleNamespace(
+                id=12,
+                user_id=2,
+                trace_type="experiment_assignment",
+                source="experiment_service",
+                reference_id="paywall_offer",
+                policy_version="v1",
+                inputs={"context": {"subscription_tier": "free"}},
+                outputs={"variant": "annual_anchor", "assignment_reason": "rollout"},
+                reason="Persisted the first canonical assignment and exposure for this experiment.",
+                created_at=None,
+            )
+        ]
+        if trace_type is not None:
+            rows = [row for row in rows if row.trace_type == trace_type]
+        if reference_id is not None:
+            rows = [row for row in rows if row.reference_id == reference_id]
+        if user_id is not None:
+            rows = [row for row in rows if row.user_id == user_id]
+        return rows[:limit]
+
+
 class FakeUOW:
     def __init__(self):
         self.experiment_registries = FakeExperimentRegistryRepo()
         self.experiment_assignments = FakeAssignmentRepo()
         self.experiment_exposures = FakeExposureRepo()
+        self.experiment_outcome_attributions = FakeOutcomeAttributionRepo()
         self.experiment_registry_audits = FakeAuditRepo()
+        self.decision_traces = FakeDecisionTraceRepo()
 
     async def __aenter__(self):
         return self
@@ -129,6 +201,19 @@ def test_experiment_registry_service_returns_health_summary():
     assert payload["experiment"]["health"]["assignment_count"] == 3
     assert payload["experiment"]["health"]["exposure_count"] == 2
     assert payload["experiment"]["health"]["exposure_gap"] == 1
+
+
+def test_experiment_registry_service_returns_operator_report():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(service.get_operator_report("paywall_offer", limit=10))
+
+    assert payload["experiment"]["results"]["experiment_key"] == "paywall_offer"
+    assert payload["experiment"]["attribution_summary"]["users"] == 2
+    assert payload["experiment"]["attribution_summary"]["converted_users"] == 1
+    assert payload["experiment"]["recent_exposures"][0]["variant"] == "annual_anchor"
+    assert payload["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
 
 
 def test_experiment_registry_service_writes_audit_entry_on_update():

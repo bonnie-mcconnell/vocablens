@@ -66,6 +66,57 @@ class FakeExperimentRegistriesRepo:
         return self.registries.get(experiment_key)
 
 
+class FakeSubscriptionsRepo:
+    async def get_by_user(self, user_id: int):
+        return SimpleNamespace(tier="free")
+
+
+class FakeLifecycleStatesRepo:
+    async def get(self, user_id: int):
+        return SimpleNamespace(current_stage="activating")
+
+
+class FakeExperimentOutcomeAttributionsRepo:
+    def __init__(self):
+        self.rows = {}
+
+    async def get(self, user_id: int, experiment_key: str):
+        return self.rows.get((user_id, experiment_key))
+
+    async def create(
+        self,
+        *,
+        user_id: int,
+        experiment_key: str,
+        variant: str,
+        assignment_reason: str,
+        attribution_version: str,
+        exposed_at,
+        window_end_at,
+    ):
+        row = SimpleNamespace(
+            user_id=user_id,
+            experiment_key=experiment_key,
+            variant=variant,
+            assignment_reason=assignment_reason,
+            attribution_version=attribution_version,
+            exposed_at=exposed_at,
+            window_end_at=window_end_at,
+        )
+        self.rows[(user_id, experiment_key)] = row
+        return row
+
+
+class FakeDecisionTracesRepo:
+    def __init__(self):
+        self.rows = []
+
+    async def create(self, **kwargs):
+        row = SimpleNamespace(id=len(self.rows) + 1, created_at=None, **kwargs)
+        self.rows.append(row)
+        return row
+
+
 class FakeExperimentUOW:
     def __init__(
         self,
@@ -76,6 +127,10 @@ class FakeExperimentUOW:
         self.experiment_assignments = repo
         self.experiment_exposures = exposures
         self.experiment_registries = registries
+        self.experiment_outcome_attributions = FakeExperimentOutcomeAttributionsRepo()
+        self.decision_traces = FakeDecisionTracesRepo()
+        self.subscriptions = FakeSubscriptionsRepo()
+        self.lifecycle_states = FakeLifecycleStatesRepo()
 
     async def __aenter__(self):
         return self
