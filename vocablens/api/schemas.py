@@ -323,6 +323,102 @@ class ExperimentRegistryAuditResponse(BaseModel):
     meta: ExperimentRegistryAuditMetaResponse
 
 
+class NotificationPolicyStageResponse(BaseModel):
+    lifecycle_notifications_enabled: bool
+    suppression_reason: str | None = None
+    recovery_window_hours: int = 0
+
+
+class NotificationPolicyOverrideResponse(BaseModel):
+    source_context: str
+    stage: str
+    lifecycle_notifications_enabled: bool
+    suppression_reason: str | None = None
+    recovery_window_hours: int = 0
+
+
+class NotificationPolicyConfigResponse(BaseModel):
+    cooldown_hours: int
+    default_frequency_limit: int
+    default_preferred_time_of_day: int
+    stage_policies: dict[str, NotificationPolicyStageResponse] = Field(default_factory=dict)
+    suppression_overrides: list[NotificationPolicyOverrideResponse] = Field(default_factory=list)
+
+
+class NotificationPolicyAuditEntryResponse(BaseModel):
+    id: int
+    policy_key: str
+    action: str
+    changed_by: str
+    change_note: str
+    previous_config: dict[str, Any] = Field(default_factory=dict)
+    new_config: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class NotificationPolicySummaryResponse(BaseModel):
+    policy_key: str
+    status: str
+    is_killed: bool = False
+    description: str | None = None
+    policy: NotificationPolicyConfigResponse
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    latest_change: NotificationPolicyAuditEntryResponse | None = None
+
+
+class NotificationPolicyDetailResponseModel(BaseModel):
+    policy_key: str
+    status: str
+    is_killed: bool = False
+    description: str | None = None
+    policy: NotificationPolicyConfigResponse
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    audit_entries: list[NotificationPolicyAuditEntryResponse] = Field(default_factory=list)
+
+
+class NotificationPolicyListDataResponse(BaseModel):
+    policies: list[NotificationPolicySummaryResponse] = Field(default_factory=list)
+
+
+class NotificationPolicyListMetaResponse(BaseModel):
+    source: Literal["admin.notifications.policies.list"]
+
+
+class NotificationPolicyListResponse(BaseModel):
+    data: NotificationPolicyListDataResponse
+    meta: NotificationPolicyListMetaResponse
+
+
+class NotificationPolicyDetailDataResponse(BaseModel):
+    policy: NotificationPolicyDetailResponseModel
+
+
+class NotificationPolicyDetailMetaResponse(BaseModel):
+    source: Literal["admin.notifications.policies.detail", "admin.notifications.policies.update"]
+    policy_key: str
+
+
+class NotificationPolicyDetailResponse(BaseModel):
+    data: NotificationPolicyDetailDataResponse
+    meta: NotificationPolicyDetailMetaResponse
+
+
+class NotificationPolicyAuditDataResponse(BaseModel):
+    audit_entries: list[NotificationPolicyAuditEntryResponse] = Field(default_factory=list)
+
+
+class NotificationPolicyAuditMetaResponse(BaseModel):
+    source: Literal["admin.notifications.policies.audit"]
+    policy_key: str
+
+
+class NotificationPolicyAuditResponse(BaseModel):
+    data: NotificationPolicyAuditDataResponse
+    meta: NotificationPolicyAuditMetaResponse
+
+
 class DecisionTraceRecordResponse(BaseModel):
     id: int
     user_id: int
@@ -1021,6 +1117,36 @@ class DailyLoopOperatorReportResponse(BaseModel):
 
 class OnboardingStartRequest(BaseModel):
     pass
+
+
+class NotificationPolicyStageRequest(BaseModel):
+    lifecycle_notifications_enabled: bool
+    suppression_reason: str | None = Field(default=None, max_length=500)
+    recovery_window_hours: int = Field(default=0, ge=0, le=168)
+
+
+class NotificationPolicyOverrideRequest(BaseModel):
+    source_context: str = Field(..., min_length=3, max_length=128)
+    stage: str = Field(..., min_length=3, max_length=32)
+    lifecycle_notifications_enabled: bool
+    suppression_reason: str | None = Field(default=None, max_length=500)
+    recovery_window_hours: int = Field(default=0, ge=0, le=168)
+
+
+class NotificationPolicyConfigRequest(BaseModel):
+    cooldown_hours: int = Field(..., ge=1, le=168)
+    default_frequency_limit: int = Field(..., ge=0, le=24)
+    default_preferred_time_of_day: int = Field(..., ge=0, le=23)
+    stage_policies: dict[str, NotificationPolicyStageRequest]
+    suppression_overrides: list[NotificationPolicyOverrideRequest] = Field(default_factory=list)
+
+
+class NotificationPolicyUpsertRequest(BaseModel):
+    status: str = Field(..., min_length=5, max_length=16)
+    is_killed: bool = False
+    description: str | None = Field(default=None, max_length=1000)
+    policy: NotificationPolicyConfigRequest
+    change_note: str = Field(..., min_length=8, max_length=500)
 
 
 class OnboardingNextRequest(BaseModel):

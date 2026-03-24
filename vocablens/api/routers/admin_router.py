@@ -9,6 +9,7 @@ from vocablens.api.dependencies import (
     get_decision_trace_service,
     get_experiment_registry_service,
     get_experiment_results_service,
+    get_notification_policy_registry_service,
     get_subscription_service,
 )
 from vocablens.api.schemas import (
@@ -26,6 +27,10 @@ from vocablens.api.schemas import (
     LifecycleOperatorReportResponse,
     MonetizationDiagnosticsResponse,
     MonetizationOperatorReportResponse,
+    NotificationPolicyAuditResponse,
+    NotificationPolicyDetailResponse,
+    NotificationPolicyListResponse,
+    NotificationPolicyUpsertRequest,
     OnboardingDiagnosticsResponse,
     RetentionAnalyticsResponse,
     UsageAnalyticsResponse,
@@ -39,6 +44,10 @@ from vocablens.services.experiment_registry_service import (
     ExperimentRegistryVariantInput,
 )
 from vocablens.services.experiment_results_service import ExperimentResultsService
+from vocablens.services.notification_policy_registry_service import (
+    NotificationPolicyRegistryService,
+    NotificationPolicyRegistryUpsert,
+)
 from vocablens.services.subscription_service import SubscriptionService
 
 
@@ -204,6 +213,84 @@ def create_admin_router() -> APIRouter:
             "meta": {
                 "source": "admin.experiments.registry.report",
                 "experiment_key": experiment_key,
+            },
+        }
+
+    @router.get("/notifications/policies", response_model=NotificationPolicyListResponse)
+    async def notification_policy_list(
+        _: str = Depends(get_admin_token),
+        service: NotificationPolicyRegistryService = Depends(get_notification_policy_registry_service),
+    ):
+        policies = await service.list_policies()
+        return {
+            "data": policies,
+            "meta": {"source": "admin.notifications.policies.list"},
+        }
+
+    @router.get("/notifications/policies/{policy_key}", response_model=NotificationPolicyDetailResponse)
+    async def notification_policy_detail(
+        policy_key: str,
+        _: str = Depends(get_admin_token),
+        service: NotificationPolicyRegistryService = Depends(get_notification_policy_registry_service),
+    ):
+        try:
+            detail = await service.get_policy(policy_key)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.notifications.policies.detail",
+                "policy_key": policy_key,
+            },
+        }
+
+    @router.put("/notifications/policies/{policy_key}", response_model=NotificationPolicyDetailResponse)
+    async def notification_policy_upsert(
+        policy_key: str,
+        request: NotificationPolicyUpsertRequest,
+        admin_actor: str | None = Header(default=None, alias="X-Admin-Actor"),
+        _: str = Depends(get_admin_token),
+        service: NotificationPolicyRegistryService = Depends(get_notification_policy_registry_service),
+    ):
+        try:
+            detail = await service.upsert_policy(
+                policy_key=policy_key,
+                command=NotificationPolicyRegistryUpsert(
+                    status=request.status,
+                    is_killed=request.is_killed,
+                    description=request.description,
+                    policy=request.policy.model_dump(),
+                    change_note=request.change_note,
+                ),
+                changed_by=admin_actor,
+            )
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.notifications.policies.update",
+                "policy_key": policy_key,
+            },
+        }
+
+    @router.get("/notifications/policies/{policy_key}/audit", response_model=NotificationPolicyAuditResponse)
+    async def notification_policy_audit(
+        policy_key: str,
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: NotificationPolicyRegistryService = Depends(get_notification_policy_registry_service),
+    ):
+        try:
+            audits = await service.list_audit_history(policy_key, limit=limit)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": audits,
+            "meta": {
+                "source": "admin.notifications.policies.audit",
+                "policy_key": policy_key,
             },
         }
 

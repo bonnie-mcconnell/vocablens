@@ -186,6 +186,35 @@ class NotificationSuppressionEventRepository(Protocol):
     async def list_by_user(self, user_id: int, limit: int = 50) -> List[Any]: ...
 
 
+class NotificationPolicyRegistryRepository(Protocol):
+    async def get(self, policy_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        policy_key: str,
+        status: str,
+        is_killed: bool,
+        description: str | None,
+        policy: Dict[str, Any],
+    ) -> Any: ...
+
+
+class NotificationPolicyAuditRepository(Protocol):
+    async def create(
+        self,
+        *,
+        policy_key: str,
+        action: str,
+        changed_by: str,
+        change_note: str,
+        previous_config: Dict[str, Any],
+        new_config: Dict[str, Any],
+    ) -> Any: ...
+    async def list_by_policy(self, policy_key: str, limit: int = 50) -> List[Any]: ...
+    async def latest_for_policy(self, policy_key: str) -> Optional[Any]: ...
+
+
 class MonetizationOfferEventRepository(Protocol):
     async def record(
         self,

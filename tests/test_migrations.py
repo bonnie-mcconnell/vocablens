@@ -47,6 +47,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"daily_missions", "reward_chests"} <= tables
     assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
     assert {"user_notification_states", "notification_suppression_events"} <= tables
+    assert {"notification_policy_registries", "notification_policy_audits"} <= tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -373,6 +374,37 @@ def test_upgrade_downgrade_upgrade_round_trip():
     suppression_fks = inspector.get_foreign_keys("notification_suppression_events")
     assert any(fk["referred_table"] == "users" for fk in suppression_fks)
 
+    notification_policy_indexes = {idx["name"] for idx in inspector.get_indexes("notification_policy_registries")}
+    assert "idx_notification_policy_registries_status" in notification_policy_indexes
+    assert "idx_notification_policy_registries_updated_at" in notification_policy_indexes
+    notification_policy_columns = {col["name"] for col in inspector.get_columns("notification_policy_registries")}
+    assert {
+        "policy_key",
+        "status",
+        "is_killed",
+        "description",
+        "policy",
+        "created_at",
+        "updated_at",
+    } <= notification_policy_columns
+
+    notification_policy_audit_indexes = {idx["name"] for idx in inspector.get_indexes("notification_policy_audits")}
+    assert "idx_notification_policy_audits_policy" in notification_policy_audit_indexes
+    assert "idx_notification_policy_audits_action" in notification_policy_audit_indexes
+    notification_policy_audit_columns = {col["name"] for col in inspector.get_columns("notification_policy_audits")}
+    assert {
+        "id",
+        "policy_key",
+        "action",
+        "changed_by",
+        "change_note",
+        "previous_config",
+        "new_config",
+        "created_at",
+    } <= notification_policy_audit_columns
+    notification_policy_audit_fks = inspector.get_foreign_keys("notification_policy_audits")
+    assert any(fk["referred_table"] == "notification_policy_registries" for fk in notification_policy_audit_fks)
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -546,6 +578,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "lifecycle_transitions" not in tables
     assert "user_notification_states" not in tables
     assert "notification_suppression_events" not in tables
+    assert "notification_policy_registries" not in tables
+    assert "notification_policy_audits" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -566,6 +600,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"daily_missions", "reward_chests"} <= tables
     assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
     assert {"user_notification_states", "notification_suppression_events"} <= tables
+    assert {"notification_policy_registries", "notification_policy_audits"} <= tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

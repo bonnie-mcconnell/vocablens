@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.notifications.base import NotificationMessage
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.notification_policy_service import NotificationPolicyService
 from vocablens.services.notification_state_service import NotificationStateService
 from vocablens.services.retention_engine import RetentionAssessment
 
@@ -34,7 +35,12 @@ class NotificationDecisionEngine:
     def __init__(self, uow_factory: type[UnitOfWork], cooldown_hours: int = 4):
         self._uow_factory = uow_factory
         self._cooldown = timedelta(hours=cooldown_hours)
-        self._notification_states = NotificationStateService(uow_factory, cooldown_hours=cooldown_hours)
+        self._policy_service = NotificationPolicyService(uow_factory)
+        self._notification_states = NotificationStateService(
+            uow_factory,
+            cooldown_hours=cooldown_hours,
+            policy_service=self._policy_service,
+        )
 
     async def decide(
         self,
@@ -53,6 +59,8 @@ class NotificationDecisionEngine:
             mistakes = await uow.mistake_patterns.top_patterns(user_id, limit=3)
             await uow.commit()
 
+        runtime_policy = await self._policy_service.current_policy()
+
         await self._notification_states.sync_preferences(
             user_id=user_id,
             preferred_channel=getattr(profile, "preferred_channel", "push"),
@@ -60,7 +68,12 @@ class NotificationDecisionEngine:
             frequency_limit=int(getattr(profile, "frequency_limit", 0) or 0),
         )
 
-        frequency_limit = int(getattr(profile, "frequency_limit", 2) or 0)
+        profile_frequency_limit = int(getattr(profile, "frequency_limit", runtime_policy.default_frequency_limit) or 0)
+        frequency_limit = (
+            0
+            if profile_frequency_limit == 0 or runtime_policy.default_frequency_limit == 0
+            else min(profile_frequency_limit, runtime_policy.default_frequency_limit)
+        )
         today_key = utc_now().date().isoformat()
         state_day = str(getattr(notification_state, "sent_count_day", "") or "")
         sent_today_count = int(getattr(notification_state, "sent_count_today", 0) or 0)
@@ -70,14 +83,29 @@ class NotificationDecisionEngine:
         sent_today_count = max(sent_today_count, len(sent_today))
 
         lifecycle_policy = dict(getattr(notification_state, "lifecycle_policy", {}) or {})
-        if "lifecycle_service" in source_context and lifecycle_policy.get("lifecycle_notifications_enabled") is False:
+        lifecycle_stage = str(getattr(notification_state, "lifecycle_stage", "") or "")
+        stage_policy = await self._policy_service.lifecycle_stage_policy(
+            lifecycle_stage,
+            source_context=source_context,
+        ) if "lifecycle_service" in source_context else None
+        lifecycle_notifications_enabled = (
+            stage_policy.lifecycle_notifications_enabled
+            if stage_policy is not None
+            else lifecycle_policy.get("lifecycle_notifications_enabled", True)
+        )
+        suppression_reason = (
+            stage_policy.suppression_reason
+            if stage_policy is not None
+            else getattr(notification_state, "suppression_reason", None)
+        )
+        if "lifecycle_service" in source_context and not lifecycle_notifications_enabled:
             decision = NotificationDecision(
                 False,
                 utc_now(),
                 getattr(notification_state, "preferred_channel", None) or profile.preferred_channel,
                 getattr(notification_state, "suppressed_until", None),
                 None,
-                str(getattr(notification_state, "suppression_reason", "") or "lifecycle suppression active"),
+                str(suppression_reason or "lifecycle suppression active"),
             )
             await self._notification_states.record_decision(
                 user_id=user_id,

@@ -350,6 +350,47 @@ class NotificationSuppressionEventORM(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class NotificationPolicyRegistryORM(Base):
+    __tablename__ = "notification_policy_registries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'active', 'paused', 'archived')",
+            name="ck_notification_policy_registries_status_valid",
+        ),
+        Index("idx_notification_policy_registries_status", "status"),
+        Index("idx_notification_policy_registries_updated_at", "updated_at"),
+    )
+
+    policy_key = Column(String, primary_key=True)
+    status = Column(String, nullable=False, default="draft")
+    is_killed = Column(Boolean, nullable=False, default=False)
+    description = Column(Text)
+    policy = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class NotificationPolicyAuditORM(Base):
+    __tablename__ = "notification_policy_audits"
+    __table_args__ = (
+        Index("idx_notification_policy_audits_policy", "policy_key", "created_at"),
+        Index("idx_notification_policy_audits_action", "action", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    policy_key = Column(
+        String,
+        ForeignKey("notification_policy_registries.policy_key", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action = Column(String, nullable=False)
+    changed_by = Column(String, nullable=False)
+    change_note = Column(Text, nullable=False)
+    previous_config = Column(JSON, nullable=False, default=dict)
+    new_config = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class SubscriptionEventORM(Base):
     __tablename__ = "subscription_events"
     __table_args__ = (

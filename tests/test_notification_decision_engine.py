@@ -85,12 +85,43 @@ class FakeNotificationSuppressionEventsRepo:
         return SimpleNamespace(**kwargs)
 
 
+class FakeNotificationPolicyRegistryRepo:
+    async def get(self, policy_key: str):
+        return SimpleNamespace(
+            policy_key=policy_key,
+            status="active",
+            is_killed=False,
+            policy={
+                "cooldown_hours": 4,
+                "default_frequency_limit": 2,
+                "default_preferred_time_of_day": 18,
+                "stage_policies": {
+                    "new_user": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "activating": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "engaged": {"lifecycle_notifications_enabled": False, "suppression_reason": "engaged stage suppresses proactive lifecycle messaging", "recovery_window_hours": 24},
+                    "at_risk": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                },
+                "suppression_overrides": [
+                    {
+                        "source_context": "lifecycle_service.notification",
+                        "stage": "engaged",
+                        "lifecycle_notifications_enabled": False,
+                        "suppression_reason": "engaged stage suppresses proactive lifecycle messaging",
+                        "recovery_window_hours": 24,
+                    }
+                ],
+            },
+        )
+
+
 class FakeUOW:
     def __init__(self, profile, deliveries=None, events=None, weak_clusters=None, mistakes=None, notification_state=None):
         self.profiles = FakeProfilesRepo(profile)
         self.notification_deliveries = FakeNotificationDeliveryRepo(deliveries)
         self.notification_states = FakeNotificationStatesRepo(notification_state)
         self.notification_suppression_events = FakeNotificationSuppressionEventsRepo()
+        self.notification_policy_registries = FakeNotificationPolicyRegistryRepo()
         self.learning_events = FakeLearningEventsRepo(events)
         self.knowledge_graph = FakeKnowledgeGraphRepo(weak_clusters)
         self.mistake_patterns = FakeMistakePatternsRepo(mistakes)
@@ -195,6 +226,7 @@ def test_notification_decision_engine_respects_canonical_lifecycle_suppression()
         preferred_channel="push",
         preferred_time_of_day=18,
         frequency_limit=3,
+        lifecycle_stage="engaged",
         lifecycle_policy={"lifecycle_notifications_enabled": False},
         suppression_reason="engaged stage suppresses proactive lifecycle messaging",
         suppressed_until=None,

@@ -71,6 +71,36 @@ class FakeNotificationSuppressionEvents:
         return SimpleNamespace(**kwargs)
 
 
+class FakeNotificationPolicyRegistries:
+    async def get(self, policy_key: str):
+        return SimpleNamespace(
+            policy_key=policy_key,
+            status="active",
+            is_killed=False,
+            policy={
+                "cooldown_hours": 4,
+                "default_frequency_limit": 2,
+                "default_preferred_time_of_day": 18,
+                "stage_policies": {
+                    "new_user": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "activating": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "engaged": {"lifecycle_notifications_enabled": False, "suppression_reason": "engaged stage suppresses proactive lifecycle messaging", "recovery_window_hours": 24},
+                    "at_risk": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                },
+                "suppression_overrides": [
+                    {
+                        "source_context": "lifecycle_service.notification",
+                        "stage": "engaged",
+                        "lifecycle_notifications_enabled": False,
+                        "suppression_reason": "engaged stage suppresses proactive lifecycle messaging",
+                        "recovery_window_hours": 24,
+                    }
+                ],
+            },
+        )
+
+
 class FakeUOW:
     def __init__(self, learning_state, engagement_state):
         self.learning_states = FakeLearningStates(learning_state)
@@ -80,6 +110,7 @@ class FakeUOW:
         self.lifecycle_transitions = FakeLifecycleTransitions()
         self.notification_states = FakeNotificationStates()
         self.notification_suppression_events = FakeNotificationSuppressionEvents()
+        self.notification_policy_registries = FakeNotificationPolicyRegistries()
 
     async def __aenter__(self):
         return self

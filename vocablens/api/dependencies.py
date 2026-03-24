@@ -55,6 +55,8 @@ from vocablens.api.dependencies_product import (
     get_learning_event_service,
     get_lifecycle_service,
     get_monetization_engine,
+    get_notification_policy_registry_service,
+    get_notification_policy_service,
     get_onboarding_flow_service,
     get_onboarding_service,
     get_paywall_service,

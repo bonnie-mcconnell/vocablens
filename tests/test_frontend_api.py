@@ -9,6 +9,7 @@ from vocablens.api.dependencies import (
     get_experiment_registry_service,
     get_experiment_results_service,
     get_frontend_service,
+    get_notification_policy_registry_service,
     get_onboarding_flow_service,
     get_subscription_service,
 )
@@ -303,6 +304,120 @@ class FakeExperimentRegistryService:
                 },
                 "assignment_traces": [],
             }
+        }
+
+
+class FakeNotificationPolicyRegistryService:
+    async def list_policies(self):
+        return {
+            "policies": [
+                {
+                    "policy_key": "default",
+                    "status": "active",
+                    "is_killed": False,
+                    "description": "Canonical notification policy.",
+                    "policy": {
+                        "cooldown_hours": 4,
+                        "default_frequency_limit": 2,
+                        "default_preferred_time_of_day": 18,
+                        "stage_policies": {
+                            "new_user": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                            "activating": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                            "engaged": {"lifecycle_notifications_enabled": False, "suppression_reason": "quiet engaged users", "recovery_window_hours": 24},
+                            "at_risk": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 6},
+                            "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 12},
+                        },
+                        "suppression_overrides": [
+                            {
+                                "source_context": "lifecycle_service.notification",
+                                "stage": "engaged",
+                                "lifecycle_notifications_enabled": False,
+                                "suppression_reason": "quiet engaged users",
+                                "recovery_window_hours": 24,
+                            }
+                        ],
+                    },
+                    "created_at": "2026-03-24T12:00:00",
+                    "updated_at": "2026-03-24T12:30:00",
+                    "latest_change": {
+                        "id": 1,
+                        "policy_key": "default",
+                        "action": "updated",
+                        "changed_by": "ops@vocablens",
+                        "change_note": "Raised engaged recovery window.",
+                        "previous_config": {"policy": {"cooldown_hours": 4}},
+                        "new_config": {"policy": {"cooldown_hours": 4}},
+                        "created_at": "2026-03-24T12:30:00",
+                    },
+                }
+            ]
+        }
+
+    async def get_policy(self, policy_key: str):
+        return {
+            "policy": {
+                "policy_key": policy_key,
+                "status": "active",
+                "is_killed": False,
+                "description": "Canonical notification policy.",
+                "policy": {
+                    "cooldown_hours": 4,
+                    "default_frequency_limit": 2,
+                    "default_preferred_time_of_day": 18,
+                    "stage_policies": {
+                        "new_user": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                        "activating": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                        "engaged": {"lifecycle_notifications_enabled": False, "suppression_reason": "quiet engaged users", "recovery_window_hours": 24},
+                        "at_risk": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 6},
+                        "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 12},
+                    },
+                    "suppression_overrides": [],
+                },
+                "created_at": "2026-03-24T12:00:00",
+                "updated_at": "2026-03-24T12:30:00",
+                "audit_entries": [],
+            }
+        }
+
+    async def upsert_policy(self, *, policy_key: str, command, changed_by: str | None):
+        return {
+            "policy": {
+                "policy_key": policy_key,
+                "status": command.status,
+                "is_killed": command.is_killed,
+                "description": command.description,
+                "policy": dict(command.policy),
+                "created_at": "2026-03-24T12:00:00",
+                "updated_at": "2026-03-24T13:00:00",
+                "audit_entries": [
+                    {
+                        "id": 2,
+                        "policy_key": policy_key,
+                        "action": "updated",
+                        "changed_by": changed_by or "system_admin",
+                        "change_note": command.change_note,
+                        "previous_config": {"status": "active"},
+                        "new_config": {"status": command.status},
+                        "created_at": "2026-03-24T13:00:00",
+                    }
+                ],
+            }
+        }
+
+    async def list_audit_history(self, policy_key: str, *, limit: int = 50):
+        return {
+            "audit_entries": [
+                {
+                    "id": 2,
+                    "policy_key": policy_key,
+                    "action": "updated",
+                    "changed_by": "ops@vocablens",
+                    "change_note": "Raised engaged recovery window.",
+                    "previous_config": {"status": "active"},
+                    "new_config": {"status": "paused"},
+                    "created_at": "2026-03-24T13:00:00",
+                }
+            ][:limit]
         }
 
 
@@ -1138,6 +1253,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
     app.dependency_overrides[get_experiment_results_service] = lambda: FakeExperimentResultsService()
     app.dependency_overrides[get_experiment_registry_service] = lambda: FakeExperimentRegistryService()
+    app.dependency_overrides[get_notification_policy_registry_service] = lambda: FakeNotificationPolicyRegistryService()
     app.dependency_overrides[get_decision_trace_service] = lambda: FakeDecisionTraceService()
     client = TestClient(app)
 
@@ -1161,6 +1277,32 @@ def test_admin_conversion_report_is_protected_and_standardized():
     )
     registry_audit = client.get("/admin/experiments/registry/paywall_offer/audit?limit=10", headers={"X-Admin-Token": "secret"})
     registry_report = client.get("/admin/experiments/registry/paywall_offer/report?limit=10", headers={"X-Admin-Token": "secret"})
+    notification_policy_list = client.get("/admin/notifications/policies", headers={"X-Admin-Token": "secret"})
+    notification_policy_detail = client.get("/admin/notifications/policies/default", headers={"X-Admin-Token": "secret"})
+    notification_policy_update = client.put(
+        "/admin/notifications/policies/default",
+        json={
+            "status": "paused",
+            "is_killed": False,
+            "description": "Canonical notification policy.",
+            "policy": {
+                "cooldown_hours": 6,
+                "default_frequency_limit": 2,
+                "default_preferred_time_of_day": 19,
+                "stage_policies": {
+                    "new_user": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "activating": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    "engaged": {"lifecycle_notifications_enabled": False, "suppression_reason": "quiet engaged users", "recovery_window_hours": 24},
+                    "at_risk": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 6},
+                    "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 12},
+                },
+                "suppression_overrides": [],
+            },
+            "change_note": "Raised engaged recovery window.",
+        },
+        headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+    )
+    notification_policy_audit = client.get("/admin/notifications/policies/default/audit?limit=10", headers={"X-Admin-Token": "secret"})
     traces = client.get(
         "/admin/decision-traces?user_id=1&trace_type=session_evaluation&reference_id=sess_123&limit=25",
         headers={"X-Admin-Token": "secret"},
@@ -1224,6 +1366,18 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert registry_report.json()["meta"]["source"] == "admin.experiments.registry.report"
     assert registry_report.json()["data"]["experiment"]["attribution_summary"]["users"] == 118
     assert registry_report.json()["data"]["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
+    assert notification_policy_list.status_code == 200
+    assert notification_policy_list.json()["meta"]["source"] == "admin.notifications.policies.list"
+    assert notification_policy_list.json()["data"]["policies"][0]["policy"]["cooldown_hours"] == 4
+    assert notification_policy_detail.status_code == 200
+    assert notification_policy_detail.json()["meta"]["source"] == "admin.notifications.policies.detail"
+    assert notification_policy_detail.json()["data"]["policy"]["policy_key"] == "default"
+    assert notification_policy_update.status_code == 200
+    assert notification_policy_update.json()["meta"]["source"] == "admin.notifications.policies.update"
+    assert notification_policy_update.json()["data"]["policy"]["policy"]["cooldown_hours"] == 6
+    assert notification_policy_audit.status_code == 200
+    assert notification_policy_audit.json()["meta"]["source"] == "admin.notifications.policies.audit"
+    assert notification_policy_audit.json()["data"]["audit_entries"][0]["action"] == "updated"
     assert traces.status_code == 200
     assert traces.json()["meta"]["source"] == "admin.decision_traces"
     assert traces.json()["meta"]["filters"]["trace_type"] == "session_evaluation"

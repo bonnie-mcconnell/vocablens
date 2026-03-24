@@ -6,6 +6,7 @@ from typing import Any
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.notification_policy_service import NotificationPolicyService
 
 
 @dataclass(frozen=True)
@@ -16,9 +17,16 @@ class NotificationLifecyclePolicy:
 
 
 class NotificationStateService:
-    def __init__(self, uow_factory: type[UnitOfWork], *, cooldown_hours: int = 4):
+    def __init__(
+        self,
+        uow_factory: type[UnitOfWork],
+        *,
+        cooldown_hours: int = 4,
+        policy_service: NotificationPolicyService | None = None,
+    ):
         self._uow_factory = uow_factory
         self._cooldown = timedelta(hours=cooldown_hours)
+        self._policy_service = policy_service or NotificationPolicyService(uow_factory)
 
     async def sync_preferences(
         self,
@@ -28,9 +36,14 @@ class NotificationStateService:
         preferred_time_of_day: int | None,
         frequency_limit: int,
     ):
+        runtime_policy = await self._policy_service.current_policy()
         normalized_channel = preferred_channel if preferred_channel in {"email", "push", "in_app"} else "push"
-        normalized_hour = 18 if preferred_time_of_day is None else max(0, min(23, int(preferred_time_of_day)))
-        normalized_limit = max(0, int(frequency_limit))
+        normalized_hour = (
+            runtime_policy.default_preferred_time_of_day
+            if preferred_time_of_day is None
+            else max(0, min(23, int(preferred_time_of_day)))
+        )
+        normalized_limit = max(0, int(frequency_limit if frequency_limit is not None else runtime_policy.default_frequency_limit))
         async with self._uow_factory() as uow:
             state = await uow.notification_states.update(
                 user_id,
@@ -49,29 +62,38 @@ class NotificationStateService:
         source: str,
         reference_id: str | None,
     ):
-        policy = self._policy_for_stage(lifecycle_stage)
+        runtime_policy = await self._policy_service.current_policy()
+        stage_policy = await self._policy_service.lifecycle_stage_policy(
+            lifecycle_stage,
+            source_context="lifecycle_service.notification",
+        )
+        suppressed_until = None
+        if not stage_policy.lifecycle_notifications_enabled and stage_policy.recovery_window_hours > 0:
+            suppressed_until = utc_now() + timedelta(hours=stage_policy.recovery_window_hours)
         async with self._uow_factory() as uow:
             state = await uow.notification_states.get_or_create(user_id)
             previous_stage = str(getattr(state, "lifecycle_stage", "") or "")
             previous_policy = dict(getattr(state, "lifecycle_policy", {}) or {})
             updated = await uow.notification_states.update(
                 user_id,
-                lifecycle_stage=policy.lifecycle_stage,
-                lifecycle_policy_version="v1",
+                lifecycle_stage=lifecycle_stage,
+                lifecycle_policy_version=runtime_policy.policy_version,
                 lifecycle_policy={
-                    "lifecycle_notifications_enabled": policy.lifecycle_notifications_enabled,
+                    "lifecycle_notifications_enabled": stage_policy.lifecycle_notifications_enabled,
+                    "recovery_window_hours": stage_policy.recovery_window_hours,
                 },
-                suppression_reason=policy.suppression_reason,
+                suppression_reason=stage_policy.suppression_reason,
+                suppressed_until=suppressed_until,
             )
-            if previous_stage != policy.lifecycle_stage or previous_policy != dict(updated.lifecycle_policy or {}):
+            if previous_stage != lifecycle_stage or previous_policy != dict(updated.lifecycle_policy or {}):
                 await uow.notification_suppression_events.create(
                     user_id=user_id,
                     event_type="lifecycle_policy_updated",
                     source=source,
                     reference_id=reference_id,
-                    lifecycle_stage=policy.lifecycle_stage,
-                    suppression_reason=policy.suppression_reason,
-                    suppressed_until=None,
+                    lifecycle_stage=lifecycle_stage,
+                    suppression_reason=stage_policy.suppression_reason,
+                    suppressed_until=suppressed_until,
                     payload=dict(updated.lifecycle_policy or {}),
                 )
             await uow.commit()
@@ -88,6 +110,7 @@ class NotificationStateService:
         delivered_at: datetime | None = None,
     ):
         now = delivered_at or utc_now()
+        runtime_policy = await self._policy_service.current_policy()
         async with self._uow_factory() as uow:
             state = await uow.notification_states.get_or_create(user_id)
             delivery_day = now.date().isoformat()
@@ -101,7 +124,9 @@ class NotificationStateService:
                 user_id,
                 sent_count_day=delivery_day,
                 sent_count_today=sent_count_today,
-                cooldown_until=now + self._cooldown if status == "sent" else getattr(state, "cooldown_until", None),
+                cooldown_until=now + timedelta(hours=runtime_policy.cooldown_hours)
+                if status == "sent"
+                else getattr(state, "cooldown_until", None),
                 last_sent_at=now if status == "sent" else getattr(state, "last_sent_at", None),
                 last_delivery_channel=channel,
                 last_delivery_status=status,
@@ -145,17 +170,3 @@ class NotificationStateService:
                     )
             await uow.commit()
         return state
-
-    def _policy_for_stage(self, lifecycle_stage: str) -> NotificationLifecyclePolicy:
-        stage = str(lifecycle_stage or "")
-        if stage == "engaged":
-            return NotificationLifecyclePolicy(
-                lifecycle_stage=stage,
-                lifecycle_notifications_enabled=False,
-                suppression_reason="engaged stage suppresses proactive lifecycle messaging",
-            )
-        return NotificationLifecyclePolicy(
-            lifecycle_stage=stage,
-            lifecycle_notifications_enabled=True,
-            suppression_reason=None,
-        )

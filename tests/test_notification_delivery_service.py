@@ -57,10 +57,37 @@ class FakeNotificationStatesRepo:
         return self.row
 
 
+class FakeNotificationPolicyRegistryRepo:
+    async def get(self, policy_key: str):
+        return type(
+            "PolicyRegistry",
+            (),
+            {
+                "policy_key": policy_key,
+                "status": "active",
+                "is_killed": False,
+                "policy": {
+                    "cooldown_hours": 4,
+                    "default_frequency_limit": 2,
+                    "default_preferred_time_of_day": 18,
+                    "stage_policies": {
+                        "new_user": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                        "activating": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                        "engaged": {"lifecycle_notifications_enabled": False, "suppression_reason": "engaged stage suppresses proactive lifecycle messaging", "recovery_window_hours": 24},
+                        "at_risk": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                        "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                    },
+                    "suppression_overrides": [],
+                },
+            },
+        )()
+
+
 class FakeUOW:
     def __init__(self):
         self.notification_deliveries = FakeNotificationDeliveryRepo()
         self.notification_states = FakeNotificationStatesRepo()
+        self.notification_policy_registries = FakeNotificationPolicyRegistryRepo()
 
     async def __aenter__(self):
         return self

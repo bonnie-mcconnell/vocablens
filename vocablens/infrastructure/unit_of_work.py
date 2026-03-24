@@ -22,6 +22,12 @@ from vocablens.infrastructure.postgres_user_notification_state_repository import
 from vocablens.infrastructure.postgres_notification_suppression_event_repository import (
     PostgresNotificationSuppressionEventRepository,
 )
+from vocablens.infrastructure.postgres_notification_policy_registry_repository import (
+    PostgresNotificationPolicyRegistryRepository,
+)
+from vocablens.infrastructure.postgres_notification_policy_audit_repository import (
+    PostgresNotificationPolicyAuditRepository,
+)
 from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
@@ -92,6 +98,8 @@ class UnitOfWork:
         self._notification_deliveries: Optional[PostgresNotificationDeliveryRepository] = None
         self._notification_states: Optional[PostgresUserNotificationStateRepository] = None
         self._notification_suppression_events: Optional[PostgresNotificationSuppressionEventRepository] = None
+        self._notification_policy_registries: Optional[PostgresNotificationPolicyRegistryRepository] = None
+        self._notification_policy_audits: Optional[PostgresNotificationPolicyAuditRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
         self._experiment_outcome_attributions: Optional[PostgresExperimentOutcomeAttributionRepository] = None
@@ -263,6 +271,22 @@ class UnitOfWork:
         if self._notification_suppression_events is None:
             self._notification_suppression_events = PostgresNotificationSuppressionEventRepository(self.session)
         return self._notification_suppression_events
+
+    @property
+    def notification_policy_registries(self) -> PostgresNotificationPolicyRegistryRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._notification_policy_registries is None:
+            self._notification_policy_registries = PostgresNotificationPolicyRegistryRepository(self.session)
+        return self._notification_policy_registries
+
+    @property
+    def notification_policy_audits(self) -> PostgresNotificationPolicyAuditRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._notification_policy_audits is None:
+            self._notification_policy_audits = PostgresNotificationPolicyAuditRepository(self.session)
+        return self._notification_policy_audits
 
     @property
     def experiment_assignments(self) -> PostgresExperimentAssignmentRepository:
