@@ -137,12 +137,20 @@ def create_admin_router() -> APIRouter:
                 command=ExperimentRegistryUpsert(
                     status=request.status,
                     rollout_percentage=request.rollout_percentage,
+                    holdout_percentage=request.holdout_percentage,
                     is_killed=request.is_killed,
+                    baseline_variant=request.baseline_variant,
                     description=request.description,
                     variants=tuple(
                         ExperimentRegistryVariantInput(name=item.name, weight=item.weight)
                         for item in request.variants
                     ),
+                    eligibility={
+                        key: tuple(values)
+                        for key, values in request.eligibility.items()
+                    },
+                    mutually_exclusive_with=tuple(request.mutually_exclusive_with),
+                    prerequisite_experiments=tuple(request.prerequisite_experiments),
                     change_note=request.change_note,
                 ),
                 changed_by=admin_actor,

@@ -206,9 +206,14 @@ class ExperimentRegistryVariantRequest(BaseModel):
 class ExperimentRegistryUpsertRequest(BaseModel):
     status: Literal["draft", "active", "paused", "archived"]
     rollout_percentage: int = Field(..., ge=0, le=100)
+    holdout_percentage: int = Field(default=0, ge=0, le=99)
     is_killed: bool = False
+    baseline_variant: str = Field(default="control", min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
     description: str | None = Field(default=None, max_length=1000)
     variants: list[ExperimentRegistryVariantRequest] = Field(..., min_length=1, max_length=20)
+    eligibility: dict[str, list[str]] = Field(default_factory=dict)
+    mutually_exclusive_with: list[str] = Field(default_factory=list)
+    prerequisite_experiments: list[str] = Field(default_factory=list)
     change_note: str = Field(..., min_length=8, max_length=500)
 
 
@@ -241,9 +246,14 @@ class ExperimentRegistrySummaryResponse(BaseModel):
     experiment_key: str
     status: str
     rollout_percentage: int
+    holdout_percentage: int = 0
     is_killed: bool = False
+    baseline_variant: str = "control"
     description: str | None = None
     variants: list[ExperimentRegistryVariantResponse] = Field(default_factory=list)
+    eligibility: dict[str, list[str]] = Field(default_factory=dict)
+    mutually_exclusive_with: list[str] = Field(default_factory=list)
+    prerequisite_experiments: list[str] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
     assignment_count: int = 0
@@ -258,9 +268,14 @@ class ExperimentRegistryDetailResponseModel(BaseModel):
     experiment_key: str
     status: str
     rollout_percentage: int
+    holdout_percentage: int = 0
     is_killed: bool = False
+    baseline_variant: str = "control"
     description: str | None = None
     variants: list[ExperimentRegistryVariantResponse] = Field(default_factory=list)
+    eligibility: dict[str, list[str]] = Field(default_factory=dict)
+    mutually_exclusive_with: list[str] = Field(default_factory=list)
+    prerequisite_experiments: list[str] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
     health: ExperimentRegistryHealthResponse

@@ -20,9 +20,14 @@ class FakeExperimentRegistryRepo:
                 experiment_key="paywall_offer",
                 status="active",
                 rollout_percentage=100,
+                holdout_percentage=0,
                 is_killed=False,
+                baseline_variant="control",
                 description="Controls paywall offer composition.",
                 variants=[{"name": "control", "weight": 80}, {"name": "annual_anchor", "weight": 20}],
+                eligibility={},
+                mutually_exclusive_with=[],
+                prerequisite_experiments=[],
                 created_at=None,
                 updated_at=None,
             )
@@ -40,9 +45,14 @@ class FakeExperimentRegistryRepo:
             experiment_key=kwargs["experiment_key"],
             status=kwargs["status"],
             rollout_percentage=kwargs["rollout_percentage"],
+            holdout_percentage=kwargs["holdout_percentage"],
             is_killed=kwargs["is_killed"],
+            baseline_variant=kwargs["baseline_variant"],
             description=kwargs["description"],
             variants=list(kwargs["variants"]),
+            eligibility=dict(kwargs["eligibility"]),
+            mutually_exclusive_with=list(kwargs["mutually_exclusive_with"]),
+            prerequisite_experiments=list(kwargs["prerequisite_experiments"]),
             created_at=getattr(existing, "created_at", None),
             updated_at=None,
         )
@@ -138,12 +148,18 @@ def test_experiment_registry_service_writes_audit_entry_on_update():
                     ExperimentRegistryVariantInput(name="annual_anchor", weight=30),
                 ),
                 change_note="Paused rollout during diagnostics.",
+                holdout_percentage=10,
+                baseline_variant="control",
+                eligibility={"geographies": ("us", "nz")},
+                mutually_exclusive_with=("paywall_pricing_messaging",),
             ),
             changed_by="ops@vocablens",
         )
     )
 
     assert payload["experiment"]["status"] == "paused"
+    assert payload["experiment"]["holdout_percentage"] == 10
+    assert payload["experiment"]["eligibility"]["geographies"] == ["us", "nz"]
     assert payload["experiment"]["audit_entries"][0]["action"] == "status_paused"
     assert payload["experiment"]["audit_entries"][0]["changed_by"] == "ops@vocablens"
 
@@ -200,3 +216,29 @@ def test_experiment_registry_service_raises_on_unknown_experiment():
 
     with pytest.raises(NotFoundError):
         run_async(service.get_registry("unknown_test"))
+
+
+def test_experiment_registry_service_rejects_invalid_baseline_and_duplicate_policy_entries():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    with pytest.raises(ValidationError):
+        run_async(
+            service.upsert_registry(
+                experiment_key="paywall_offer",
+                command=ExperimentRegistryUpsert(
+                    status="active",
+                    rollout_percentage=100,
+                    is_killed=False,
+                    description="Controls paywall offer composition.",
+                    variants=(
+                        ExperimentRegistryVariantInput(name="control", weight=80),
+                        ExperimentRegistryVariantInput(name="annual_anchor", weight=20),
+                    ),
+                    change_note="Trying invalid policy values.",
+                    baseline_variant="missing_variant",
+                    mutually_exclusive_with=("pricing_test", "pricing_test"),
+                ),
+                changed_by="ops@vocablens",
+            )
+        )

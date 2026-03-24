@@ -29,9 +29,14 @@ class PostgresExperimentRegistryRepository:
         experiment_key: str,
         status: str,
         rollout_percentage: int,
+        holdout_percentage: int,
         is_killed: bool,
+        baseline_variant: str,
         description: str | None,
         variants: list[dict],
+        eligibility: dict,
+        mutually_exclusive_with: list[str],
+        prerequisite_experiments: list[str],
     ):
         existing = await self.get(experiment_key)
         now = utc_now()
@@ -43,8 +48,13 @@ class PostgresExperimentRegistryRepository:
             self.session.add(existing)
         existing.status = status
         existing.rollout_percentage = rollout_percentage
+        existing.holdout_percentage = holdout_percentage
         existing.is_killed = is_killed
+        existing.baseline_variant = baseline_variant
         existing.description = description
         existing.variants = list(variants)
+        existing.eligibility = dict(eligibility)
+        existing.mutually_exclusive_with = list(mutually_exclusive_with)
+        existing.prerequisite_experiments = list(prerequisite_experiments)
         existing.updated_at = now
         return existing

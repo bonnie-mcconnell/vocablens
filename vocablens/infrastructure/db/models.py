@@ -336,6 +336,10 @@ class ExperimentRegistryORM(Base):
             "rollout_percentage >= 0 AND rollout_percentage <= 100",
             name="ck_experiment_registries_rollout_percentage_range",
         ),
+        CheckConstraint(
+            "holdout_percentage >= 0 AND holdout_percentage <= 100",
+            name="ck_experiment_registries_holdout_percentage_range",
+        ),
         Index("idx_experiment_registries_status", "status"),
         Index("idx_experiment_registries_updated_at", "updated_at"),
     )
@@ -343,9 +347,14 @@ class ExperimentRegistryORM(Base):
     experiment_key = Column(String, primary_key=True)
     status = Column(String, nullable=False, default="draft")
     rollout_percentage = Column(Integer, nullable=False, default=100)
+    holdout_percentage = Column(Integer, nullable=False, default=0)
     is_killed = Column(Boolean, nullable=False, default=False)
+    baseline_variant = Column(String, nullable=False, default="control")
     description = Column(Text)
     variants = Column(JSON, nullable=False, default=list)
+    eligibility = Column(JSON, nullable=False, default=dict)
+    mutually_exclusive_with = Column(JSON, nullable=False, default=list)
+    prerequisite_experiments = Column(JSON, nullable=False, default=list)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 

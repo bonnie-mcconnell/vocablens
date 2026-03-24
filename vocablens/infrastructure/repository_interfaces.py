@@ -115,9 +115,14 @@ class ExperimentRegistryRepository(Protocol):
         experiment_key: str,
         status: str,
         rollout_percentage: int,
+        holdout_percentage: int,
         is_killed: bool,
+        baseline_variant: str,
         description: str | None,
         variants: List[Dict[str, Any]],
+        eligibility: Dict[str, Any],
+        mutually_exclusive_with: List[str],
+        prerequisite_experiments: List[str],
     ) -> Any: ...
 
 

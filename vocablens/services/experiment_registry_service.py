@@ -27,6 +27,11 @@ class ExperimentRegistryUpsert:
     description: str | None
     variants: tuple[ExperimentRegistryVariantInput, ...]
     change_note: str
+    holdout_percentage: int = 0
+    baseline_variant: str = "control"
+    eligibility: dict[str, tuple[str, ...]] | None = None
+    mutually_exclusive_with: tuple[str, ...] = ()
+    prerequisite_experiments: tuple[str, ...] = ()
 
 
 class ExperimentRegistryService:
@@ -98,9 +103,14 @@ class ExperimentRegistryService:
                 experiment_key=normalized_key,
                 status=command.status,
                 rollout_percentage=command.rollout_percentage,
+                holdout_percentage=command.holdout_percentage,
                 is_killed=command.is_killed,
+                baseline_variant=command.baseline_variant.strip(),
                 description=command.description,
                 variants=[self._variant_payload(item) for item in command.variants],
+                eligibility=self._eligibility_payload(command.eligibility or {}),
+                mutually_exclusive_with=list(command.mutually_exclusive_with),
+                prerequisite_experiments=list(command.prerequisite_experiments),
             )
             audit = await uow.experiment_registry_audits.create(
                 experiment_key=normalized_key,
@@ -141,6 +151,8 @@ class ExperimentRegistryService:
             raise ValidationError(f"Experiment '{experiment_key}' has invalid status '{command.status}'")
         if command.rollout_percentage < 0 or command.rollout_percentage > 100:
             raise ValidationError(f"Experiment '{experiment_key}' rollout percentage must be between 0 and 100")
+        if command.holdout_percentage < 0 or command.holdout_percentage > 100:
+            raise ValidationError(f"Experiment '{experiment_key}' holdout percentage must be between 0 and 100")
         note = (command.change_note or "").strip()
         if len(note) < 8:
             raise ValidationError("Change note must be at least 8 characters")
@@ -149,6 +161,8 @@ class ExperimentRegistryService:
             raise ValidationError("Description must be 1000 characters or fewer")
         if command.status == "active" and not command.is_killed and command.rollout_percentage == 0:
             raise ValidationError("Active experiments must have rollout percentage greater than 0 unless killed")
+        if command.holdout_percentage >= 100:
+            raise ValidationError("Holdout percentage must stay below 100")
         variants = command.variants
         if not variants:
             raise ValidationError(f"Experiment '{experiment_key}' must declare at least one variant")
@@ -173,6 +187,24 @@ class ExperimentRegistryService:
             raise ValidationError(f"Experiment '{experiment_key}' must have positive total variant weight")
         if not has_control:
             raise ValidationError(f"Experiment '{experiment_key}' must include a control variant")
+        baseline_variant = (command.baseline_variant or "").strip()
+        if not baseline_variant:
+            raise ValidationError(f"Experiment '{experiment_key}' must declare a baseline variant")
+        if baseline_variant not in seen_names:
+            raise ValidationError(f"Experiment '{experiment_key}' baseline variant must exist in variants")
+        self._validate_key_list(
+            experiment_key,
+            values=command.mutually_exclusive_with,
+            field_name="mutually_exclusive_with",
+            allow_self=False,
+        )
+        self._validate_key_list(
+            experiment_key,
+            values=command.prerequisite_experiments,
+            field_name="prerequisite_experiments",
+            allow_self=False,
+        )
+        self._validate_eligibility(experiment_key, command.eligibility or {})
 
     def _validate_experiment_key(self, experiment_key: str) -> str:
         normalized_key = (experiment_key or "").strip()
@@ -207,9 +239,14 @@ class ExperimentRegistryService:
             "experiment_key": str(registry.experiment_key),
             "status": str(registry.status),
             "rollout_percentage": int(registry.rollout_percentage),
+            "holdout_percentage": int(getattr(registry, "holdout_percentage", 0) or 0),
             "is_killed": bool(registry.is_killed),
+            "baseline_variant": str(getattr(registry, "baseline_variant", "control") or "control"),
             "description": registry.description,
             "variants": [self._variant_payload_from_row(item) for item in list(registry.variants or [])],
+            "eligibility": self._eligibility_payload_from_row(getattr(registry, "eligibility", {}) or {}),
+            "mutually_exclusive_with": [str(item) for item in list(getattr(registry, "mutually_exclusive_with", []) or [])],
+            "prerequisite_experiments": [str(item) for item in list(getattr(registry, "prerequisite_experiments", []) or [])],
             "created_at": self._timestamp(getattr(registry, "created_at", None)),
             "updated_at": self._timestamp(getattr(registry, "updated_at", None)),
         }
@@ -293,6 +330,47 @@ class ExperimentRegistryService:
         return {
             "name": str(variant.get("name") or ""),
             "weight": int(variant.get("weight") or 0),
+        }
+
+    def _validate_key_list(
+        self,
+        experiment_key: str,
+        *,
+        values: tuple[str, ...],
+        field_name: str,
+        allow_self: bool,
+    ) -> None:
+        seen: set[str] = set()
+        for value in values:
+            normalized = self._validate_experiment_key(value)
+            if not allow_self and normalized == experiment_key:
+                raise ValidationError(f"Experiment '{experiment_key}' cannot include itself in {field_name}")
+            if normalized in seen:
+                raise ValidationError(f"Experiment '{experiment_key}' contains duplicate entries in {field_name}")
+            seen.add(normalized)
+
+    def _validate_eligibility(self, experiment_key: str, eligibility: dict[str, tuple[str, ...]]) -> None:
+        allowed_fields = {"geographies", "subscription_tiers", "lifecycle_stages", "platforms", "surfaces"}
+        for field_name, values in eligibility.items():
+            if field_name not in allowed_fields:
+                raise ValidationError(f"Experiment '{experiment_key}' has unsupported eligibility field '{field_name}'")
+            normalized_values = [str(value).strip() for value in values if str(value).strip()]
+            if len(normalized_values) != len(set(normalized_values)):
+                raise ValidationError(f"Experiment '{experiment_key}' contains duplicate eligibility values for '{field_name}'")
+            if not normalized_values:
+                raise ValidationError(f"Experiment '{experiment_key}' has an empty eligibility list for '{field_name}'")
+
+    def _eligibility_payload(self, eligibility: dict[str, tuple[str, ...]]) -> dict[str, list[str]]:
+        return {
+            key: [str(item).strip() for item in values]
+            for key, values in sorted(eligibility.items())
+            if values
+        }
+
+    def _eligibility_payload_from_row(self, eligibility: dict) -> dict[str, list[str]]:
+        return {
+            str(key): [str(item) for item in list(values or [])]
+            for key, values in dict(eligibility or {}).items()
         }
 
     def _timestamp(self, value: datetime | None) -> str | None:
