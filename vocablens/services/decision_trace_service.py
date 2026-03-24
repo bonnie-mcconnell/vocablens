@@ -11,6 +11,7 @@ from vocablens.infrastructure.db.models import (
     DailyMissionORM,
     ExperimentAssignmentORM,
     LifecycleTransitionORM,
+    NotificationSuppressionEventORM,
     OnboardingFlowStateORM,
     RewardChestORM,
     SubscriptionORM,
@@ -18,6 +19,7 @@ from vocablens.infrastructure.db.models import (
     UserLifecycleStateORM,
     UserLearningStateORM,
     UserMonetizationStateORM,
+    UserNotificationStateORM,
     UserProfileORM,
     UserProgressStateORM,
 )
@@ -192,6 +194,11 @@ class DecisionTraceService:
             "lifecycle_transitions": [
                 self._lifecycle_transition_payload(item) for item in snapshot["lifecycle_transitions"]
             ],
+            "notification_state": self._notification_state_payload(snapshot["notification_state"]),
+            "notification_suppression_events": [
+                self._notification_suppression_event_payload(item)
+                for item in snapshot["notification_suppression_events"]
+            ],
             "profile": self._profile_payload(snapshot["profile"]),
             "retention": retention,
             "lifecycle": lifecycle,
@@ -205,6 +212,7 @@ class DecisionTraceService:
         traces = list(detail.get("traces", []))
         events = list(detail.get("events", []))
         transitions = list(detail.get("lifecycle_transitions", []))
+        notification_suppression_events = list(detail.get("notification_suppression_events", []))
         return {
             "detail": detail,
             "latest_decisions": {
@@ -212,6 +220,7 @@ class DecisionTraceService:
                 "lifecycle_action_plan": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_action_plan"),
                 "notification_selection": self._latest_trace_payload_from_dicts(traces, trace_type="notification_selection"),
                 "latest_transition": transitions[0] if transitions else None,
+                "latest_notification_suppression": notification_suppression_events[0] if notification_suppression_events else None,
             },
             "event_summary": self._event_summary_payload(events),
             "trace_summary": self._trace_summary_payload(traces),
@@ -509,11 +518,22 @@ class DecisionTraceService:
                 uow,
                 select(UserLifecycleStateORM).where(UserLifecycleStateORM.user_id == user_id),
             )
+            notification_state = await self._one_or_none(
+                uow,
+                select(UserNotificationStateORM).where(UserNotificationStateORM.user_id == user_id),
+            )
             lifecycle_transitions = await self._all(
                 uow,
                 select(LifecycleTransitionORM)
                 .where(LifecycleTransitionORM.user_id == user_id)
                 .order_by(LifecycleTransitionORM.created_at.desc(), LifecycleTransitionORM.id.desc())
+                .limit(50),
+            )
+            notification_suppression_events = await self._all(
+                uow,
+                select(NotificationSuppressionEventORM)
+                .where(NotificationSuppressionEventORM.user_id == user_id)
+                .order_by(NotificationSuppressionEventORM.created_at.desc(), NotificationSuppressionEventORM.id.desc())
                 .limit(50),
             )
             assignments = await self._all(
@@ -542,7 +562,9 @@ class DecisionTraceService:
             "monetization_state": monetization_state,
             "onboarding_state": onboarding_state,
             "lifecycle_state": lifecycle_state,
+            "notification_state": notification_state,
             "lifecycle_transitions": lifecycle_transitions,
+            "notification_suppression_events": notification_suppression_events,
             "experiments": experiments,
             "monetization_events": monetization_events,
             "used_requests": used_requests,
@@ -1082,6 +1104,46 @@ class DecisionTraceService:
             "paywall_type": row.paywall_type,
             "strategy": row.strategy,
             "geography": row.geography,
+            "payload": dict(row.payload or {}),
+            "created_at": self._timestamp(row.created_at),
+        }
+
+    def _notification_state_payload(self, row) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        return {
+            "user_id": row.user_id,
+            "preferred_channel": row.preferred_channel,
+            "preferred_time_of_day": int(row.preferred_time_of_day or 0),
+            "frequency_limit": int(row.frequency_limit or 0),
+            "lifecycle_stage": row.lifecycle_stage,
+            "lifecycle_policy_version": row.lifecycle_policy_version,
+            "lifecycle_policy": dict(row.lifecycle_policy or {}),
+            "suppression_reason": row.suppression_reason,
+            "suppressed_until": self._timestamp(row.suppressed_until),
+            "cooldown_until": self._timestamp(row.cooldown_until),
+            "sent_count_day": row.sent_count_day,
+            "sent_count_today": int(row.sent_count_today or 0),
+            "last_sent_at": self._timestamp(row.last_sent_at),
+            "last_delivery_channel": row.last_delivery_channel,
+            "last_delivery_status": row.last_delivery_status,
+            "last_delivery_category": row.last_delivery_category,
+            "last_reference_id": row.last_reference_id,
+            "last_decision_at": self._timestamp(row.last_decision_at),
+            "last_decision_reason": row.last_decision_reason,
+            "updated_at": self._timestamp(row.updated_at),
+        }
+
+    def _notification_suppression_event_payload(self, row) -> dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "user_id": row.user_id,
+            "event_type": row.event_type,
+            "source": row.source,
+            "reference_id": row.reference_id,
+            "lifecycle_stage": row.lifecycle_stage,
+            "suppression_reason": row.suppression_reason,
+            "suppressed_until": self._timestamp(row.suppressed_until),
             "payload": dict(row.payload or {}),
             "created_at": self._timestamp(row.created_at),
         }

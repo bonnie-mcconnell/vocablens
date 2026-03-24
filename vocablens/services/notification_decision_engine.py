@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.notifications.base import NotificationMessage
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.notification_state_service import NotificationStateService
 from vocablens.services.retention_engine import RetentionAssessment
 
 
@@ -33,6 +34,7 @@ class NotificationDecisionEngine:
     def __init__(self, uow_factory: type[UnitOfWork], cooldown_hours: int = 4):
         self._uow_factory = uow_factory
         self._cooldown = timedelta(hours=cooldown_hours)
+        self._notification_states = NotificationStateService(uow_factory, cooldown_hours=cooldown_hours)
 
     async def decide(
         self,
@@ -44,21 +46,50 @@ class NotificationDecisionEngine:
     ) -> NotificationDecision:
         async with self._uow_factory() as uow:
             profile = await uow.profiles.get_or_create(user_id)
+            notification_state = await uow.notification_states.get_or_create(user_id)
             recent_deliveries = await uow.notification_deliveries.list_recent(user_id, limit=50)
             session_events = await uow.learning_events.list_since(user_id, since=utc_now() - timedelta(days=14))
             weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id)
             mistakes = await uow.mistake_patterns.top_patterns(user_id, limit=3)
             await uow.commit()
 
+        await self._notification_states.sync_preferences(
+            user_id=user_id,
+            preferred_channel=getattr(profile, "preferred_channel", "push"),
+            preferred_time_of_day=getattr(profile, "preferred_time_of_day", None),
+            frequency_limit=int(getattr(profile, "frequency_limit", 0) or 0),
+        )
+
         frequency_limit = int(getattr(profile, "frequency_limit", 2) or 0)
-        day_cutoff = utc_now() - timedelta(days=1)
-        sent_today = [row for row in recent_deliveries if row.created_at and row.created_at >= day_cutoff]
-        if frequency_limit == 0:
-            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "notifications disabled")
+        today_key = utc_now().date().isoformat()
+        state_day = str(getattr(notification_state, "sent_count_day", "") or "")
+        sent_today_count = int(getattr(notification_state, "sent_count_today", 0) or 0)
+        if state_day != today_key:
+            sent_today_count = 0
+        sent_today = [row for row in recent_deliveries if row.created_at and row.created_at.date().isoformat() == today_key]
+        sent_today_count = max(sent_today_count, len(sent_today))
+
+        lifecycle_policy = dict(getattr(notification_state, "lifecycle_policy", {}) or {})
+        if "lifecycle_service" in source_context and lifecycle_policy.get("lifecycle_notifications_enabled") is False:
+            decision = NotificationDecision(
+                False,
+                utc_now(),
+                getattr(notification_state, "preferred_channel", None) or profile.preferred_channel,
+                getattr(notification_state, "suppressed_until", None),
+                None,
+                str(getattr(notification_state, "suppression_reason", "") or "lifecycle suppression active"),
+            )
+            await self._notification_states.record_decision(
+                user_id=user_id,
+                reason=decision.reason,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
             await self._record_trace(
                 user_id=user_id,
                 assessment=assessment,
                 profile=profile,
+                notification_state=notification_state,
                 recent_deliveries=recent_deliveries,
                 session_events=session_events,
                 weak_clusters=weak_clusters,
@@ -70,12 +101,43 @@ class NotificationDecisionEngine:
                 source_context=source_context,
             )
             return decision
-        if len(sent_today) >= frequency_limit:
-            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "daily frequency limit reached")
+        if frequency_limit == 0:
+            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "notifications disabled")
+            await self._notification_states.record_decision(
+                user_id=user_id,
+                reason=decision.reason,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
             await self._record_trace(
                 user_id=user_id,
                 assessment=assessment,
                 profile=profile,
+                notification_state=notification_state,
+                recent_deliveries=recent_deliveries,
+                session_events=session_events,
+                weak_clusters=weak_clusters,
+                mistakes=mistakes,
+                action=None,
+                decision=decision,
+                predicted_hour=None,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
+            return decision
+        if sent_today_count >= frequency_limit:
+            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "daily frequency limit reached")
+            await self._notification_states.record_decision(
+                user_id=user_id,
+                reason=decision.reason,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
+            await self._record_trace(
+                user_id=user_id,
+                assessment=assessment,
+                profile=profile,
+                notification_state=notification_state,
                 recent_deliveries=recent_deliveries,
                 session_events=session_events,
                 weak_clusters=weak_clusters,
@@ -88,14 +150,20 @@ class NotificationDecisionEngine:
             )
             return decision
 
-        last_delivery = recent_deliveries[0] if recent_deliveries else None
-        if last_delivery and last_delivery.created_at and (utc_now() - last_delivery.created_at) < self._cooldown:
-            cooldown_until = last_delivery.created_at + self._cooldown
+        cooldown_until = getattr(notification_state, "cooldown_until", None)
+        if cooldown_until and cooldown_until > utc_now():
             decision = NotificationDecision(False, cooldown_until, profile.preferred_channel, cooldown_until, None, "cooldown active")
+            await self._notification_states.record_decision(
+                user_id=user_id,
+                reason=decision.reason,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
             await self._record_trace(
                 user_id=user_id,
                 assessment=assessment,
                 profile=profile,
+                notification_state=notification_state,
                 recent_deliveries=recent_deliveries,
                 session_events=session_events,
                 weak_clusters=weak_clusters,
@@ -111,10 +179,17 @@ class NotificationDecisionEngine:
         action = self._pick_action(assessment)
         if action is None:
             decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "no retention action")
+            await self._notification_states.record_decision(
+                user_id=user_id,
+                reason=decision.reason,
+                reference_id=reference_id,
+                source_context=source_context,
+            )
             await self._record_trace(
                 user_id=user_id,
                 assessment=assessment,
                 profile=profile,
+                notification_state=notification_state,
                 recent_deliveries=recent_deliveries,
                 session_events=session_events,
                 weak_clusters=weak_clusters,
@@ -145,10 +220,17 @@ class NotificationDecisionEngine:
             message=message,
             reason="retention action selected",
         )
+        await self._notification_states.record_decision(
+            user_id=user_id,
+            reason=decision.reason,
+            reference_id=reference_id,
+            source_context=source_context,
+        )
         await self._record_trace(
             user_id=user_id,
             assessment=assessment,
             profile=profile,
+            notification_state=notification_state,
             recent_deliveries=recent_deliveries,
             session_events=session_events,
             weak_clusters=weak_clusters,
@@ -237,6 +319,7 @@ class NotificationDecisionEngine:
         user_id: int,
         assessment: RetentionAssessment,
         profile,
+        notification_state,
         recent_deliveries,
         session_events,
         weak_clusters,
@@ -267,10 +350,20 @@ class NotificationDecisionEngine:
                         "preferred_time_of_day": getattr(profile, "preferred_time_of_day", None),
                         "frequency_limit": int(getattr(profile, "frequency_limit", 0) or 0),
                     },
+                    "notification_state": {
+                        "sent_count_day": getattr(notification_state, "sent_count_day", None),
+                        "sent_count_today": int(getattr(notification_state, "sent_count_today", 0) or 0),
+                        "cooldown_until": getattr(notification_state, "cooldown_until", None).isoformat()
+                        if getattr(notification_state, "cooldown_until", None)
+                        else None,
+                        "lifecycle_stage": getattr(notification_state, "lifecycle_stage", None),
+                        "lifecycle_policy": dict(getattr(notification_state, "lifecycle_policy", {}) or {}),
+                        "suppression_reason": getattr(notification_state, "suppression_reason", None),
+                    },
                     "delivery_context": {
                         "recent_delivery_count": len(recent_deliveries),
                         "sent_today_count": len(
-                            [row for row in recent_deliveries if row.created_at and row.created_at >= utc_now() - timedelta(days=1)]
+                            [row for row in recent_deliveries if row.created_at and row.created_at.date().isoformat() == utc_now().date().isoformat()]
                         ),
                     },
                     "session_history": {

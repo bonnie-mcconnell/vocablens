@@ -31,9 +31,36 @@ class FakeNotificationDeliveryRepo:
         )
 
 
+class FakeNotificationStatesRepo:
+    def __init__(self):
+        self.row = type(
+            "NotificationState",
+            (),
+            {
+                "user_id": None,
+                "sent_count_day": None,
+                "sent_count_today": 0,
+                "cooldown_until": None,
+                "last_sent_at": None,
+            },
+        )()
+
+    async def get_or_create(self, user_id: int):
+        self.row.user_id = user_id
+        return self.row
+
+    async def update(self, user_id: int, **kwargs):
+        self.row.user_id = user_id
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(self.row, key, value)
+        return self.row
+
+
 class FakeUOW:
     def __init__(self):
         self.notification_deliveries = FakeNotificationDeliveryRepo()
+        self.notification_states = FakeNotificationStatesRepo()
 
     async def __aenter__(self):
         return self
@@ -77,6 +104,8 @@ def test_notification_delivery_service_retries_with_backoff_until_success():
     assert len(uow.notification_deliveries.created) == 2
     assert uow.notification_deliveries.status_updates[0]["status"] == "failed"
     assert uow.notification_deliveries.status_updates[-1]["status"] == "sent"
+    assert uow.notification_states.row.sent_count_today == 1
+    assert uow.notification_states.row.last_delivery_status == "sent"
 
 
 def test_notification_delivery_service_records_final_failure():
@@ -106,6 +135,7 @@ def test_notification_delivery_service_records_final_failure():
     assert "temporary delivery failure" in result.error
     assert len(uow.notification_deliveries.created) == 2
     assert uow.notification_deliveries.status_updates[-1]["status"] == "failed"
+    assert uow.notification_states.row.last_delivery_status == "failed"
 
 
 def test_notification_delivery_service_batches_by_channel():

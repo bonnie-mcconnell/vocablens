@@ -25,6 +25,52 @@ class FakeEngagementStates:
         return self.state
 
 
+class FakeNotificationStates:
+    def __init__(self):
+        self.row = None
+
+    async def get_or_create(self, user_id: int):
+        if self.row is None or self.row.user_id != user_id:
+            self.row = SimpleNamespace(
+                user_id=user_id,
+                preferred_channel="push",
+                preferred_time_of_day=18,
+                frequency_limit=2,
+                lifecycle_stage=None,
+                lifecycle_policy={},
+                suppression_reason=None,
+                suppressed_until=None,
+                cooldown_until=None,
+                sent_count_day=None,
+                sent_count_today=0,
+                last_sent_at=None,
+                last_delivery_channel=None,
+                last_delivery_status=None,
+                last_delivery_category=None,
+                last_reference_id=None,
+                last_decision_at=None,
+                last_decision_reason=None,
+                updated_at=None,
+            )
+        return self.row
+
+    async def update(self, user_id: int, **kwargs):
+        row = await self.get_or_create(user_id)
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(row, key, value)
+        return row
+
+
+class FakeNotificationSuppressionEvents:
+    def __init__(self):
+        self.created = []
+
+    async def create(self, **kwargs):
+        self.created.append(kwargs)
+        return SimpleNamespace(**kwargs)
+
+
 class FakeUOW:
     def __init__(self, learning_state, engagement_state):
         self.learning_states = FakeLearningStates(learning_state)
@@ -32,6 +78,8 @@ class FakeUOW:
         self.decision_traces = FakeDecisionTraces()
         self.lifecycle_states = FakeLifecycleStates()
         self.lifecycle_transitions = FakeLifecycleTransitions()
+        self.notification_states = FakeNotificationStates()
+        self.notification_suppression_events = FakeNotificationSuppressionEvents()
 
     async def __aenter__(self):
         return self
@@ -229,6 +277,7 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
     assert new_user_uow.decision_traces.created[1]["reference_id"] == "lifecycle:1"
     assert new_user_uow.lifecycle_states.row.current_stage == "new_user"
     assert new_user_uow.lifecycle_transitions.created[0]["to_stage"] == "new_user"
+    assert new_user_uow.notification_states.row.lifecycle_policy["lifecycle_notifications_enabled"] is True
     assert activating_plan.actions[0].type == "wow_moment_push"
     assert "mastery at 25.0%" in activating_plan.actions[1].message
     assert activating_notifier.calls == [(2, "active")]
@@ -295,3 +344,5 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
     assert uow.decision_traces.created[0]["trace_type"] == "lifecycle_action_plan"
     assert uow.decision_traces.created[1]["outputs"]["paywall"]["type"] == "soft_paywall"
     assert uow.decision_traces.created[1]["reason"] == "user shows strong engagement and progress"
+    assert uow.notification_states.row.lifecycle_policy["lifecycle_notifications_enabled"] is False
+    assert uow.notification_suppression_events.created[0]["event_type"] == "lifecycle_policy_updated"

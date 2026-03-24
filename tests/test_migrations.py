@@ -46,6 +46,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"user_monetization_states", "monetization_offer_events"} <= tables
     assert {"daily_missions", "reward_chests"} <= tables
     assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
+    assert {"user_notification_states", "notification_suppression_events"} <= tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -321,6 +322,57 @@ def test_upgrade_downgrade_upgrade_round_trip():
     lifecycle_transition_fks = inspector.get_foreign_keys("lifecycle_transitions")
     assert any(fk["referred_table"] == "users" for fk in lifecycle_transition_fks)
 
+    notification_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_notification_states")}
+    assert "idx_user_notification_states_user" in notification_state_indexes
+    assert "idx_user_notification_states_updated_at" in notification_state_indexes
+    assert "idx_user_notification_states_cooldown_until" in notification_state_indexes
+    assert "idx_user_notification_states_suppressed_until" in notification_state_indexes
+    assert "idx_user_notification_states_lifecycle_stage" in notification_state_indexes
+    notification_state_columns = {col["name"] for col in inspector.get_columns("user_notification_states")}
+    assert {
+        "user_id",
+        "preferred_channel",
+        "preferred_time_of_day",
+        "frequency_limit",
+        "lifecycle_stage",
+        "lifecycle_policy_version",
+        "lifecycle_policy",
+        "suppression_reason",
+        "suppressed_until",
+        "cooldown_until",
+        "sent_count_day",
+        "sent_count_today",
+        "last_sent_at",
+        "last_delivery_channel",
+        "last_delivery_status",
+        "last_delivery_category",
+        "last_reference_id",
+        "last_decision_at",
+        "last_decision_reason",
+        "updated_at",
+    } <= notification_state_columns
+    notification_state_fks = inspector.get_foreign_keys("user_notification_states")
+    assert any(fk["referred_table"] == "users" for fk in notification_state_fks)
+
+    suppression_indexes = {idx["name"] for idx in inspector.get_indexes("notification_suppression_events")}
+    assert "idx_notification_suppression_events_user" in suppression_indexes
+    assert "idx_notification_suppression_events_source" in suppression_indexes
+    assert "idx_notification_suppression_events_stage" in suppression_indexes
+    suppression_columns = {col["name"] for col in inspector.get_columns("notification_suppression_events")}
+    assert {
+        "user_id",
+        "event_type",
+        "source",
+        "reference_id",
+        "lifecycle_stage",
+        "suppression_reason",
+        "suppressed_until",
+        "payload",
+        "created_at",
+    } <= suppression_columns
+    suppression_fks = inspector.get_foreign_keys("notification_suppression_events")
+    assert any(fk["referred_table"] == "users" for fk in suppression_fks)
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -492,6 +544,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "reward_chests" not in tables
     assert "user_lifecycle_states" not in tables
     assert "lifecycle_transitions" not in tables
+    assert "user_notification_states" not in tables
+    assert "notification_suppression_events" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -511,6 +565,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"user_monetization_states", "monetization_offer_events"} <= tables
     assert {"daily_missions", "reward_chests"} <= tables
     assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
+    assert {"user_notification_states", "notification_suppression_events"} <= tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

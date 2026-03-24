@@ -164,6 +164,28 @@ class UserMonetizationStateRepository(Protocol):
     async def update(self, user_id: int, **kwargs) -> Any: ...
 
 
+class UserNotificationStateRepository(Protocol):
+    async def get_or_create(self, user_id: int) -> Any: ...
+    async def update(self, user_id: int, **kwargs) -> Any: ...
+
+
+class NotificationSuppressionEventRepository(Protocol):
+    async def create(
+        self,
+        *,
+        user_id: int,
+        event_type: str,
+        source: str,
+        reference_id: str | None,
+        lifecycle_stage: str | None,
+        suppression_reason: str | None,
+        suppressed_until: datetime | None,
+        payload: Dict[str, Any],
+        created_at: datetime | None = None,
+    ) -> Any: ...
+    async def list_by_user(self, user_id: int, limit: int = 50) -> List[Any]: ...
+
+
 class MonetizationOfferEventRepository(Protocol):
     async def record(
         self,

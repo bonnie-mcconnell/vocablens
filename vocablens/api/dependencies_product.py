@@ -33,6 +33,7 @@ from vocablens.services.lifecycle_state_service import LifecycleStateService
 from vocablens.services.monetization_engine import MonetizationEngine
 from vocablens.services.monetization_state_service import MonetizationStateService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
+from vocablens.services.notification_state_service import NotificationStateService
 from vocablens.services.onboarding_flow_service import OnboardingFlowService
 from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
@@ -107,6 +108,10 @@ def get_monetization_state_service(uow_factory=Depends(get_uow_factory)) -> Mone
 
 def get_lifecycle_state_service(uow_factory=Depends(get_uow_factory)) -> LifecycleStateService:
     return LifecycleStateService(uow_factory)
+
+
+def get_notification_state_service(uow_factory=Depends(get_uow_factory)) -> NotificationStateService:
+    return NotificationStateService(uow_factory)
 
 
 async def get_experiment_service(
@@ -240,6 +245,7 @@ def get_lifecycle_service(
     global_decision_engine=Depends(get_global_decision_engine),
     onboarding_service=Depends(get_onboarding_service),
     lifecycle_state_service=Depends(get_lifecycle_state_service),
+    notification_state_service=Depends(get_notification_state_service),
 ) -> LifecycleService:
     return LifecycleService(
         uow_factory,
@@ -250,6 +256,7 @@ def get_lifecycle_service(
         global_decision_engine,
         onboarding_service,
         lifecycle_state_service,
+        notification_state_service,
     )
 
 

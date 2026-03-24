@@ -671,6 +671,42 @@ class LifecycleTransitionDiagnosticsResponse(BaseModel):
     created_at: datetime
 
 
+class NotificationStateDiagnosticsResponse(BaseModel):
+    user_id: int
+    preferred_channel: str
+    preferred_time_of_day: int = 0
+    frequency_limit: int = 0
+    lifecycle_stage: str | None = None
+    lifecycle_policy_version: str | None = None
+    lifecycle_policy: dict[str, Any] = Field(default_factory=dict)
+    suppression_reason: str | None = None
+    suppressed_until: datetime | None = None
+    cooldown_until: datetime | None = None
+    sent_count_day: str | None = None
+    sent_count_today: int = 0
+    last_sent_at: datetime | None = None
+    last_delivery_channel: str | None = None
+    last_delivery_status: str | None = None
+    last_delivery_category: str | None = None
+    last_reference_id: str | None = None
+    last_decision_at: datetime | None = None
+    last_decision_reason: str | None = None
+    updated_at: datetime | None = None
+
+
+class NotificationSuppressionEventDiagnosticsResponse(BaseModel):
+    id: int
+    user_id: int
+    event_type: str
+    source: str
+    reference_id: str | None = None
+    lifecycle_stage: str | None = None
+    suppression_reason: str | None = None
+    suppressed_until: datetime | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
 class RetentionSuggestedActionResponse(BaseModel):
     kind: str
     reason: str
@@ -791,6 +827,8 @@ class LifecycleDiagnosticsDataResponse(BaseModel):
     engagement_state: UserEngagementStateDiagnosticsResponse | None = None
     lifecycle_state: UserLifecycleStateDiagnosticsResponse | None = None
     lifecycle_transitions: list[LifecycleTransitionDiagnosticsResponse] = Field(default_factory=list)
+    notification_state: NotificationStateDiagnosticsResponse | None = None
+    notification_suppression_events: list[NotificationSuppressionEventDiagnosticsResponse] = Field(default_factory=list)
     profile: UserProfileDiagnosticsResponse | None = None
     retention: RetentionDiagnosticsResponse
     lifecycle: LifecycleDecisionDiagnosticsResponse
@@ -826,6 +864,7 @@ class LifecycleOperatorLatestDecisionsResponse(BaseModel):
     lifecycle_action_plan: DecisionTraceRecordResponse | None = None
     notification_selection: DecisionTraceRecordResponse | None = None
     latest_transition: LifecycleTransitionDiagnosticsResponse | None = None
+    latest_notification_suppression: NotificationSuppressionEventDiagnosticsResponse | None = None
 
 
 class LifecycleOperatorReportDataResponse(BaseModel):

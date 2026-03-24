@@ -280,6 +280,76 @@ class NotificationDeliveryORM(Base):
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class UserNotificationStateORM(Base):
+    __tablename__ = "user_notification_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_notification_states_user_id"),
+        CheckConstraint(
+            "preferred_channel IN ('email', 'push', 'in_app')",
+            name="ck_user_notification_states_preferred_channel_valid",
+        ),
+        CheckConstraint(
+            "preferred_time_of_day >= 0 AND preferred_time_of_day <= 23",
+            name="ck_user_notification_states_preferred_time_of_day_range",
+        ),
+        CheckConstraint(
+            "frequency_limit >= 0",
+            name="ck_user_notification_states_frequency_limit_nonnegative",
+        ),
+        CheckConstraint(
+            "sent_count_today >= 0",
+            name="ck_user_notification_states_sent_count_today_nonnegative",
+        ),
+        Index("idx_user_notification_states_user", "user_id"),
+        Index("idx_user_notification_states_updated_at", "updated_at"),
+        Index("idx_user_notification_states_cooldown_until", "cooldown_until"),
+        Index("idx_user_notification_states_suppressed_until", "suppressed_until"),
+        Index("idx_user_notification_states_lifecycle_stage", "lifecycle_stage", "updated_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    preferred_channel = Column(String, default="push", nullable=False)
+    preferred_time_of_day = Column(Integer, default=18, nullable=False)
+    frequency_limit = Column(Integer, default=2, nullable=False)
+    lifecycle_stage = Column(String)
+    lifecycle_policy_version = Column(String, nullable=False, default="v1")
+    lifecycle_policy = Column(JSON, nullable=False, default=dict)
+    suppression_reason = Column(Text)
+    suppressed_until = Column(DateTime)
+    cooldown_until = Column(DateTime)
+    sent_count_day = Column(String)
+    sent_count_today = Column(Integer, default=0, nullable=False)
+    last_sent_at = Column(DateTime)
+    last_delivery_channel = Column(String)
+    last_delivery_status = Column(String)
+    last_delivery_category = Column(String)
+    last_reference_id = Column(String)
+    last_decision_at = Column(DateTime)
+    last_decision_reason = Column(Text)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class NotificationSuppressionEventORM(Base):
+    __tablename__ = "notification_suppression_events"
+    __table_args__ = (
+        Index("idx_notification_suppression_events_user", "user_id", "created_at"),
+        Index("idx_notification_suppression_events_source", "source", "created_at"),
+        Index("idx_notification_suppression_events_stage", "lifecycle_stage", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String, nullable=False)
+    source = Column(String, nullable=False)
+    reference_id = Column(String)
+    lifecycle_stage = Column(String)
+    suppression_reason = Column(Text)
+    suppressed_until = Column(DateTime)
+    payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class SubscriptionEventORM(Base):
     __tablename__ = "subscription_events"
     __table_args__ = (

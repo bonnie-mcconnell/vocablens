@@ -7,6 +7,7 @@ from typing import Protocol
 from vocablens.config.settings import settings
 from vocablens.infrastructure.notifications.base import NotificationMessage, NotificationSink
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.notification_state_service import NotificationStateService
 
 
 class DeliveryBackend(Protocol):
@@ -67,6 +68,7 @@ class NotificationDeliveryService:
         self._backoff_base = backoff_base
         self._sleep = sleeper or asyncio.sleep
         self._batch_size = max(1, int(batch_size))
+        self._notification_states = NotificationStateService(uow_factory)
 
     async def send(self, message: NotificationMessage) -> DeliveryResult:
         channel = self._channel_for(message)
@@ -80,6 +82,13 @@ class NotificationDeliveryService:
             except Exception as exc:
                 last_error = str(exc)
                 await self._mark_status(delivery_id, "failed", error_message=last_error)
+                await self._notification_states.record_delivery(
+                    user_id=message.user_id,
+                    category=message.category,
+                    channel=channel,
+                    status="failed",
+                    reference_id=(message.metadata or {}).get("reference_id"),
+                )
                 if attempt < self._max_attempts:
                     await self._sleep(self._backoff_base * (2 ** (attempt - 1)))
                     continue
@@ -93,6 +102,13 @@ class NotificationDeliveryService:
                 )
 
             await self._mark_status(delivery_id, "sent")
+            await self._notification_states.record_delivery(
+                user_id=message.user_id,
+                category=message.category,
+                channel=channel,
+                status="sent",
+                reference_id=(message.metadata or {}).get("reference_id"),
+            )
             return DeliveryResult(
                 user_id=message.user_id,
                 channel=channel,

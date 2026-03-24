@@ -8,6 +8,7 @@ from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.lifecycle_stage_policy import LifecycleSnapshot, classify_lifecycle_stage
 from vocablens.services.lifecycle_state_service import LifecycleStateService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
+from vocablens.services.notification_state_service import NotificationStateService
 from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
@@ -41,6 +42,7 @@ class LifecycleService:
         global_decision_engine: GlobalDecisionEngine | None = None,
         onboarding_service: OnboardingService | None = None,
         lifecycle_state_service: LifecycleStateService | None = None,
+        notification_state_service: NotificationStateService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine
@@ -50,6 +52,7 @@ class LifecycleService:
         self._global_decision = global_decision_engine
         self._onboarding = onboarding_service
         self._lifecycle_states = lifecycle_state_service or LifecycleStateService(uow_factory)
+        self._notification_states = notification_state_service or NotificationStateService(uow_factory)
 
     async def evaluate(self, user_id: int) -> LifecyclePlan:
         if self._global_decision:
@@ -82,6 +85,12 @@ class LifecycleService:
             learning_state=learning_state,
             engagement_state=engagement_state,
             source="lifecycle_service.evaluate",
+        )
+        await self._notification_states.apply_lifecycle_policy(
+            user_id=user_id,
+            lifecycle_stage=stage,
+            source="lifecycle_service.evaluate",
+            reference_id=f"lifecycle:{user_id}",
         )
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
 
@@ -185,6 +194,12 @@ class LifecycleService:
             learning_state=learning_state,
             engagement_state=engagement_state,
             source="lifecycle_service.global_decision",
+        )
+        await self._notification_states.apply_lifecycle_policy(
+            user_id=user_id,
+            lifecycle_stage=stage,
+            source="lifecycle_service.global_decision",
+            reference_id=f"lifecycle:{user_id}",
         )
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
         plan = LifecyclePlan(
