@@ -5,6 +5,7 @@ from contextlib import suppress
 from typing import Any
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 
 
 SUPPORTED_EVENT_TYPES = {
@@ -38,11 +39,13 @@ class EventService:
     def __init__(
         self,
         uow_factory: type[UnitOfWork],
+        experiment_attribution_service: ExperimentAttributionService | None = None,
         *,
         use_buffer: bool = True,
         buffer_size: int = 1000,
     ):
         self._uow_factory = uow_factory
+        self._attribution = experiment_attribution_service
         self._use_buffer = use_buffer
         self._queue: asyncio.Queue[dict[str, Any]] | None = (
             asyncio.Queue(maxsize=buffer_size) if use_buffer else None
@@ -125,6 +128,11 @@ class EventService:
             )
             await self._project_state(uow, envelope)
             await uow.commit()
+        if self._attribution is not None:
+            await self._attribution.record_event(
+                user_id=envelope["user_id"],
+                event_type=envelope["event_type"],
+            )
 
     def _validate_event_type(self, event_type: str) -> None:
         if event_type not in SUPPORTED_EVENT_TYPES:

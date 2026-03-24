@@ -1,36 +1,31 @@
-from datetime import timedelta
 from types import SimpleNamespace
 
 from tests.conftest import run_async
-from vocablens.core.time import utc_now
 from vocablens.services.experiment_results_service import ExperimentResultsService
 
 
-class FakeAssignmentsRepo:
-    def __init__(self, assignments):
-        self.assignments = assignments
+class FakeExperimentOutcomeAttributionsRepo:
+    def __init__(self, rows):
+        self.rows = rows
 
     async def list_all(self, experiment_key: str | None = None):
         if experiment_key is None:
-            return self.assignments
-        return [row for row in self.assignments if row.experiment_key == experiment_key]
+            return self.rows
+        return [row for row in self.rows if row.experiment_key == experiment_key]
 
 
-class FakeEventsRepo:
-    def __init__(self, events):
-        self.events = events
+class FakeRegistriesRepo:
+    def __init__(self, rows):
+        self.rows = rows
 
-    async def list_since(self, since, event_types=None, limit: int = 50000):
-        rows = [event for event in self.events if event.created_at >= since]
-        if event_types:
-            rows = [event for event in rows if event.event_type in event_types]
-        return rows[:limit]
+    async def list_all(self):
+        return self.rows
 
 
 class FakeUOW:
-    def __init__(self, assignments, events):
-        self.experiment_assignments = FakeAssignmentsRepo(assignments)
-        self.events = FakeEventsRepo(events)
+    def __init__(self, rows, registries):
+        self.experiment_outcome_attributions = FakeExperimentOutcomeAttributionsRepo(rows)
+        self.experiment_registries = FakeRegistriesRepo(registries)
 
     async def __aenter__(self):
         return self
@@ -43,13 +38,16 @@ class FakeUOW:
 
 
 def test_experiment_results_service_groups_by_variant_correctly():
-    now = utc_now()
-    assignments = [
-        SimpleNamespace(user_id=1, experiment_key="paywall_offer", variant="control", assigned_at=now - timedelta(days=5)),
-        SimpleNamespace(user_id=2, experiment_key="paywall_offer", variant="variant_a", assigned_at=now - timedelta(days=5)),
-        SimpleNamespace(user_id=3, experiment_key="learning_strategy", variant="control", assigned_at=now - timedelta(days=5)),
+    rows = [
+        SimpleNamespace(user_id=1, experiment_key="paywall_offer", variant="control", retained_d1=False, converted=False, session_count=0, message_count=0, learning_action_count=0),
+        SimpleNamespace(user_id=2, experiment_key="paywall_offer", variant="variant_a", retained_d1=False, converted=False, session_count=0, message_count=0, learning_action_count=0),
+        SimpleNamespace(user_id=3, experiment_key="learning_strategy", variant="control", retained_d1=False, converted=False, session_count=0, message_count=0, learning_action_count=0),
     ]
-    service = ExperimentResultsService(lambda: FakeUOW(assignments, []))
+    registries = [
+        SimpleNamespace(experiment_key="paywall_offer", baseline_variant="control"),
+        SimpleNamespace(experiment_key="learning_strategy", baseline_variant="control"),
+    ]
+    service = ExperimentResultsService(lambda: FakeUOW(rows, registries))
 
     report = run_async(service.results())
 
@@ -59,25 +57,14 @@ def test_experiment_results_service_groups_by_variant_correctly():
 
 
 def test_experiment_results_service_aggregates_metrics_and_comparisons():
-    now = utc_now()
-    assignments = [
-        SimpleNamespace(user_id=1, experiment_key="paywall_offer", variant="control", assigned_at=now - timedelta(days=10)),
-        SimpleNamespace(user_id=2, experiment_key="paywall_offer", variant="control", assigned_at=now - timedelta(days=10)),
-        SimpleNamespace(user_id=3, experiment_key="paywall_offer", variant="variant_a", assigned_at=now - timedelta(days=10)),
-        SimpleNamespace(user_id=4, experiment_key="paywall_offer", variant="variant_a", assigned_at=now - timedelta(days=10)),
+    rows = [
+        SimpleNamespace(user_id=1, experiment_key="paywall_offer", variant="control", retained_d1=True, converted=False, session_count=1, message_count=1, learning_action_count=0),
+        SimpleNamespace(user_id=2, experiment_key="paywall_offer", variant="control", retained_d1=False, converted=False, session_count=0, message_count=1, learning_action_count=0),
+        SimpleNamespace(user_id=3, experiment_key="paywall_offer", variant="variant_a", retained_d1=True, converted=True, session_count=1, message_count=0, learning_action_count=1),
+        SimpleNamespace(user_id=4, experiment_key="paywall_offer", variant="variant_a", retained_d1=True, converted=False, session_count=1, message_count=1, learning_action_count=1),
     ]
-    events = [
-        SimpleNamespace(user_id=1, event_type="session_started", created_at=now - timedelta(days=8)),
-        SimpleNamespace(user_id=1, event_type="message_sent", created_at=now - timedelta(days=8)),
-        SimpleNamespace(user_id=2, event_type="message_sent", created_at=now - timedelta(days=8)),
-        SimpleNamespace(user_id=3, event_type="session_started", created_at=now - timedelta(days=8)),
-        SimpleNamespace(user_id=3, event_type="upgrade_completed", created_at=now - timedelta(days=7)),
-        SimpleNamespace(user_id=3, event_type="lesson_completed", created_at=now - timedelta(days=7)),
-        SimpleNamespace(user_id=4, event_type="session_started", created_at=now - timedelta(days=8)),
-        SimpleNamespace(user_id=4, event_type="message_sent", created_at=now - timedelta(days=8)),
-        SimpleNamespace(user_id=4, event_type="review_completed", created_at=now - timedelta(days=7)),
-    ]
-    service = ExperimentResultsService(lambda: FakeUOW(assignments, events))
+    registries = [SimpleNamespace(experiment_key="paywall_offer", baseline_variant="control")]
+    service = ExperimentResultsService(lambda: FakeUOW(rows, registries))
 
     report = run_async(service.results("paywall_offer"))
 

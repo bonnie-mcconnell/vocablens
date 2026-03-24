@@ -325,6 +325,45 @@ class ExperimentExposureORM(Base):
     exposed_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class ExperimentOutcomeAttributionORM(Base):
+    __tablename__ = "experiment_outcome_attributions"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "experiment_key", name="pk_experiment_outcome_attributions"),
+        CheckConstraint("session_count >= 0", name="ck_experiment_outcome_attributions_session_count_nonnegative"),
+        CheckConstraint("message_count >= 0", name="ck_experiment_outcome_attributions_message_count_nonnegative"),
+        CheckConstraint(
+            "learning_action_count >= 0",
+            name="ck_experiment_outcome_attributions_learning_action_count_nonnegative",
+        ),
+        CheckConstraint(
+            "upgrade_click_count >= 0",
+            name="ck_experiment_outcome_attributions_upgrade_click_count_nonnegative",
+        ),
+        Index("idx_experiment_outcome_attributions_variant", "experiment_key", "variant"),
+        Index("idx_experiment_outcome_attributions_window_end", "window_end_at"),
+        Index("idx_experiment_outcome_attributions_conversion", "experiment_key", "converted"),
+    )
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    experiment_key = Column(String, nullable=False)
+    variant = Column(String, nullable=False)
+    assignment_reason = Column(String, nullable=False, default="rollout")
+    attribution_version = Column(String, nullable=False, default="v1")
+    exposed_at = Column(DateTime, default=utc_now, nullable=False)
+    window_end_at = Column(DateTime, nullable=False)
+    retained_d1 = Column(Boolean, nullable=False, default=False)
+    retained_d7 = Column(Boolean, nullable=False, default=False)
+    converted = Column(Boolean, nullable=False, default=False)
+    first_conversion_at = Column(DateTime)
+    session_count = Column(Integer, nullable=False, default=0)
+    message_count = Column(Integer, nullable=False, default=0)
+    learning_action_count = Column(Integer, nullable=False, default=0)
+    upgrade_click_count = Column(Integer, nullable=False, default=0)
+    last_event_at = Column(DateTime)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class ExperimentRegistryORM(Base):
     __tablename__ = "experiment_registries"
     __table_args__ = (

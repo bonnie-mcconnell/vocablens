@@ -22,6 +22,9 @@ from vocablens.infrastructure.postgres_experiment_assignment_repository import (
 from vocablens.infrastructure.postgres_experiment_exposure_repository import (
     PostgresExperimentExposureRepository,
 )
+from vocablens.infrastructure.postgres_experiment_outcome_attribution_repository import (
+    PostgresExperimentOutcomeAttributionRepository,
+)
 from vocablens.infrastructure.postgres_experiment_registry_repository import (
     PostgresExperimentRegistryRepository,
 )
@@ -83,6 +86,7 @@ class UnitOfWork:
         self._notification_deliveries: Optional[PostgresNotificationDeliveryRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
+        self._experiment_outcome_attributions: Optional[PostgresExperimentOutcomeAttributionRepository] = None
         self._experiment_registries: Optional[PostgresExperimentRegistryRepository] = None
         self._experiment_registry_audits: Optional[PostgresExperimentRegistryAuditRepository] = None
         self._learning_sessions: Optional[PostgresLearningSessionRepository] = None
@@ -251,6 +255,14 @@ class UnitOfWork:
         if self._experiment_exposures is None:
             self._experiment_exposures = PostgresExperimentExposureRepository(self.session)
         return self._experiment_exposures
+
+    @property
+    def experiment_outcome_attributions(self) -> PostgresExperimentOutcomeAttributionRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._experiment_outcome_attributions is None:
+            self._experiment_outcome_attributions = PostgresExperimentOutcomeAttributionRepository(self.session)
+        return self._experiment_outcome_attributions
 
     @property
     def experiment_registries(self) -> PostgresExperimentRegistryRepository:

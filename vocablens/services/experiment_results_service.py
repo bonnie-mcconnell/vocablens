@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from datetime import timedelta
 
-from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.report_models import (
     ExperimentComparison,
@@ -22,34 +20,28 @@ class ExperimentResultsService:
 
     async def results(self, experiment_key: str | None = None) -> ExperimentResultsReport:
         async with self._uow_factory() as uow:
-            assignments = await uow.experiment_assignments.list_all(experiment_key)
-            events = await uow.events.list_since(
-                utc_now() - timedelta(days=90),
-                event_types=[
-                    "session_started",
-                    "message_sent",
-                    "lesson_completed",
-                    "review_completed",
-                    "upgrade_clicked",
-                    "upgrade_completed",
-                    "subscription_upgraded",
-                ],
-                limit=50000,
-            )
+            attributions = await uow.experiment_outcome_attributions.list_all(experiment_key)
+            registries = await uow.experiment_registries.list_all()
             await uow.commit()
 
-        grouped = self._group_assignments(assignments)
-        user_events = self._group_events_by_user(events)
+        grouped = self._group_attributions(attributions)
+        baselines = {
+            str(registry.experiment_key): str(getattr(registry, "baseline_variant", "control") or "control")
+            for registry in registries
+        }
         experiments: list[ExperimentResult] = []
         for key, variant_rows in grouped.items():
             raw_variants = []
-            for variant, variant_assignments in sorted(variant_rows.items()):
+            baseline_variant = baselines.get(key, "control")
+            for variant, attribution_rows in sorted(
+                variant_rows.items(),
+                key=lambda item: (0 if item[0] == baseline_variant else 1, item[0]),
+            ):
                 raw_variants.append(
                     self._variant_metrics(
                         experiment_key=key,
                         variant=variant,
-                        assignments=variant_assignments,
-                        user_events=user_events,
+                        attributions=attribution_rows,
                     )
                 )
             experiments.append(
@@ -61,47 +53,19 @@ class ExperimentResultsService:
             )
         return ExperimentResultsReport(experiments=experiments)
 
-    def _group_assignments(self, assignments) -> dict[str, dict[str, list]]:
+    def _group_attributions(self, attributions) -> dict[str, dict[str, list]]:
         grouped: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
-        for assignment in assignments:
-            grouped[assignment.experiment_key][assignment.variant].append(assignment)
+        for attribution in attributions:
+            grouped[attribution.experiment_key][attribution.variant].append(attribution)
         return grouped
 
-    def _group_events_by_user(self, events) -> dict[int, list]:
-        grouped: dict[int, list] = defaultdict(list)
-        for event in events:
-            grouped[event.user_id].append(event)
-        for user_id in grouped:
-            grouped[user_id].sort(key=lambda item: item.created_at)
-        return grouped
-
-    def _variant_metrics(self, *, experiment_key: str, variant: str, assignments, user_events: dict[int, list]) -> dict:
-        user_count = len(assignments)
-        retained = 0
-        converted = 0
-        total_sessions = 0
-        total_messages = 0
-        total_learning_actions = 0
-
-        for assignment in assignments:
-            events = [
-                event for event in user_events.get(assignment.user_id, [])
-                if getattr(event, "created_at", None) is not None and event.created_at >= assignment.assigned_at
-            ]
-            if any(
-                event.event_type == "session_started"
-                and event.created_at >= assignment.assigned_at + timedelta(days=1)
-                for event in events
-            ):
-                retained += 1
-            if any(event.event_type in {"upgrade_completed", "subscription_upgraded"} for event in events):
-                converted += 1
-            total_sessions += sum(1 for event in events if event.event_type == "session_started")
-            total_messages += sum(1 for event in events if event.event_type == "message_sent")
-            total_learning_actions += sum(
-                1 for event in events if event.event_type in {"lesson_completed", "review_completed"}
-            )
-
+    def _variant_metrics(self, *, experiment_key: str, variant: str, attributions) -> dict:
+        user_count = len(attributions)
+        retained = sum(1 for row in attributions if bool(getattr(row, "retained_d1", False)))
+        converted = sum(1 for row in attributions if bool(getattr(row, "converted", False)))
+        total_sessions = sum(int(getattr(row, "session_count", 0) or 0) for row in attributions)
+        total_messages = sum(int(getattr(row, "message_count", 0) or 0) for row in attributions)
+        total_learning_actions = sum(int(getattr(row, "learning_action_count", 0) or 0) for row in attributions)
         denominator = max(1, user_count)
         return {
             "experiment_key": experiment_key,

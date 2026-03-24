@@ -17,6 +17,7 @@ from vocablens.services.decision_trace_service import DecisionTraceService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
+from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.experiment_registry_service import ExperimentRegistryService
@@ -77,7 +78,7 @@ async def get_learning_event_service(
 
 
 def get_event_service(uow_factory=Depends(get_uow_factory)) -> EventService:
-    return EventService(uow_factory)
+    return EventService(uow_factory, ExperimentAttributionService(uow_factory))
 
 
 def get_progress_service(uow_factory=Depends(get_uow_factory)) -> ProgressService:
@@ -112,7 +113,8 @@ async def get_experiment_service(
     uow_factory=Depends(get_uow_factory),
     learning_events=Depends(get_learning_event_service),
 ):
-    return ExperimentService(uow_factory, learning_events)
+    attribution = ExperimentAttributionService(uow_factory)
+    return ExperimentService(uow_factory, learning_events, attribution)
 
 
 def get_paywall_service(
@@ -316,12 +318,14 @@ def get_session_engine(
     gamification_service=Depends(get_gamification_service),
     event_service=Depends(get_event_service),
 ) -> SessionEngine:
+    attribution = ExperimentAttributionService(uow_factory)
     return SessionEngine(
         uow_factory,
         learning_engine,
         wow_engine,
         gamification_service,
         event_service,
+        attribution,
     )
 
 

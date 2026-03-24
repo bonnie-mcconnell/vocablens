@@ -10,6 +10,7 @@ from vocablens.core.time import utc_now
 from vocablens.domain.errors import ConflictError, NotFoundError
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
+from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.gamification_service import GamificationService
 from vocablens.services.learning_engine import LearningEngine, ReviewedKnowledge, SessionResult
 from vocablens.services.wow_engine import WowEngine
@@ -90,12 +91,14 @@ class SessionEngine:
         wow_engine: WowEngine,
         gamification_service: GamificationService | None = None,
         event_service: EventService | None = None,
+        experiment_attribution_service: ExperimentAttributionService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning_engine = learning_engine
         self._wow_engine = wow_engine
         self._gamification = gamification_service
         self._event_service = event_service
+        self._attribution = experiment_attribution_service
 
     async def start_session(self, user_id: int) -> dict[str, Any]:
         session = await self.build_session(user_id)
@@ -344,6 +347,13 @@ class SessionEngine:
                 reason="Evaluated the stored structured session and completed canonical state projection.",
             )
             await uow.commit()
+
+        if self._attribution is not None:
+            await self._attribution.record_event(
+                user_id=user_id,
+                event_type="lesson_completed",
+                occurred_at=now,
+            )
 
         return feedback
 

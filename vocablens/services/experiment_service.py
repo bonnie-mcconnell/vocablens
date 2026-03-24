@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.learning_event_service import LearningEventService
 
 
@@ -46,10 +47,12 @@ class ExperimentService:
         self,
         uow_factory: type[UnitOfWork],
         event_service: LearningEventService | None = None,
+        attribution_service: ExperimentAttributionService | None = None,
         experiments: dict[str, dict[str, int] | ExperimentDefinition] | None = None,
     ):
         self._uow_factory = uow_factory
         self._events = event_service
+        self._attribution = attribution_service or ExperimentAttributionService(uow_factory)
         source = experiments or {}
         self._experiment_overrides = {
             key: self._coerce_definition(key, definition)
@@ -81,6 +84,7 @@ class ExperimentService:
                     experiment_key=experiment_key,
                     variant=self._baseline_variant(definition),
                     assigned_at=assigned_at,
+                    assignment_reason="holdout",
                 )
                 if exposure_created and self._events:
                     await self._events.record(
@@ -100,6 +104,7 @@ class ExperimentService:
             experiment_key=experiment_key,
             variant=self._select_variant(user_id, definition),
             assigned_at=assigned_at,
+            assignment_reason="rollout",
         )
         if exposure_created and self._events:
             await self._events.record(
@@ -140,6 +145,7 @@ class ExperimentService:
         experiment_key: str,
         variant: str,
         assigned_at: datetime,
+        assignment_reason: str,
     ) -> tuple[str, bool]:
         try:
             async with self._uow_factory() as uow:
@@ -165,12 +171,20 @@ class ExperimentService:
                     )
                     exposure_created = True
                 await uow.commit()
+                await self._attribution.ensure_exposure(
+                    user_id=user_id,
+                    experiment_key=experiment_key,
+                    variant=assigned_variant,
+                    exposed_at=assigned_at,
+                    assignment_reason=assignment_reason,
+                )
                 return assigned_variant, exposure_created
         except IntegrityError:
             return await self._recover_assignment_and_exposure(
                 user_id=user_id,
                 experiment_key=experiment_key,
                 assigned_at=assigned_at,
+                assignment_reason=assignment_reason,
             )
 
     async def _recover_assignment_and_exposure(
@@ -179,6 +193,7 @@ class ExperimentService:
         user_id: int,
         experiment_key: str,
         assigned_at: datetime,
+        assignment_reason: str,
     ) -> tuple[str, bool]:
         async with self._uow_factory() as uow:
             assignment = await uow.experiment_assignments.get(user_id, experiment_key)
@@ -198,6 +213,13 @@ class ExperimentService:
                 except IntegrityError:
                     exposure_created = False
             await uow.commit()
+        await self._attribution.ensure_exposure(
+            user_id=user_id,
+            experiment_key=experiment_key,
+            variant=assignment.variant,
+            exposed_at=assigned_at,
+            assignment_reason=assignment_reason,
+        )
         return assignment.variant, exposure_created
 
     async def _get_definition(self, experiment_key: str) -> ExperimentDefinition:

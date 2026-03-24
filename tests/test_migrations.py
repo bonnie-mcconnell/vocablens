@@ -40,6 +40,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"learning_sessions", "learning_session_attempts"} <= tables
     assert "decision_traces" in tables
     assert "experiment_exposures" in tables
+    assert "experiment_outcome_attributions" in tables
     assert "experiment_registries" in tables
     assert "experiment_registry_audits" in tables
     assert {"user_monetization_states", "monetization_offer_events"} <= tables
@@ -127,6 +128,36 @@ def test_upgrade_downgrade_upgrade_round_trip():
 
     experiment_exposure_fks = inspector.get_foreign_keys("experiment_exposures")
     assert any(fk["referred_table"] == "users" for fk in experiment_exposure_fks)
+
+    experiment_outcome_indexes = {idx["name"] for idx in inspector.get_indexes("experiment_outcome_attributions")}
+    assert "idx_experiment_outcome_attributions_variant" in experiment_outcome_indexes
+    assert "idx_experiment_outcome_attributions_window_end" in experiment_outcome_indexes
+    assert "idx_experiment_outcome_attributions_conversion" in experiment_outcome_indexes
+
+    experiment_outcome_columns = {col["name"] for col in inspector.get_columns("experiment_outcome_attributions")}
+    assert {
+        "user_id",
+        "experiment_key",
+        "variant",
+        "assignment_reason",
+        "attribution_version",
+        "exposed_at",
+        "window_end_at",
+        "retained_d1",
+        "retained_d7",
+        "converted",
+        "first_conversion_at",
+        "session_count",
+        "message_count",
+        "learning_action_count",
+        "upgrade_click_count",
+        "last_event_at",
+        "created_at",
+        "updated_at",
+    } <= experiment_outcome_columns
+
+    experiment_outcome_fks = inspector.get_foreign_keys("experiment_outcome_attributions")
+    assert any(fk["referred_table"] == "users" for fk in experiment_outcome_fks)
 
     experiment_registry_indexes = {idx["name"] for idx in inspector.get_indexes("experiment_registries")}
     assert "idx_experiment_registries_status" in experiment_registry_indexes
@@ -452,6 +483,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "learning_session_attempts" not in tables
     assert "decision_traces" not in tables
     assert "experiment_exposures" not in tables
+    assert "experiment_outcome_attributions" not in tables
     assert "experiment_registries" not in tables
     assert "experiment_registry_audits" not in tables
     assert "user_monetization_states" not in tables
@@ -473,6 +505,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"learning_sessions", "learning_session_attempts"} <= tables
     assert "decision_traces" in tables
     assert "experiment_exposures" in tables
+    assert "experiment_outcome_attributions" in tables
     assert "experiment_registries" in tables
     assert "experiment_registry_audits" in tables
     assert {"user_monetization_states", "monetization_offer_events"} <= tables

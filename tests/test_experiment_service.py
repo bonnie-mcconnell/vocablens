@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 
 from tests.conftest import run_async
+from vocablens.core.time import utc_now
 from vocablens.services.experiment_service import ExperimentContext, ExperimentDefinition, ExperimentService, ExperimentVariant
 
 
@@ -63,10 +65,48 @@ class FakeRegistries:
         return None
 
 
+class FakeExperimentOutcomeAttributions:
+    def __init__(self):
+        self.rows = {}
+
+    async def get(self, user_id: int, experiment_key: str):
+        return self.rows.get((user_id, experiment_key))
+
+    async def create(
+        self,
+        *,
+        user_id: int,
+        experiment_key: str,
+        variant: str,
+        assignment_reason: str,
+        attribution_version: str,
+        exposed_at,
+        window_end_at,
+    ):
+        row = SimpleNamespace(
+            user_id=user_id,
+            experiment_key=experiment_key,
+            variant=variant,
+            assignment_reason=assignment_reason,
+            attribution_version=attribution_version,
+            exposed_at=exposed_at,
+            window_end_at=window_end_at,
+        )
+        self.rows[(user_id, experiment_key)] = row
+        return row
+
+    async def update(self, user_id: int, experiment_key: str, **kwargs):
+        row = self.rows[(user_id, experiment_key)]
+        for key, value in kwargs.items():
+            setattr(row, key, value)
+        return row
+
+
 class FakeUOW:
     def __init__(self, *, tier: str = "free", stage: str = "activating"):
         self.experiment_assignments = FakeAssignments()
         self.experiment_exposures = FakeExposures()
+        self.experiment_outcome_attributions = FakeExperimentOutcomeAttributions()
         self.subscriptions = FakeSubscriptions(tier)
         self.lifecycle_states = FakeLifecycleStates(stage)
         self.experiment_registries = FakeRegistries()
@@ -127,6 +167,7 @@ def test_experiment_service_persists_holdout_assignment_to_baseline():
 
     assert variant == "control"
     assert uow.experiment_assignments.rows[(user_id, "paywall_offer")].variant == "control"
+    assert uow.experiment_outcome_attributions.rows[(user_id, "paywall_offer")].assignment_reason == "holdout"
 
 
 def test_experiment_service_returns_baseline_without_persisting_when_context_is_ineligible():
@@ -176,3 +217,21 @@ def test_experiment_service_honors_mutual_exclusion_and_prerequisites():
 
     assert variant == "control"
     assert (5, "paywall_offer") not in uow.experiment_assignments.rows
+
+
+def test_experiment_service_seeds_canonical_outcome_attribution_on_exposure():
+    uow = FakeUOW()
+    service = ExperimentService(
+        lambda: uow,
+        experiments={
+            "paywall_offer": _definition(),
+        },
+    )
+
+    variant = run_async(service.assign(21, "paywall_offer"))
+
+    attribution = uow.experiment_outcome_attributions.rows[(21, "paywall_offer")]
+    assert attribution.variant == variant
+    assert attribution.assignment_reason == "rollout"
+    assert attribution.exposed_at <= utc_now()
+    assert attribution.window_end_at == attribution.exposed_at + timedelta(days=30)
