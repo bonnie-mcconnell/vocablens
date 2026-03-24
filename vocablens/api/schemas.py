@@ -518,6 +518,47 @@ class SubscriptionDiagnosticsResponse(BaseModel):
     created_at: datetime | None = None
 
 
+class MonetizationStateDiagnosticsResponse(BaseModel):
+    user_id: int
+    current_offer_type: str | None = None
+    last_paywall_type: str | None = None
+    last_paywall_reason: str | None = None
+    current_strategy: str | None = None
+    current_geography: str | None = None
+    lifecycle_stage: str | None = None
+    paywall_impressions: int = 0
+    paywall_dismissals: int = 0
+    paywall_acceptances: int = 0
+    paywall_skips: int = 0
+    fatigue_score: int = 0
+    cooldown_until: datetime | None = None
+    trial_eligible: bool = True
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    trial_offer_days: int | None = None
+    conversion_propensity: float = 0.0
+    last_offer_at: datetime | None = None
+    last_impression_at: datetime | None = None
+    last_dismissed_at: datetime | None = None
+    last_accepted_at: datetime | None = None
+    last_skipped_at: datetime | None = None
+    last_pricing: dict[str, Any] = Field(default_factory=dict)
+    last_trigger: dict[str, Any] = Field(default_factory=dict)
+    last_value_display: dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime | None = None
+
+
+class MonetizationOfferEventDiagnosticsResponse(BaseModel):
+    id: int
+    event_type: str
+    offer_type: str | None = None
+    paywall_type: str | None = None
+    strategy: str | None = None
+    geography: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
 class RetentionSuggestedActionResponse(BaseModel):
     kind: str
     reason: str
@@ -661,11 +702,13 @@ class MonetizationDiagnosticsDataResponse(BaseModel):
     progress_state: UserProgressStateDiagnosticsResponse | None = None
     profile: UserProfileDiagnosticsResponse | None = None
     subscription: SubscriptionDiagnosticsResponse | None = None
+    monetization_state: MonetizationStateDiagnosticsResponse | None = None
     experiments: dict[str, str] = Field(default_factory=dict)
     retention: RetentionDiagnosticsResponse
     lifecycle: LifecycleDecisionDiagnosticsResponse
     adaptive_paywall: AdaptivePaywallDiagnosticsResponse
     monetization: MonetizationDecisionDiagnosticsResponse
+    monetization_events: list[MonetizationOfferEventDiagnosticsResponse] = Field(default_factory=list)
     events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
     traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
 

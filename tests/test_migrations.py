@@ -42,6 +42,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_exposures" in tables
     assert "experiment_registries" in tables
     assert "experiment_registry_audits" in tables
+    assert {"user_monetization_states", "monetization_offer_events"} <= tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -159,6 +160,49 @@ def test_upgrade_downgrade_upgrade_round_trip():
 
     experiment_registry_audit_fks = inspector.get_foreign_keys("experiment_registry_audits")
     assert any(fk["referred_table"] == "experiment_registries" for fk in experiment_registry_audit_fks)
+
+    monetization_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_monetization_states")}
+    assert "idx_user_monetization_states_user" in monetization_state_indexes
+    assert "idx_user_monetization_states_updated_at" in monetization_state_indexes
+    assert "idx_user_monetization_states_cooldown_until" in monetization_state_indexes
+    monetization_state_columns = {col["name"] for col in inspector.get_columns("user_monetization_states")}
+    assert {
+        "user_id",
+        "current_offer_type",
+        "last_paywall_type",
+        "paywall_impressions",
+        "paywall_dismissals",
+        "paywall_acceptances",
+        "paywall_skips",
+        "fatigue_score",
+        "cooldown_until",
+        "trial_eligible",
+        "conversion_propensity",
+        "last_pricing",
+        "last_trigger",
+        "last_value_display",
+        "updated_at",
+    } <= monetization_state_columns
+    monetization_state_fks = inspector.get_foreign_keys("user_monetization_states")
+    assert any(fk["referred_table"] == "users" for fk in monetization_state_fks)
+
+    monetization_event_indexes = {idx["name"] for idx in inspector.get_indexes("monetization_offer_events")}
+    assert "idx_monetization_offer_events_user" in monetization_event_indexes
+    assert "idx_monetization_offer_events_type" in monetization_event_indexes
+    assert "idx_monetization_offer_events_offer" in monetization_event_indexes
+    monetization_event_columns = {col["name"] for col in inspector.get_columns("monetization_offer_events")}
+    assert {
+        "user_id",
+        "event_type",
+        "offer_type",
+        "paywall_type",
+        "strategy",
+        "geography",
+        "payload",
+        "created_at",
+    } <= monetization_event_columns
+    monetization_event_fks = inspector.get_foreign_keys("monetization_offer_events")
+    assert any(fk["referred_table"] == "users" for fk in monetization_event_fks)
 
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
@@ -318,6 +362,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_exposures" not in tables
     assert "experiment_registries" not in tables
     assert "experiment_registry_audits" not in tables
+    assert "user_monetization_states" not in tables
+    assert "monetization_offer_events" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -333,6 +379,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_exposures" in tables
     assert "experiment_registries" in tables
     assert "experiment_registry_audits" in tables
+    assert {"user_monetization_states", "monetization_offer_events"} <= tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

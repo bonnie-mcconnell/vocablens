@@ -64,6 +64,8 @@ class FakeUOW:
         self.engagement_states = FakeStateRepo(engagement_state)
         self.progress_states = FakeStateRepo(progress_state)
         self.decision_traces = FakeDecisionTraces()
+        self.monetization_states = FakeMonetizationStates()
+        self.monetization_offer_events = FakeMonetizationOfferEvents()
 
     async def __aenter__(self):
         return self
@@ -81,6 +83,35 @@ class FakeDecisionTraces:
 
     async def create(self, **kwargs):
         self.created.append(kwargs)
+        return SimpleNamespace(**kwargs)
+
+
+class FakeMonetizationStates:
+    def __init__(self):
+        self.row = SimpleNamespace(
+            trial_eligible=True,
+            fatigue_score=0,
+            trial_started_at=None,
+            trial_ends_at=None,
+        )
+        self.updated = []
+
+    async def get_or_create(self, user_id: int):
+        return self.row
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self.row, key, value)
+        self.updated.append(kwargs)
+        return self.row
+
+
+class FakeMonetizationOfferEvents:
+    def __init__(self):
+        self.recorded = []
+
+    async def record(self, **kwargs):
+        self.recorded.append(kwargs)
         return SimpleNamespace(**kwargs)
 
 
@@ -160,6 +191,8 @@ def test_monetization_engine_adjusts_pricing_by_geography_and_engagement():
     assert engaged.pricing.annual_savings_percent == 20
     assert engaged_uow.decision_traces.created[0]["trace_type"] == "monetization_decision"
     assert engaged_uow.decision_traces.created[0]["reference_id"] == "monetization:1"
+    assert engaged_uow.monetization_states.updated[0]["current_offer_type"] == "annual_anchor"
+    assert engaged_uow.monetization_offer_events.recorded[0]["event_type"] == "decision_evaluated"
     assert low_engagement.offer_type == "discount"
     assert low_engagement.pricing.monthly_price == 6.88
     assert low_engagement.pricing.discounted_monthly_price == 5.5

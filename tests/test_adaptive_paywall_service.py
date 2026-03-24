@@ -80,6 +80,8 @@ class FakeUOW:
         self.profiles = FakeProfilesRepo(
             profile or SimpleNamespace(drop_off_risk=0.2, session_frequency=3.0)
         )
+        self.monetization_states = FakeMonetizationStatesRepo()
+        self.monetization_offer_events = FakeMonetizationOfferEventsRepo()
 
     async def __aenter__(self):
         return self
@@ -108,6 +110,35 @@ class FakeEventTracker:
 
     async def track_event(self, user_id: int, event_type: str, payload: dict | None = None):
         self.calls.append((user_id, event_type, payload or {}))
+
+
+class FakeMonetizationStatesRepo:
+    def __init__(self):
+        self.row = SimpleNamespace(
+            trial_eligible=True,
+            fatigue_score=0,
+            trial_started_at=None,
+            trial_ends_at=None,
+        )
+        self.updated = []
+
+    async def get_or_create(self, user_id: int):
+        return self.row
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self.row, key, value)
+        self.updated.append(kwargs)
+        return self.row
+
+
+class FakeMonetizationOfferEventsRepo:
+    def __init__(self):
+        self.recorded = []
+
+    async def record(self, **kwargs):
+        self.recorded.append(kwargs)
+        return SimpleNamespace(**kwargs)
 
 
 def test_adaptive_paywall_service_is_more_aggressive_for_high_intent_users():
@@ -146,6 +177,8 @@ def test_adaptive_paywall_service_is_more_aggressive_for_high_intent_users():
     assert decision.trial_recommended is False
     assert tracker.calls[0][1] == "paywall_viewed"
     assert tracker.calls[0][2]["strategy"] == "high_intent:early:value_anchor"
+    assert uow.monetization_states.updated[0]["paywall_impressions"] == 1
+    assert uow.monetization_offer_events.recorded[0]["event_type"] == "paywall_impression"
 
 
 def test_adaptive_paywall_service_delays_paywall_for_low_engagement_users():

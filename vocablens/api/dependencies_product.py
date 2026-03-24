@@ -29,6 +29,7 @@ from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.monetization_engine import MonetizationEngine
+from vocablens.services.monetization_state_service import MonetizationStateService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.onboarding_flow_service import OnboardingFlowService
 from vocablens.services.onboarding_service import OnboardingService
@@ -98,6 +99,10 @@ def get_experiment_registry_service(uow_factory=Depends(get_uow_factory)) -> Exp
     return ExperimentRegistryService(uow_factory)
 
 
+def get_monetization_state_service(uow_factory=Depends(get_uow_factory)) -> MonetizationStateService:
+    return MonetizationStateService(uow_factory)
+
+
 async def get_experiment_service(
     uow_factory=Depends(get_uow_factory),
     learning_events=Depends(get_learning_event_service),
@@ -109,8 +114,14 @@ def get_paywall_service(
     uow_factory=Depends(get_uow_factory),
     event_service=Depends(get_event_service),
     experiment_service=Depends(get_experiment_service),
+    monetization_state_service=Depends(get_monetization_state_service),
 ) -> PaywallService:
-    return AdaptivePaywallService(uow_factory, event_service, experiment_service)
+    return AdaptivePaywallService(
+        uow_factory,
+        event_service,
+        experiment_service,
+        monetization_state_service,
+    )
 
 
 def get_conversion_funnel_service(
@@ -142,8 +153,15 @@ def get_subscription_service(
     experiment_service=Depends(get_experiment_service),
     event_service=Depends(get_event_service),
     paywall_service=Depends(get_paywall_service),
+    monetization_state_service=Depends(get_monetization_state_service),
 ) -> SubscriptionService:
-    return SubscriptionService(uow_factory, experiment_service, event_service, paywall_service)
+    return SubscriptionService(
+        uow_factory,
+        experiment_service,
+        event_service,
+        paywall_service,
+        monetization_state_service,
+    )
 
 
 def get_retention_engine(
@@ -252,6 +270,7 @@ def get_monetization_engine(
     business_metrics_service=Depends(get_business_metrics_service),
     onboarding_flow_service=Depends(get_onboarding_flow_service),
     lifecycle_service=Depends(get_lifecycle_service),
+    monetization_state_service=Depends(get_monetization_state_service),
 ) -> MonetizationEngine:
     return MonetizationEngine(
         uow_factory,
@@ -259,6 +278,7 @@ def get_monetization_engine(
         business_metrics_service,
         onboarding_flow_service,
         lifecycle_service,
+        monetization_state_service,
     )
 
 

@@ -38,6 +38,8 @@ class FakeUOW:
     def __init__(self, subscription=None):
         self.subscriptions = FakeSubscriptionsRepo(subscription)
         self.subscription_events = FakeSubscriptionEventsRepo()
+        self.monetization_states = FakeMonetizationStatesRepo()
+        self.monetization_offer_events = FakeMonetizationOfferEventsRepo()
 
     async def __aenter__(self):
         return self
@@ -47,6 +49,35 @@ class FakeUOW:
 
     async def commit(self):
         return None
+
+
+class FakeMonetizationStatesRepo:
+    def __init__(self):
+        self.row = SimpleNamespace(
+            trial_eligible=True,
+            fatigue_score=0,
+            trial_started_at=None,
+            trial_ends_at=None,
+        )
+        self.updated = []
+
+    async def get_or_create(self, user_id: int):
+        return self.row
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self.row, key, value)
+        self.updated.append(kwargs)
+        return self.row
+
+
+class FakeMonetizationOfferEventsRepo:
+    def __init__(self):
+        self.recorded = []
+
+    async def record(self, **kwargs):
+        self.recorded.append(kwargs)
+        return SimpleNamespace(**kwargs)
 
 
 def test_subscription_service_returns_tier_features_and_tracks_upgrade():
@@ -61,6 +92,8 @@ def test_subscription_service_returns_tier_features_and_tracks_upgrade():
     assert features.tutor_depth == "standard"
     assert upgraded.tier == "premium"
     assert metrics.counts_by_event["tier_upgraded"] == 1
+    assert uow.monetization_offer_events.recorded[0]["event_type"] == "upgrade_completed"
+    assert uow.monetization_states.updated[0]["paywall_acceptances"] == 1
 
 
 def test_subscription_service_records_feature_gate_metrics():

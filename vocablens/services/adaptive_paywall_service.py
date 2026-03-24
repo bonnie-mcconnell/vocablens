@@ -9,6 +9,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.adaptive_paywall_policy import AdaptivePaywallPolicy
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
+from vocablens.services.monetization_state_service import MonetizationStateService
 from vocablens.services.paywall_service import PaywallDecision, PaywallService
 from vocablens.services.report_models import (
     AdaptivePaywallConversionReport,
@@ -35,6 +36,7 @@ class AdaptivePaywallService(PaywallService):
         uow_factory: type[UnitOfWork],
         event_service: EventService | None = None,
         experiment_service: ExperimentService | None = None,
+        monetization_state_service: MonetizationStateService | None = None,
         *,
         session_trigger: int = 3,
         usage_soft_threshold: float = 0.8,
@@ -54,6 +56,7 @@ class AdaptivePaywallService(PaywallService):
         self._base_usage_soft_threshold = usage_soft_threshold
         self._base_usage_hard_threshold = usage_hard_threshold
         self._policy = AdaptivePaywallPolicy()
+        self._monetization_state = monetization_state_service or MonetizationStateService(uow_factory)
 
     async def evaluate(
         self,
@@ -210,10 +213,19 @@ class AdaptivePaywallService(PaywallService):
         )
 
         if adaptive.show_paywall and self._events:
+            payload = asdict(self._viewed_event_payload(adaptive))
             await self._events.track_event(
                 user_id,
                 "paywall_viewed",
-                asdict(self._viewed_event_payload(adaptive)),
+                payload,
+            )
+            await self._monetization_state.record_impression(
+                user_id=user_id,
+                offer_type="trial" if adaptive.trial_recommended else adaptive.paywall_type,
+                paywall_type=adaptive.paywall_type,
+                strategy=adaptive.strategy,
+                geography=None,
+                payload=payload,
             )
         return adaptive
 

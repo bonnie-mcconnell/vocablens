@@ -371,6 +371,73 @@ class ExperimentRegistryAuditORM(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class UserMonetizationStateORM(Base):
+    __tablename__ = "user_monetization_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_monetization_states_user_id"),
+        CheckConstraint("paywall_impressions >= 0", name="ck_user_monetization_states_impressions_nonnegative"),
+        CheckConstraint("paywall_dismissals >= 0", name="ck_user_monetization_states_dismissals_nonnegative"),
+        CheckConstraint("paywall_acceptances >= 0", name="ck_user_monetization_states_acceptances_nonnegative"),
+        CheckConstraint("paywall_skips >= 0", name="ck_user_monetization_states_skips_nonnegative"),
+        CheckConstraint("fatigue_score >= 0", name="ck_user_monetization_states_fatigue_nonnegative"),
+        CheckConstraint(
+            "conversion_propensity >= 0 AND conversion_propensity <= 1",
+            name="ck_user_monetization_states_conversion_propensity_range",
+        ),
+        Index("idx_user_monetization_states_user", "user_id"),
+        Index("idx_user_monetization_states_updated_at", "updated_at"),
+        Index("idx_user_monetization_states_cooldown_until", "cooldown_until"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    current_offer_type = Column(String)
+    last_paywall_type = Column(String)
+    last_paywall_reason = Column(Text)
+    current_strategy = Column(String)
+    current_geography = Column(String)
+    lifecycle_stage = Column(String)
+    paywall_impressions = Column(Integer, default=0, nullable=False)
+    paywall_dismissals = Column(Integer, default=0, nullable=False)
+    paywall_acceptances = Column(Integer, default=0, nullable=False)
+    paywall_skips = Column(Integer, default=0, nullable=False)
+    fatigue_score = Column(Integer, default=0, nullable=False)
+    cooldown_until = Column(DateTime)
+    trial_eligible = Column(Boolean, default=True, nullable=False)
+    trial_started_at = Column(DateTime)
+    trial_ends_at = Column(DateTime)
+    trial_offer_days = Column(Integer)
+    conversion_propensity = Column(Float, default=0.0, nullable=False)
+    last_offer_at = Column(DateTime)
+    last_impression_at = Column(DateTime)
+    last_dismissed_at = Column(DateTime)
+    last_accepted_at = Column(DateTime)
+    last_skipped_at = Column(DateTime)
+    last_pricing = Column(JSON, nullable=False, default=dict)
+    last_trigger = Column(JSON, nullable=False, default=dict)
+    last_value_display = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class MonetizationOfferEventORM(Base):
+    __tablename__ = "monetization_offer_events"
+    __table_args__ = (
+        Index("idx_monetization_offer_events_user", "user_id", "created_at"),
+        Index("idx_monetization_offer_events_type", "event_type", "created_at"),
+        Index("idx_monetization_offer_events_offer", "offer_type", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String, nullable=False)
+    offer_type = Column(String)
+    paywall_type = Column(String)
+    strategy = Column(String)
+    geography = Column(String)
+    payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class UserLearningStateORM(Base):
     __tablename__ = "user_learning_states"
     __table_args__ = (

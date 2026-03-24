@@ -12,6 +12,7 @@ from vocablens.infrastructure.db.models import (
     SubscriptionORM,
     UserEngagementStateORM,
     UserLearningStateORM,
+    UserMonetizationStateORM,
     UserProfileORM,
     UserProgressStateORM,
 )
@@ -214,11 +215,13 @@ class DecisionTraceService:
             "progress_state": self._progress_state_payload(snapshot["progress_state"]),
             "profile": self._profile_payload(snapshot["profile"]),
             "subscription": self._subscription_payload(snapshot["subscription"]),
+            "monetization_state": self._monetization_state_payload(snapshot["monetization_state"]),
             "experiments": snapshot["experiments"],
             "retention": retention,
             "lifecycle": lifecycle,
             "adaptive_paywall": paywall,
             "monetization": monetization,
+            "monetization_events": [self._monetization_event_payload(item) for item in snapshot["monetization_events"]],
             "events": relevant_events,
             "traces": relevant_traces,
         }
@@ -362,6 +365,10 @@ class DecisionTraceService:
                 uow,
                 select(SubscriptionORM).where(SubscriptionORM.user_id == user_id),
             )
+            monetization_state = await self._one_or_none(
+                uow,
+                select(UserMonetizationStateORM).where(UserMonetizationStateORM.user_id == user_id),
+            )
             onboarding_state = await self._one_or_none(
                 uow,
                 select(OnboardingFlowStateORM).where(OnboardingFlowStateORM.user_id == user_id),
@@ -370,6 +377,7 @@ class DecisionTraceService:
                 uow,
                 select(ExperimentAssignmentORM).where(ExperimentAssignmentORM.user_id == user_id),
             )
+            monetization_events = await uow.monetization_offer_events.list_by_user(user_id, limit=100)
             used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
             await uow.commit()
 
@@ -388,8 +396,10 @@ class DecisionTraceService:
             "progress_state": progress_state,
             "profile": profile,
             "subscription": subscription,
+            "monetization_state": monetization_state,
             "onboarding_state": onboarding_state,
             "experiments": experiments,
+            "monetization_events": monetization_events,
             "used_requests": used_requests,
             "used_tokens": used_tokens,
         }
@@ -824,6 +834,51 @@ class DecisionTraceService:
             "trial_started_at": self._timestamp(row.trial_started_at),
             "trial_ends_at": self._timestamp(row.trial_ends_at),
             "trial_tier": row.trial_tier,
+            "created_at": self._timestamp(row.created_at),
+        }
+
+    def _monetization_state_payload(self, row) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        return {
+            "user_id": row.user_id,
+            "current_offer_type": row.current_offer_type,
+            "last_paywall_type": row.last_paywall_type,
+            "last_paywall_reason": row.last_paywall_reason,
+            "current_strategy": row.current_strategy,
+            "current_geography": row.current_geography,
+            "lifecycle_stage": row.lifecycle_stage,
+            "paywall_impressions": int(row.paywall_impressions or 0),
+            "paywall_dismissals": int(row.paywall_dismissals or 0),
+            "paywall_acceptances": int(row.paywall_acceptances or 0),
+            "paywall_skips": int(row.paywall_skips or 0),
+            "fatigue_score": int(row.fatigue_score or 0),
+            "cooldown_until": self._timestamp(row.cooldown_until),
+            "trial_eligible": bool(row.trial_eligible),
+            "trial_started_at": self._timestamp(row.trial_started_at),
+            "trial_ends_at": self._timestamp(row.trial_ends_at),
+            "trial_offer_days": row.trial_offer_days,
+            "conversion_propensity": float(row.conversion_propensity or 0.0),
+            "last_offer_at": self._timestamp(row.last_offer_at),
+            "last_impression_at": self._timestamp(row.last_impression_at),
+            "last_dismissed_at": self._timestamp(row.last_dismissed_at),
+            "last_accepted_at": self._timestamp(row.last_accepted_at),
+            "last_skipped_at": self._timestamp(row.last_skipped_at),
+            "last_pricing": dict(row.last_pricing or {}),
+            "last_trigger": dict(row.last_trigger or {}),
+            "last_value_display": dict(row.last_value_display or {}),
+            "updated_at": self._timestamp(row.updated_at),
+        }
+
+    def _monetization_event_payload(self, row) -> dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "event_type": str(row.event_type),
+            "offer_type": row.offer_type,
+            "paywall_type": row.paywall_type,
+            "strategy": row.strategy,
+            "geography": row.geography,
+            "payload": dict(row.payload or {}),
             "created_at": self._timestamp(row.created_at),
         }
 

@@ -136,6 +136,27 @@ class ExperimentRegistryAuditRepository(Protocol):
     async def latest_for_experiment(self, experiment_key: str) -> Optional[Any]: ...
 
 
+class UserMonetizationStateRepository(Protocol):
+    async def get_or_create(self, user_id: int) -> Any: ...
+    async def update(self, user_id: int, **kwargs) -> Any: ...
+
+
+class MonetizationOfferEventRepository(Protocol):
+    async def record(
+        self,
+        *,
+        user_id: int,
+        event_type: str,
+        offer_type: str | None,
+        paywall_type: str | None,
+        strategy: str | None,
+        geography: str | None,
+        payload: Dict[str, Any],
+        created_at: datetime | None = None,
+    ) -> Any: ...
+    async def list_by_user(self, user_id: int, limit: int = 100) -> List[Any]: ...
+
+
 class UserLearningStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> UserLearningState: ...
     async def update(

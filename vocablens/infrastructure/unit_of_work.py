@@ -37,6 +37,12 @@ from vocablens.infrastructure.postgres_user_progress_state_repository import Pos
 from vocablens.infrastructure.postgres_onboarding_flow_state_repository import (
     PostgresOnboardingFlowStateRepository,
 )
+from vocablens.infrastructure.postgres_user_monetization_state_repository import (
+    PostgresUserMonetizationStateRepository,
+)
+from vocablens.infrastructure.postgres_monetization_offer_event_repository import (
+    PostgresMonetizationOfferEventRepository,
+)
 
 
 class UnitOfWork:
@@ -72,6 +78,8 @@ class UnitOfWork:
         self._engagement_states: Optional[PostgresUserEngagementStateRepository] = None
         self._progress_states: Optional[PostgresUserProgressStateRepository] = None
         self._onboarding_states: Optional[PostgresOnboardingFlowStateRepository] = None
+        self._monetization_states: Optional[PostgresUserMonetizationStateRepository] = None
+        self._monetization_offer_events: Optional[PostgresMonetizationOfferEventRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -283,6 +291,22 @@ class UnitOfWork:
         if self._onboarding_states is None:
             self._onboarding_states = PostgresOnboardingFlowStateRepository(self.session)
         return self._onboarding_states
+
+    @property
+    def monetization_states(self) -> PostgresUserMonetizationStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._monetization_states is None:
+            self._monetization_states = PostgresUserMonetizationStateRepository(self.session)
+        return self._monetization_states
+
+    @property
+    def monetization_offer_events(self) -> PostgresMonetizationOfferEventRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._monetization_offer_events is None:
+            self._monetization_offer_events = PostgresMonetizationOfferEventRepository(self.session)
+        return self._monetization_offer_events
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

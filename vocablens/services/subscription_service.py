@@ -4,6 +4,7 @@ from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
+from vocablens.services.monetization_state_service import MonetizationStateService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.report_models import ConversionMetrics
 
@@ -60,11 +61,13 @@ class SubscriptionService:
         experiment_service: ExperimentService | None = None,
         event_service: EventService | None = None,
         paywall_service: PaywallService | None = None,
+        monetization_state_service: MonetizationStateService | None = None,
     ):
         self._uow_factory = uow_factory
         self._experiments = experiment_service
         self._event_service = event_service
         self._paywall_service = paywall_service
+        self._monetization_state = monetization_state_service or MonetizationStateService(uow_factory)
 
     async def get_features(self, user_id: int) -> SubscriptionFeatures:
         async with self._uow_factory() as uow:
@@ -138,6 +141,7 @@ class SubscriptionService:
 
     async def upgrade_tier(self, user_id: int, tier: str) -> SubscriptionFeatures:
         target = TIER_FEATURES[tier]
+        features_before = await self.get_features(user_id)
         async with self._uow_factory() as uow:
             current = await uow.subscriptions.get_by_user(user_id)
             from_tier = current.tier if current else "free"
@@ -167,16 +171,46 @@ class SubscriptionService:
                 tier=tier,
                 source="subscription_service.upgrade_tier",
             )
+        await self._monetization_state.mark_upgrade_completed(
+            user_id=user_id,
+            offer_type=features_before.paywall_variant or features_before.paywall_type,
+            paywall_type=features_before.paywall_type,
+            strategy=None,
+            geography=None,
+            tier=tier,
+        )
         return target
 
     async def start_trial(self, user_id: int, duration_days: int | None = None) -> SubscriptionFeatures:
+        features_before = await self.get_features(user_id)
         if self._paywall_service:
             await self._paywall_service.start_trial(user_id, duration_days)
-        return await self.get_features(user_id)
+        features = await self.get_features(user_id)
+        await self._monetization_state.mark_trial_started(
+            user_id=user_id,
+            offer_type=features_before.paywall_variant or "trial",
+            paywall_type=features_before.paywall_type,
+            strategy=None,
+            geography=None,
+            trial_started_at=utc_now(),
+            trial_ends_at=features.trial_ends_at,
+            trial_days=duration_days,
+        )
+        return features
 
     async def register_upgrade_click(self, user_id: int, *, source: str) -> None:
         if self._paywall_service:
             await self._paywall_service.register_upgrade_click(user_id, source=source)
+        features = await self.get_features(user_id)
+        await self._monetization_state.record_response(
+            user_id=user_id,
+            event_type="paywall_accepted",
+            offer_type=features.paywall_variant or features.paywall_type,
+            paywall_type=features.paywall_type,
+            strategy=None,
+            geography=None,
+            payload={"source": source},
+        )
 
     async def conversion_metrics(self) -> ConversionMetrics:
         async with self._uow_factory() as uow:

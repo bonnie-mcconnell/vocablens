@@ -587,6 +587,35 @@ class FakeDecisionTraceService:
                 "trial_tier": None,
                 "created_at": "2026-03-20T10:00:00",
             },
+            "monetization_state": {
+                "user_id": user_id,
+                "current_offer_type": "trial",
+                "last_paywall_type": "soft_paywall",
+                "last_paywall_reason": "wow moment reached",
+                "current_strategy": "high_intent:early:premium_anchor:trial:us",
+                "current_geography": geography or "global",
+                "lifecycle_stage": "activating",
+                "paywall_impressions": 1,
+                "paywall_dismissals": 0,
+                "paywall_acceptances": 0,
+                "paywall_skips": 0,
+                "fatigue_score": 1,
+                "cooldown_until": "2026-03-24T18:00:00",
+                "trial_eligible": True,
+                "trial_started_at": None,
+                "trial_ends_at": None,
+                "trial_offer_days": 5,
+                "conversion_propensity": 0.42,
+                "last_offer_at": "2026-03-23T12:01:10",
+                "last_impression_at": "2026-03-23T12:01:00",
+                "last_dismissed_at": None,
+                "last_accepted_at": None,
+                "last_skipped_at": None,
+                "last_pricing": {"monthly_price": 20.0},
+                "last_trigger": {"trigger_reason": "wow moment reached"},
+                "last_value_display": {"locked_progress_percent": 41},
+                "updated_at": "2026-03-23T12:01:10",
+            },
             "experiments": {
                 "paywall_trigger_timing": "early",
                 "paywall_pricing_messaging": "premium_anchor",
@@ -677,6 +706,18 @@ class FakeDecisionTraceService:
                     "event_type": "paywall_viewed",
                     "payload": {"strategy": "high_intent:early:premium_anchor"},
                     "created_at": "2026-03-23T12:01:00",
+                }
+            ],
+            "monetization_events": [
+                {
+                    "id": 51,
+                    "event_type": "decision_evaluated",
+                    "offer_type": "trial",
+                    "paywall_type": "soft_paywall",
+                    "strategy": "high_intent:early:premium_anchor:trial:us",
+                    "geography": geography or "global",
+                    "payload": {"show_paywall": True, "trial_days": 5},
+                    "created_at": "2026-03-23T12:01:10",
                 }
             ],
             "traces": [
@@ -853,6 +894,8 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert monetization.json()["meta"]["geography"] == "us"
     assert monetization.json()["data"]["monetization"]["offer_type"] == "trial"
     assert monetization.json()["data"]["monetization"]["pricing"]["geography"] == "us"
+    assert monetization.json()["data"]["monetization_state"]["current_offer_type"] == "trial"
+    assert monetization.json()["data"]["monetization_events"][0]["event_type"] == "decision_evaluated"
     assert monetization.json()["data"]["experiments"]["paywall_trigger_timing"] == "early"
     assert monetization.json()["data"]["traces"][0]["trace_type"] == "monetization_decision"
 

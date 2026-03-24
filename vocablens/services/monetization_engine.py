@@ -7,6 +7,7 @@ from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
 from vocablens.services.business_metrics_service import BusinessMetricsService
 from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.monetization_policy import MonetizationPolicy
+from vocablens.services.monetization_state_service import MonetizationStateService
 from vocablens.services.onboarding_flow_service import OnboardingFlowService
 from vocablens.services.report_models import (
     MonetizationPricing,
@@ -41,6 +42,7 @@ class MonetizationEngine:
         business_metrics_service: BusinessMetricsService,
         onboarding_flow_service: OnboardingFlowService,
         lifecycle_service: LifecycleService,
+        monetization_state_service: MonetizationStateService | None = None,
     ):
         self._uow_factory = uow_factory
         self._paywall = paywall_service
@@ -48,6 +50,7 @@ class MonetizationEngine:
         self._onboarding_flow = onboarding_flow_service
         self._lifecycle = lifecycle_service
         self._policy = MonetizationPolicy()
+        self._state_service = monetization_state_service or MonetizationStateService(uow_factory)
 
     async def evaluate(
         self,
@@ -120,6 +123,11 @@ class MonetizationEngine:
             engagement_state=engagement_state,
             progress_state=progress_state,
             decision=decision,
+        )
+        await self._state_service.sync_decision(
+            user_id=user_id,
+            decision=decision,
+            geography=geography_code,
         )
         return decision
 
