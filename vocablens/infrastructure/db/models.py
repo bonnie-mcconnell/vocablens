@@ -438,6 +438,61 @@ class MonetizationOfferEventORM(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class DailyMissionORM(Base):
+    __tablename__ = "daily_missions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "mission_date", name="uq_daily_missions_user_date"),
+        CheckConstraint("mission_max_sessions >= 1", name="ck_daily_missions_max_sessions_positive"),
+        CheckConstraint(
+            "status IN ('issued', 'completed', 'expired', 'cancelled')",
+            name="ck_daily_missions_status_valid",
+        ),
+        Index("idx_daily_missions_user_date", "user_id", "mission_date"),
+        Index("idx_daily_missions_status", "status", "mission_date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mission_date = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="issued")
+    weak_area = Column(String, nullable=False)
+    mission_max_sessions = Column(Integer, nullable=False)
+    steps = Column(JSON, nullable=False, default=list)
+    loss_aversion_message = Column(Text, nullable=False)
+    streak_at_issue = Column(Integer, nullable=False, default=0)
+    momentum_score = Column(Float, nullable=False, default=0.0)
+    notification_preview = Column(JSON, nullable=False, default=dict)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class RewardChestORM(Base):
+    __tablename__ = "reward_chests"
+    __table_args__ = (
+        UniqueConstraint("mission_id", name="uq_reward_chests_mission_id"),
+        CheckConstraint(
+            "status IN ('locked', 'unlocked', 'claimed', 'expired')",
+            name="ck_reward_chests_status_valid",
+        ),
+        CheckConstraint("xp_reward >= 0", name="ck_reward_chests_xp_reward_nonnegative"),
+        Index("idx_reward_chests_user_status", "user_id", "status"),
+        Index("idx_reward_chests_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mission_id = Column(Integer, ForeignKey("daily_missions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    status = Column(String, nullable=False, default="locked")
+    xp_reward = Column(Integer, nullable=False, default=25)
+    badge_hint = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    unlocked_at = Column(DateTime)
+    claimed_at = Column(DateTime)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class UserLearningStateORM(Base):
     __tablename__ = "user_learning_states"
     __table_args__ = (

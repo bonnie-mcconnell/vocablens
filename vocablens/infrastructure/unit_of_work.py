@@ -43,6 +43,12 @@ from vocablens.infrastructure.postgres_user_monetization_state_repository import
 from vocablens.infrastructure.postgres_monetization_offer_event_repository import (
     PostgresMonetizationOfferEventRepository,
 )
+from vocablens.infrastructure.postgres_daily_mission_repository import (
+    PostgresDailyMissionRepository,
+)
+from vocablens.infrastructure.postgres_reward_chest_repository import (
+    PostgresRewardChestRepository,
+)
 
 
 class UnitOfWork:
@@ -80,6 +86,8 @@ class UnitOfWork:
         self._onboarding_states: Optional[PostgresOnboardingFlowStateRepository] = None
         self._monetization_states: Optional[PostgresUserMonetizationStateRepository] = None
         self._monetization_offer_events: Optional[PostgresMonetizationOfferEventRepository] = None
+        self._daily_missions: Optional[PostgresDailyMissionRepository] = None
+        self._reward_chests: Optional[PostgresRewardChestRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -307,6 +315,22 @@ class UnitOfWork:
         if self._monetization_offer_events is None:
             self._monetization_offer_events = PostgresMonetizationOfferEventRepository(self.session)
         return self._monetization_offer_events
+
+    @property
+    def daily_missions(self) -> PostgresDailyMissionRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._daily_missions is None:
+            self._daily_missions = PostgresDailyMissionRepository(self.session)
+        return self._daily_missions
+
+    @property
+    def reward_chests(self) -> PostgresRewardChestRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._reward_chests is None:
+            self._reward_chests = PostgresRewardChestRepository(self.session)
+        return self._reward_chests
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

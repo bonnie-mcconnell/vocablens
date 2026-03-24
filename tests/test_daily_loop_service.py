@@ -12,6 +12,16 @@ class FakeUOW:
         self.learning_states = SimpleNamespace(get_or_create=self._get_learning_state, update=self._update_engagement_passthrough)
         self.engagement_states = SimpleNamespace(get_or_create=self._get_engagement_state, update=self._update_engagement_state)
         self.progress_states = SimpleNamespace(get_or_create=self._get_progress_state, update=self._update_progress_state)
+        self.daily_missions = SimpleNamespace(
+            get_by_user_date=self._get_daily_mission_by_user_date,
+            create=self._create_daily_mission,
+            mark_completed=self._mark_daily_mission_completed,
+        )
+        self.reward_chests = SimpleNamespace(
+            get_by_mission_id=self._get_reward_chest_by_mission_id,
+            create=self._create_reward_chest,
+            mark_unlocked=self._mark_reward_chest_unlocked,
+        )
         self._due_items = due_items or []
         self._profile = profile or SimpleNamespace(current_streak=4)
         self._learning_state = learning_state or SimpleNamespace(weak_areas=["vocabulary"])
@@ -26,6 +36,8 @@ class FakeUOW:
             updated_at=utc_now(),
         )
         self._progress_state = progress_state or SimpleNamespace(xp=120, level=1, milestones=[], updated_at=utc_now())
+        self._daily_mission = None
+        self._reward_chest = None
 
     async def __aenter__(self):
         return self
@@ -60,6 +72,32 @@ class FakeUOW:
 
     async def _update_engagement_passthrough(self, user_id: int, **kwargs):
         return self._learning_state
+
+    async def _get_daily_mission_by_user_date(self, user_id: int, mission_date: str):
+        if self._daily_mission and self._daily_mission.user_id == user_id and self._daily_mission.mission_date == mission_date:
+            return self._daily_mission
+        return None
+
+    async def _create_daily_mission(self, **kwargs):
+        self._daily_mission = SimpleNamespace(id=1, status="issued", completed_at=None, created_at=utc_now(), updated_at=utc_now(), **kwargs)
+        return self._daily_mission
+
+    async def _mark_daily_mission_completed(self, mission_id: int, *, completed_at):
+        self._daily_mission.status = "completed"
+        self._daily_mission.completed_at = completed_at
+        return self._daily_mission
+
+    async def _get_reward_chest_by_mission_id(self, mission_id: int):
+        return self._reward_chest
+
+    async def _create_reward_chest(self, **kwargs):
+        self._reward_chest = SimpleNamespace(id=1, status="locked", unlocked_at=None, created_at=utc_now(), updated_at=utc_now(), **kwargs)
+        return self._reward_chest
+
+    async def _mark_reward_chest_unlocked(self, chest_id: int, *, unlocked_at):
+        self._reward_chest.status = "unlocked"
+        self._reward_chest.unlocked_at = unlocked_at
+        return self._reward_chest
 
 
 class FakeLearningEngine:
@@ -161,6 +199,8 @@ def test_daily_loop_service_always_generates_a_mission():
     assert plan.mission[0].target == "travel"
     assert plan.notification_preview["should_send"] is True
     assert plan.reward_preview["badge_hint"] == "Accuracy Ace"
+    assert service._uow_factory()._daily_mission is not None
+    assert service._uow_factory()._reward_chest is not None
 
 
 def test_daily_loop_service_skip_shield_updates_correctly():
@@ -208,6 +248,7 @@ def test_daily_loop_service_rewards_trigger_after_completion():
         event_service,
     )
 
+    run_async(service.build_daily_loop(1))
     result = run_async(service.complete_daily_mission(1))
 
     assert result.completed is True
@@ -217,3 +258,60 @@ def test_daily_loop_service_rewards_trigger_after_completion():
     assert "daily_mission_completed" in emitted_types
     assert "reward_chest_unlocked" in emitted_types
     assert retention.recorded[0][0] == 1
+
+
+def test_daily_loop_service_reuses_existing_mission_for_same_day():
+    recommendation = SimpleNamespace(
+        action="learn_new_word",
+        target="travel",
+        reason="Weak cluster",
+        lesson_difficulty="medium",
+        skill_focus="vocabulary",
+    )
+    uow = FakeUOW(
+        due_items=[SimpleNamespace(source_text="hola")],
+        learning_state=SimpleNamespace(weak_areas=["travel"]),
+    )
+    service = DailyLoopService(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeGamificationService(),
+        FakeNotificationEngine(),
+        FakeRetentionEngine(drop_off_risk=0.2),
+        FakeEventService(),
+    )
+
+    first = run_async(service.build_daily_loop(1))
+    second = run_async(service.build_daily_loop(1))
+
+    assert first.date == second.date
+    assert first.mission[0].target == second.mission[0].target
+    assert uow._daily_mission.id == 1
+
+
+def test_daily_loop_completion_is_idempotent_after_first_unlock():
+    recommendation = SimpleNamespace(
+        action="practice_grammar",
+        target="grammar",
+        reason="Grammar weak",
+        lesson_difficulty="medium",
+        skill_focus="grammar",
+    )
+    retention = FakeRetentionEngine(streak=6)
+    uow = FakeUOW()
+    service = DailyLoopService(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeGamificationService(streak=6, xp=200),
+        FakeNotificationEngine(),
+        retention,
+        FakeEventService(),
+    )
+
+    run_async(service.build_daily_loop(1))
+    first = run_async(service.complete_daily_mission(1))
+    second = run_async(service.complete_daily_mission(1))
+
+    assert first.reward_chest_unlocked is True
+    assert second.reward_chest_unlocked is True
+    assert second.completed is True

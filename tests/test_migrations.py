@@ -43,6 +43,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_registries" in tables
     assert "experiment_registry_audits" in tables
     assert {"user_monetization_states", "monetization_offer_events"} <= tables
+    assert {"daily_missions", "reward_chests"} <= tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -204,6 +205,48 @@ def test_upgrade_downgrade_upgrade_round_trip():
     monetization_event_fks = inspector.get_foreign_keys("monetization_offer_events")
     assert any(fk["referred_table"] == "users" for fk in monetization_event_fks)
 
+    daily_mission_indexes = {idx["name"] for idx in inspector.get_indexes("daily_missions")}
+    assert "idx_daily_missions_user_date" in daily_mission_indexes
+    assert "idx_daily_missions_status" in daily_mission_indexes
+    daily_mission_columns = {col["name"] for col in inspector.get_columns("daily_missions")}
+    assert {
+        "user_id",
+        "mission_date",
+        "status",
+        "weak_area",
+        "mission_max_sessions",
+        "steps",
+        "loss_aversion_message",
+        "streak_at_issue",
+        "momentum_score",
+        "notification_preview",
+        "completed_at",
+        "created_at",
+        "updated_at",
+    } <= daily_mission_columns
+    daily_mission_fks = inspector.get_foreign_keys("daily_missions")
+    assert any(fk["referred_table"] == "users" for fk in daily_mission_fks)
+
+    reward_chest_indexes = {idx["name"] for idx in inspector.get_indexes("reward_chests")}
+    assert "idx_reward_chests_user_status" in reward_chest_indexes
+    assert "idx_reward_chests_created_at" in reward_chest_indexes
+    reward_chest_columns = {col["name"] for col in inspector.get_columns("reward_chests")}
+    assert {
+        "user_id",
+        "mission_id",
+        "status",
+        "xp_reward",
+        "badge_hint",
+        "payload",
+        "unlocked_at",
+        "claimed_at",
+        "created_at",
+        "updated_at",
+    } <= reward_chest_columns
+    reward_chest_fks = inspector.get_foreign_keys("reward_chests")
+    assert any(fk["referred_table"] == "users" for fk in reward_chest_fks)
+    assert any(fk["referred_table"] == "daily_missions" for fk in reward_chest_fks)
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -364,6 +407,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_registry_audits" not in tables
     assert "user_monetization_states" not in tables
     assert "monetization_offer_events" not in tables
+    assert "daily_missions" not in tables
+    assert "reward_chests" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -380,6 +425,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_registries" in tables
     assert "experiment_registry_audits" in tables
     assert {"user_monetization_states", "monetization_offer_events"} <= tables
+    assert {"daily_missions", "reward_chests"} <= tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

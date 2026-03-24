@@ -157,6 +157,38 @@ class MonetizationOfferEventRepository(Protocol):
     async def list_by_user(self, user_id: int, limit: int = 100) -> List[Any]: ...
 
 
+class DailyMissionRepository(Protocol):
+    async def get_by_user_date(self, user_id: int, mission_date: str) -> Optional[Any]: ...
+    async def create(
+        self,
+        *,
+        user_id: int,
+        mission_date: str,
+        weak_area: str,
+        mission_max_sessions: int,
+        steps: List[Dict[str, Any]],
+        loss_aversion_message: str,
+        streak_at_issue: int,
+        momentum_score: float,
+        notification_preview: Dict[str, Any],
+    ) -> Any: ...
+    async def mark_completed(self, mission_id: int, *, completed_at: datetime) -> Any: ...
+
+
+class RewardChestRepository(Protocol):
+    async def get_by_mission_id(self, mission_id: int) -> Optional[Any]: ...
+    async def create(
+        self,
+        *,
+        user_id: int,
+        mission_id: int,
+        xp_reward: int,
+        badge_hint: str,
+        payload: Dict[str, Any],
+    ) -> Any: ...
+    async def mark_unlocked(self, chest_id: int, *, unlocked_at: datetime) -> Any: ...
+
+
 class UserLearningStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> UserLearningState: ...
     async def update(
