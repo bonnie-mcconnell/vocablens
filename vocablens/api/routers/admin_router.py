@@ -13,6 +13,7 @@ from vocablens.api.dependencies import (
 )
 from vocablens.api.schemas import (
     ConversionMetricsResponse,
+    DailyLoopOperatorReportResponse,
     DecisionTraceDetailResponse,
     DecisionTraceListResponse,
     ExperimentRegistryAuditResponse,
@@ -343,6 +344,24 @@ def create_admin_router() -> APIRouter:
                 "source": "admin.monetization.report",
                 "user_id": user_id,
                 "geography": geography,
+            },
+        }
+
+    @router.get("/daily-loop/{user_id}/report", response_model=DailyLoopOperatorReportResponse)
+    async def daily_loop_report(
+        user_id: int,
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.daily_loop_report(user_id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.daily_loop.report",
+                "user_id": user_id,
             },
         }
 

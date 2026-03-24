@@ -922,6 +922,185 @@ class FakeDecisionTraceService:
             },
         }
 
+    async def daily_loop_report(self, user_id: int):
+        return {
+            "detail": {
+                "engagement_state": {
+                    "user_id": user_id,
+                    "current_streak": 5,
+                    "longest_streak": 7,
+                    "momentum_score": 0.88,
+                    "total_sessions": 12,
+                    "sessions_last_3_days": 5,
+                    "last_session_at": "2026-03-23T12:05:00",
+                    "shields_used_this_week": 1,
+                    "daily_mission_completed_at": "2026-03-23T12:07:00",
+                    "interaction_stats": {"lessons_completed": 9},
+                    "updated_at": "2026-03-23T12:07:00",
+                },
+                "progress_state": {
+                    "user_id": user_id,
+                    "xp": 145,
+                    "level": 4,
+                    "milestones": [1, 2, 3],
+                    "updated_at": "2026-03-23T12:07:00",
+                },
+                "retention": {
+                    "state": "active",
+                    "drop_off_risk": 0.12,
+                    "session_frequency": 4.1,
+                    "current_streak": 5,
+                    "longest_streak": 7,
+                    "last_active_at": "2026-03-23T12:05:00",
+                    "is_high_engagement": True,
+                    "suggested_actions": [],
+                },
+                "missions": [
+                    {
+                        "id": 11,
+                        "user_id": user_id,
+                        "mission_date": "2026-03-23",
+                        "status": "completed",
+                        "weak_area": "grammar",
+                        "mission_max_sessions": 3,
+                        "steps": [{"kind": "warmup"}],
+                        "loss_aversion_message": "Finish today to keep the streak clean.",
+                        "streak_at_issue": 5,
+                        "momentum_score": 0.88,
+                        "notification_preview": {"title": "Finish your mission"},
+                        "completed_at": "2026-03-23T12:07:00",
+                        "created_at": "2026-03-23T08:00:00",
+                        "updated_at": "2026-03-23T12:07:00",
+                    }
+                ],
+                "reward_chests": [
+                    {
+                        "id": 21,
+                        "user_id": user_id,
+                        "mission_id": 11,
+                        "status": "unlocked",
+                        "xp_reward": 25,
+                        "badge_hint": "Consistency",
+                        "payload": {"coins": 10},
+                        "unlocked_at": "2026-03-23T12:07:05",
+                        "claimed_at": None,
+                        "created_at": "2026-03-23T08:00:00",
+                        "updated_at": "2026-03-23T12:07:05",
+                    }
+                ],
+                "events": [
+                    {
+                        "id": 61,
+                        "event_type": "daily_mission_completed",
+                        "payload": {"mission_id": 11},
+                        "created_at": "2026-03-23T12:07:00",
+                    }
+                ],
+                "traces": [
+                    {
+                        "id": 12,
+                        "user_id": user_id,
+                        "trace_type": "daily_mission_generation",
+                        "source": "daily_loop_service.build_daily_loop",
+                        "reference_id": "daily_loop:2026-03-23",
+                        "policy_version": "v1",
+                        "inputs": {},
+                        "outputs": {"mission_id": 11},
+                        "reason": "Issued the daily mission from canonical loop state.",
+                        "created_at": "2026-03-23T08:00:00",
+                    },
+                    {
+                        "id": 13,
+                        "user_id": user_id,
+                        "trace_type": "reward_chest_resolution",
+                        "source": "daily_loop_service.complete_mission",
+                        "reference_id": "daily_loop:2026-03-23",
+                        "policy_version": "v1",
+                        "inputs": {},
+                        "outputs": {"reward_chest_id": 21, "status": "unlocked"},
+                        "reason": "Unlocked the reward chest after canonical mission completion.",
+                        "created_at": "2026-03-23T12:07:05",
+                    },
+                ],
+            },
+            "latest_decisions": {
+                "daily_mission_generation": {
+                    "id": 12,
+                    "user_id": user_id,
+                    "trace_type": "daily_mission_generation",
+                    "source": "daily_loop_service.build_daily_loop",
+                    "reference_id": "daily_loop:2026-03-23",
+                    "policy_version": "v1",
+                    "inputs": {},
+                    "outputs": {"mission_id": 11},
+                    "reason": "Issued the daily mission from canonical loop state.",
+                    "created_at": "2026-03-23T08:00:00",
+                },
+                "reward_chest_resolution": {
+                    "id": 13,
+                    "user_id": user_id,
+                    "trace_type": "reward_chest_resolution",
+                    "source": "daily_loop_service.complete_mission",
+                    "reference_id": "daily_loop:2026-03-23",
+                    "policy_version": "v1",
+                    "inputs": {},
+                    "outputs": {"reward_chest_id": 21, "status": "unlocked"},
+                    "reason": "Unlocked the reward chest after canonical mission completion.",
+                    "created_at": "2026-03-23T12:07:05",
+                },
+                "notification_selection": None,
+                "latest_mission": {
+                    "id": 11,
+                    "user_id": user_id,
+                    "mission_date": "2026-03-23",
+                    "status": "completed",
+                    "weak_area": "grammar",
+                    "mission_max_sessions": 3,
+                    "steps": [{"kind": "warmup"}],
+                    "loss_aversion_message": "Finish today to keep the streak clean.",
+                    "streak_at_issue": 5,
+                    "momentum_score": 0.88,
+                    "notification_preview": {"title": "Finish your mission"},
+                    "completed_at": "2026-03-23T12:07:00",
+                    "created_at": "2026-03-23T08:00:00",
+                    "updated_at": "2026-03-23T12:07:00",
+                },
+                "latest_reward_chest": {
+                    "id": 21,
+                    "user_id": user_id,
+                    "mission_id": 11,
+                    "status": "unlocked",
+                    "xp_reward": 25,
+                    "badge_hint": "Consistency",
+                    "payload": {"coins": 10},
+                    "unlocked_at": "2026-03-23T12:07:05",
+                    "claimed_at": None,
+                    "created_at": "2026-03-23T08:00:00",
+                    "updated_at": "2026-03-23T12:07:05",
+                },
+            },
+            "event_summary": {
+                "total_events": 1,
+                "counts_by_type": {"daily_mission_completed": 1},
+                "latest_event_at": "2026-03-23T12:07:00",
+            },
+            "trace_summary": {
+                "total_traces": 2,
+                "counts_by_type": {"daily_mission_generation": 1, "reward_chest_resolution": 1},
+                "latest_trace_at": "2026-03-23T12:07:05",
+            },
+            "mission_summary": {
+                "total_missions": 1,
+                "counts_by_status": {"completed": 1},
+                "latest_mission_date": "2026-03-23",
+            },
+            "reward_chest_summary": {
+                "total_reward_chests": 1,
+                "counts_by_status": {"unlocked": 1},
+                "latest_unlocked_at": "2026-03-23T12:07:05",
+            },
+        }
+
 
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
@@ -1010,6 +1189,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/monetization/1/report?geography=us",
         headers={"X-Admin-Token": "secret"},
     )
+    daily_loop_report = client.get(
+        "/admin/daily-loop/1/report",
+        headers={"X-Admin-Token": "secret"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -1083,6 +1266,11 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert monetization_report.json()["meta"]["source"] == "admin.monetization.report"
     assert monetization_report.json()["data"]["latest_decisions"]["monetization_decision"]["trace_type"] == "monetization_decision"
     assert monetization_report.json()["data"]["monetization_event_summary"]["counts_by_type"]["decision_evaluated"] == 1
+    assert daily_loop_report.status_code == 200
+    assert daily_loop_report.json()["meta"]["source"] == "admin.daily_loop.report"
+    assert daily_loop_report.json()["data"]["latest_decisions"]["daily_mission_generation"]["trace_type"] == "daily_mission_generation"
+    assert daily_loop_report.json()["data"]["latest_decisions"]["latest_reward_chest"]["status"] == "unlocked"
+    assert daily_loop_report.json()["data"]["mission_summary"]["counts_by_status"]["completed"] == 1
 
 
 def test_onboarding_endpoints_return_standardized_envelopes():

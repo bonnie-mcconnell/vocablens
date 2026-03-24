@@ -8,9 +8,11 @@ from sqlalchemy import select
 
 from vocablens.domain.errors import NotFoundError
 from vocablens.infrastructure.db.models import (
+    DailyMissionORM,
     ExperimentAssignmentORM,
     LifecycleTransitionORM,
     OnboardingFlowStateORM,
+    RewardChestORM,
     SubscriptionORM,
     UserEngagementStateORM,
     UserLifecycleStateORM,
@@ -46,6 +48,14 @@ class DecisionTraceService:
         "upgrade_clicked",
         "upgrade_completed",
         "subscription_upgraded",
+    }
+    _DAILY_LOOP_EVENT_TYPES = {
+        "daily_mission_generated",
+        "daily_mission_completed",
+        "reward_chest_unlocked",
+        "session_started",
+        "session_ended",
+        "skip_shield_used",
     }
 
     def __init__(self, uow_factory: type[UnitOfWork], business_metrics_service=None):
@@ -270,6 +280,76 @@ class DecisionTraceService:
             "event_summary": self._event_summary_payload(events),
             "trace_summary": self._trace_summary_payload(traces),
             "monetization_event_summary": self._event_summary_payload(monetization_events),
+        }
+
+    async def daily_loop_detail(self, user_id: int) -> dict:
+        snapshot = await self._user_snapshot(user_id)
+        async with self._uow_factory() as uow:
+            mission_rows = (
+                await uow.session.execute(
+                    select(DailyMissionORM)
+                    .where(DailyMissionORM.user_id == user_id)
+                    .order_by(DailyMissionORM.mission_date.desc(), DailyMissionORM.id.desc())
+                    .limit(20)
+                )
+            ).scalars().all()
+            reward_chest_rows = (
+                await uow.session.execute(
+                    select(RewardChestORM)
+                    .where(RewardChestORM.user_id == user_id)
+                    .order_by(RewardChestORM.created_at.desc(), RewardChestORM.id.desc())
+                    .limit(20)
+                )
+            ).scalars().all()
+            await uow.commit()
+
+        relevant_events = self._filtered_events(
+            snapshot["events"],
+            allowed_types=self._DAILY_LOOP_EVENT_TYPES,
+        )
+        relevant_traces = self._filtered_traces(
+            snapshot["traces"],
+            predicate=lambda trace: str(getattr(trace, "trace_type", "") or "")
+            in {"daily_mission_generation", "reward_chest_resolution", "notification_selection"},
+        )
+        return {
+            "engagement_state": self._engagement_state_payload(snapshot["engagement_state"]),
+            "progress_state": self._progress_state_payload(snapshot["progress_state"]),
+            "retention": self._retention_payload(snapshot),
+            "missions": [self._daily_mission_payload(row) for row in mission_rows],
+            "reward_chests": [self._reward_chest_payload(row) for row in reward_chest_rows],
+            "events": relevant_events,
+            "traces": relevant_traces,
+        }
+
+    async def daily_loop_report(self, user_id: int) -> dict:
+        detail = await self.daily_loop_detail(user_id)
+        traces = list(detail.get("traces", []))
+        events = list(detail.get("events", []))
+        missions = list(detail.get("missions", []))
+        reward_chests = list(detail.get("reward_chests", []))
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "daily_mission_generation": self._latest_trace_payload_from_dicts(
+                    traces,
+                    trace_type="daily_mission_generation",
+                ),
+                "reward_chest_resolution": self._latest_trace_payload_from_dicts(
+                    traces,
+                    trace_type="reward_chest_resolution",
+                ),
+                "notification_selection": self._latest_trace_payload_from_dicts(
+                    traces,
+                    trace_type="notification_selection",
+                ),
+                "latest_mission": missions[0] if missions else None,
+                "latest_reward_chest": reward_chests[0] if reward_chests else None,
+            },
+            "event_summary": self._event_summary_payload(events),
+            "trace_summary": self._trace_summary_payload(traces),
+            "mission_summary": self._daily_mission_summary_payload(missions),
+            "reward_chest_summary": self._reward_chest_summary_payload(reward_chests),
         }
 
     def _trace_payload(self, trace) -> dict[str, Any]:
@@ -1004,6 +1084,63 @@ class DecisionTraceService:
             "geography": row.geography,
             "payload": dict(row.payload or {}),
             "created_at": self._timestamp(row.created_at),
+        }
+
+    def _daily_mission_payload(self, row) -> dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "user_id": row.user_id,
+            "mission_date": row.mission_date,
+            "status": row.status,
+            "weak_area": row.weak_area,
+            "mission_max_sessions": int(row.mission_max_sessions or 0),
+            "steps": list(row.steps or []),
+            "loss_aversion_message": row.loss_aversion_message,
+            "streak_at_issue": int(row.streak_at_issue or 0),
+            "momentum_score": float(row.momentum_score or 0.0),
+            "notification_preview": dict(row.notification_preview or {}),
+            "completed_at": self._timestamp(row.completed_at),
+            "created_at": self._timestamp(row.created_at),
+            "updated_at": self._timestamp(row.updated_at),
+        }
+
+    def _reward_chest_payload(self, row) -> dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "user_id": row.user_id,
+            "mission_id": row.mission_id,
+            "status": row.status,
+            "xp_reward": int(row.xp_reward or 0),
+            "badge_hint": row.badge_hint,
+            "payload": dict(row.payload or {}),
+            "unlocked_at": self._timestamp(row.unlocked_at),
+            "claimed_at": self._timestamp(row.claimed_at),
+            "created_at": self._timestamp(row.created_at),
+            "updated_at": self._timestamp(row.updated_at),
+        }
+
+    def _daily_mission_summary_payload(self, missions: list[dict[str, Any]]) -> dict[str, Any]:
+        counts = Counter(str(item.get("status") or "") for item in missions)
+        latest_mission_date = max(
+            (item.get("mission_date") for item in missions if item.get("mission_date")),
+            default=None,
+        )
+        return {
+            "total_missions": len(missions),
+            "counts_by_status": dict(sorted(counts.items())),
+            "latest_mission_date": latest_mission_date,
+        }
+
+    def _reward_chest_summary_payload(self, reward_chests: list[dict[str, Any]]) -> dict[str, Any]:
+        counts = Counter(str(item.get("status") or "") for item in reward_chests)
+        latest_unlocked_at = max(
+            (item.get("unlocked_at") for item in reward_chests if item.get("unlocked_at")),
+            default=None,
+        )
+        return {
+            "total_reward_chests": len(reward_chests),
+            "counts_by_status": dict(sorted(counts.items())),
+            "latest_unlocked_at": latest_unlocked_at,
         }
 
     def _onboarding_state_orm_payload(self, row) -> dict[str, Any] | None:

@@ -900,6 +900,86 @@ class MonetizationOperatorReportResponse(BaseModel):
     meta: MonetizationOperatorReportMetaResponse
 
 
+class DailyMissionDiagnosticsResponse(BaseModel):
+    id: int
+    user_id: int
+    mission_date: str
+    status: str
+    weak_area: str
+    mission_max_sessions: int
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    loss_aversion_message: str
+    streak_at_issue: int = 0
+    momentum_score: float = 0.0
+    notification_preview: dict[str, Any] = Field(default_factory=dict)
+    completed_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class RewardChestDiagnosticsResponse(BaseModel):
+    id: int
+    user_id: int
+    mission_id: int
+    status: str
+    xp_reward: int = 0
+    badge_hint: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    unlocked_at: datetime | None = None
+    claimed_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class DailyLoopDiagnosticsDataResponse(BaseModel):
+    engagement_state: UserEngagementStateDiagnosticsResponse | None = None
+    progress_state: UserProgressStateDiagnosticsResponse | None = None
+    retention: RetentionDiagnosticsResponse
+    missions: list[DailyMissionDiagnosticsResponse] = Field(default_factory=list)
+    reward_chests: list[RewardChestDiagnosticsResponse] = Field(default_factory=list)
+    events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
+    traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
+
+
+class DailyLoopMissionSummaryResponse(BaseModel):
+    total_missions: int = 0
+    counts_by_status: dict[str, int] = Field(default_factory=dict)
+    latest_mission_date: str | None = None
+
+
+class DailyLoopRewardChestSummaryResponse(BaseModel):
+    total_reward_chests: int = 0
+    counts_by_status: dict[str, int] = Field(default_factory=dict)
+    latest_unlocked_at: datetime | None = None
+
+
+class DailyLoopOperatorLatestDecisionsResponse(BaseModel):
+    daily_mission_generation: DecisionTraceRecordResponse | None = None
+    reward_chest_resolution: DecisionTraceRecordResponse | None = None
+    notification_selection: DecisionTraceRecordResponse | None = None
+    latest_mission: DailyMissionDiagnosticsResponse | None = None
+    latest_reward_chest: RewardChestDiagnosticsResponse | None = None
+
+
+class DailyLoopOperatorReportDataResponse(BaseModel):
+    detail: DailyLoopDiagnosticsDataResponse
+    latest_decisions: DailyLoopOperatorLatestDecisionsResponse
+    event_summary: DiagnosticsEventSummaryResponse
+    trace_summary: DiagnosticsTraceSummaryResponse
+    mission_summary: DailyLoopMissionSummaryResponse
+    reward_chest_summary: DailyLoopRewardChestSummaryResponse
+
+
+class DailyLoopOperatorReportMetaResponse(BaseModel):
+    source: Literal["admin.daily_loop.report"]
+    user_id: int
+
+
+class DailyLoopOperatorReportResponse(BaseModel):
+    data: DailyLoopOperatorReportDataResponse
+    meta: DailyLoopOperatorReportMetaResponse
+
+
 class OnboardingStartRequest(BaseModel):
     pass
 
