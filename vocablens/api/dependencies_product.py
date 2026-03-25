@@ -21,6 +21,7 @@ from vocablens.services.experiment_attribution_service import ExperimentAttribut
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.experiment_registry_service import ExperimentRegistryService
+from vocablens.services.experiment_health_signal_service import ExperimentHealthSignalService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.gamification_service import GamificationService
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
@@ -31,6 +32,7 @@ from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.lifecycle_state_service import LifecycleStateService
 from vocablens.services.monetization_engine import MonetizationEngine
+from vocablens.services.monetization_health_signal_service import MonetizationHealthSignalService
 from vocablens.services.monetization_state_service import MonetizationStateService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.notification_policy_registry_service import NotificationPolicyRegistryService
@@ -104,8 +106,16 @@ def get_experiment_registry_service(uow_factory=Depends(get_uow_factory)) -> Exp
     return ExperimentRegistryService(uow_factory)
 
 
+def get_experiment_health_signal_service(uow_factory=Depends(get_uow_factory)) -> ExperimentHealthSignalService:
+    return ExperimentHealthSignalService(uow_factory)
+
+
 def get_monetization_state_service(uow_factory=Depends(get_uow_factory)) -> MonetizationStateService:
     return MonetizationStateService(uow_factory)
+
+
+def get_monetization_health_signal_service(uow_factory=Depends(get_uow_factory)) -> MonetizationHealthSignalService:
+    return MonetizationHealthSignalService(uow_factory)
 
 
 def get_lifecycle_state_service(uow_factory=Depends(get_uow_factory)) -> LifecycleStateService:
@@ -127,9 +137,10 @@ def get_notification_policy_registry_service(uow_factory=Depends(get_uow_factory
 async def get_experiment_service(
     uow_factory=Depends(get_uow_factory),
     learning_events=Depends(get_learning_event_service),
+    health_signal_service=Depends(get_experiment_health_signal_service),
 ):
     attribution = ExperimentAttributionService(uow_factory)
-    return ExperimentService(uow_factory, learning_events, attribution)
+    return ExperimentService(uow_factory, learning_events, attribution, health_signal_service)
 
 
 def get_paywall_service(

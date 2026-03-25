@@ -162,6 +162,7 @@ class ExperimentRegistryAuditRepository(Protocol):
 class UserMonetizationStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> Any: ...
     async def update(self, user_id: int, **kwargs) -> Any: ...
+    async def list_all(self) -> List[Any]: ...
 
 
 class UserNotificationStateRepository(Protocol):
@@ -230,6 +231,32 @@ class NotificationPolicyHealthStateRepository(Protocol):
     ) -> Any: ...
 
 
+class ExperimentHealthStateRepository(Protocol):
+    async def get(self, experiment_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        experiment_key: str,
+        current_status: str,
+        latest_alert_codes: List[str],
+        metrics: Dict[str, Any],
+    ) -> Any: ...
+
+
+class MonetizationHealthStateRepository(Protocol):
+    async def get(self, scope_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        scope_key: str,
+        current_status: str,
+        latest_alert_codes: List[str],
+        metrics: Dict[str, Any],
+    ) -> Any: ...
+
+
 class NotificationDeliveryRepository(Protocol):
     async def create_attempt(
         self,
@@ -265,6 +292,7 @@ class MonetizationOfferEventRepository(Protocol):
         created_at: datetime | None = None,
     ) -> Any: ...
     async def list_by_user(self, user_id: int, limit: int = 100) -> List[Any]: ...
+    async def list_all(self, geography: str | None = None, limit: int | None = None) -> List[Any]: ...
 
 
 class DailyMissionRepository(Protocol):

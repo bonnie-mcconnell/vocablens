@@ -34,6 +34,18 @@ class FakeMonetizationOfferEventsRepo:
         self.recorded.append(kwargs)
         return SimpleNamespace(**kwargs)
 
+    async def list_all(self, geography: str | None = None, limit: int | None = None):
+        return []
+
+
+class FakeMonetizationHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_scope(self, scope_key: str = "global"):
+        self.calls.append(scope_key)
+        return {"scope_key": scope_key}
+
 
 class FakeUOW:
     def __init__(self):
@@ -52,7 +64,8 @@ class FakeUOW:
 
 def test_monetization_state_service_syncs_latest_decision():
     uow = FakeUOW()
-    service = MonetizationStateService(lambda: uow)
+    health_signals = FakeMonetizationHealthSignalService()
+    service = MonetizationStateService(lambda: uow, health_signal_service=health_signals)
     decision = SimpleNamespace(
         show_paywall=True,
         offer_type="trial",
@@ -70,11 +83,13 @@ def test_monetization_state_service_syncs_latest_decision():
     assert uow.monetization_states.updated[0]["current_offer_type"] == "trial"
     assert uow.monetization_states.updated[0]["conversion_propensity"] > 0
     assert uow.monetization_offer_events.recorded[0]["event_type"] == "decision_evaluated"
+    assert health_signals.calls == ["global"]
 
 
 def test_monetization_state_service_records_dismissal_and_cooldown():
     uow = FakeUOW()
-    service = MonetizationStateService(lambda: uow)
+    health_signals = FakeMonetizationHealthSignalService()
+    service = MonetizationStateService(lambda: uow, health_signal_service=health_signals)
 
     run_async(
         service.record_response(
@@ -91,3 +106,4 @@ def test_monetization_state_service_records_dismissal_and_cooldown():
     assert uow.monetization_states.updated[0]["paywall_dismissals"] == 1
     assert uow.monetization_states.updated[0]["fatigue_score"] == 2
     assert uow.monetization_offer_events.recorded[0]["event_type"] == "paywall_dismissed"
+    assert health_signals.calls == ["global"]

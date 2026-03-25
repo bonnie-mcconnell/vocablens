@@ -5,11 +5,17 @@ from datetime import timedelta
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.monetization_health_signal_service import MonetizationHealthSignalService
 
 
 class MonetizationStateService:
-    def __init__(self, uow_factory: type[UnitOfWork]):
+    def __init__(
+        self,
+        uow_factory: type[UnitOfWork],
+        health_signal_service: MonetizationHealthSignalService | None = None,
+    ):
         self._uow_factory = uow_factory
+        self._health_signals = health_signal_service or MonetizationHealthSignalService(uow_factory)
 
     async def sync_decision(
         self,
@@ -56,6 +62,7 @@ class MonetizationStateService:
                 created_at=now,
             )
             await uow.commit()
+        await self._health_signals.evaluate_scope("global")
         return updated
 
     async def record_impression(
@@ -97,6 +104,7 @@ class MonetizationStateService:
                 created_at=now,
             )
             await uow.commit()
+        await self._health_signals.evaluate_scope("global")
 
     async def record_response(
         self,
@@ -146,6 +154,7 @@ class MonetizationStateService:
                 created_at=now,
             )
             await uow.commit()
+        await self._health_signals.evaluate_scope("global")
 
     async def mark_trial_started(
         self,
@@ -189,6 +198,7 @@ class MonetizationStateService:
                 },
             )
             await uow.commit()
+        await self._health_signals.evaluate_scope("global")
 
     async def mark_upgrade_completed(
         self,
@@ -224,6 +234,7 @@ class MonetizationStateService:
                 payload={"tier": tier},
             )
             await uow.commit()
+        await self._health_signals.evaluate_scope("global")
 
     def _conversion_propensity(self, *, state, decision) -> float:
         base = 0.15

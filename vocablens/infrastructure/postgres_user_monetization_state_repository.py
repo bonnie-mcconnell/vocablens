@@ -31,3 +31,9 @@ class PostgresUserMonetizationStateRepository:
         row.updated_at = utc_now()
         await self.session.flush()
         return row
+
+    async def list_all(self):
+        result = await self.session.execute(
+            select(UserMonetizationStateORM).order_by(UserMonetizationStateORM.user_id.asc())
+        )
+        return result.scalars().all()

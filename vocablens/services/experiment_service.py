@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.experiment_attribution_service import ExperimentAttributionService
+from vocablens.services.experiment_health_signal_service import ExperimentHealthSignalService
 from vocablens.services.learning_event_service import LearningEventService
 
 
@@ -48,11 +49,13 @@ class ExperimentService:
         uow_factory: type[UnitOfWork],
         event_service: LearningEventService | None = None,
         attribution_service: ExperimentAttributionService | None = None,
+        health_signal_service: ExperimentHealthSignalService | None = None,
         experiments: dict[str, dict[str, int] | ExperimentDefinition] | None = None,
     ):
         self._uow_factory = uow_factory
         self._events = event_service
         self._attribution = attribution_service or ExperimentAttributionService(uow_factory)
+        self._health_signals = health_signal_service or ExperimentHealthSignalService(uow_factory)
         source = experiments or {}
         self._experiment_overrides = {
             key: self._coerce_definition(key, definition)
@@ -96,6 +99,7 @@ class ExperimentService:
                         assigned_at=getattr(assignment, "assigned_at", None) or assigned_at,
                         context=ExperimentContext(),
                     )
+                    await self._health_signals.evaluate_experiment(experiment_key)
                 return variant
             resolved_context = await self._resolved_context(uow=uow, user_id=user_id, context=context)
             is_eligible = await self._is_eligible(uow=uow, user_id=user_id, definition=definition, context=resolved_context)
@@ -135,6 +139,7 @@ class ExperimentService:
                         assigned_at=assigned_at,
                         context=resolved_context,
                     )
+                    await self._health_signals.evaluate_experiment(experiment_key)
                 return variant
             await uow.commit()
         variant, exposure_created = await self._ensure_assignment_and_exposure(
@@ -165,6 +170,7 @@ class ExperimentService:
                 assigned_at=assigned_at,
                 context=resolved_context,
             )
+            await self._health_signals.evaluate_experiment(experiment_key)
         return variant
 
     async def get_variant(self, user_id: int, experiment_key: str) -> str | None:

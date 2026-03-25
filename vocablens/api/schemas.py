@@ -323,6 +323,45 @@ class ExperimentRegistryAuditResponse(BaseModel):
     meta: ExperimentRegistryAuditMetaResponse
 
 
+class ExperimentHealthDashboardExperimentResponse(BaseModel):
+    experiment_key: str
+    registry_status: str
+    health_status: str
+    is_killed: bool = False
+    rollout_percentage: int = 0
+    holdout_percentage: int = 0
+    baseline_variant: str = "control"
+    description: str | None = None
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
+    updated_at: datetime | None = None
+    latest_change_note: str | None = None
+
+
+class ExperimentHealthDashboardSummaryResponse(BaseModel):
+    total_experiments: int = 0
+    counts_by_health_status: dict[str, int] = Field(default_factory=dict)
+    experiments_with_alerts: int = 0
+    alert_counts_by_code: dict[str, int] = Field(default_factory=dict)
+    latest_evaluated_at: datetime | None = None
+
+
+class ExperimentHealthDashboardDataResponse(BaseModel):
+    summary: ExperimentHealthDashboardSummaryResponse
+    attention: list[ExperimentHealthDashboardExperimentResponse] = Field(default_factory=list)
+    experiments: list[ExperimentHealthDashboardExperimentResponse] = Field(default_factory=list)
+
+
+class ExperimentHealthDashboardMetaResponse(BaseModel):
+    source: Literal["admin.experiments.health_report"]
+
+
+class ExperimentHealthDashboardResponse(BaseModel):
+    data: ExperimentHealthDashboardDataResponse
+    meta: ExperimentHealthDashboardMetaResponse
+
+
 class NotificationPolicyStageResponse(BaseModel):
     lifecycle_notifications_enabled: bool
     suppression_reason: str | None = None
@@ -1218,6 +1257,36 @@ class MonetizationOperatorReportMetaResponse(BaseModel):
 class MonetizationOperatorReportResponse(BaseModel):
     data: MonetizationOperatorReportDataResponse
     meta: MonetizationOperatorReportMetaResponse
+
+
+class MonetizationHealthScopeResponse(BaseModel):
+    scope_key: str
+    health_status: str
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
+
+
+class MonetizationHealthDashboardSummaryResponse(BaseModel):
+    total_scopes: int = 0
+    counts_by_health_status: dict[str, int] = Field(default_factory=dict)
+    scopes_with_alerts: int = 0
+    latest_evaluated_at: datetime | None = None
+
+
+class MonetizationHealthDashboardDataResponse(BaseModel):
+    summary: MonetizationHealthDashboardSummaryResponse
+    attention: list[MonetizationHealthScopeResponse] = Field(default_factory=list)
+    scopes: list[MonetizationHealthScopeResponse] = Field(default_factory=list)
+
+
+class MonetizationHealthDashboardMetaResponse(BaseModel):
+    source: Literal["admin.monetization.health_report"]
+
+
+class MonetizationHealthDashboardResponse(BaseModel):
+    data: MonetizationHealthDashboardDataResponse
+    meta: MonetizationHealthDashboardMetaResponse
 
 
 class DailyMissionDiagnosticsResponse(BaseModel):

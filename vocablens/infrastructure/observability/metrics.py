@@ -102,3 +102,75 @@ NOTIFICATION_POLICY_ACTIVE_ALERTS = Gauge(
     "Current active notification policy alerts by policy and severity",
     ["policy_key", "severity"],
 )
+
+EXPERIMENT_HEALTH_STATUS = Gauge(
+    "vocablens_experiment_health_status",
+    "Current experiment health state as a one-hot gauge",
+    ["experiment_key", "status"],
+)
+
+EXPERIMENT_HEALTH_RATE = Gauge(
+    "vocablens_experiment_health_metric",
+    "Current evaluated experiment health metrics",
+    ["experiment_key", "metric"],
+)
+
+EXPERIMENT_HEALTH_TRANSITIONS = Counter(
+    "vocablens_experiment_health_transitions_total",
+    "Experiment health state transitions",
+    ["experiment_key", "from_status", "to_status"],
+)
+
+EXPERIMENT_HEALTH_ALERTS = Counter(
+    "vocablens_experiment_health_alerts_total",
+    "Experiment health alerts emitted",
+    ["experiment_key", "code", "severity"],
+)
+
+EXPERIMENT_HEALTH_EXPERIMENTS = Gauge(
+    "vocablens_experiment_health_experiments",
+    "Current count of experiments by health status",
+    ["status"],
+)
+
+EXPERIMENT_ACTIVE_ALERTS = Gauge(
+    "vocablens_experiment_active_alerts",
+    "Current active experiment alerts by experiment and severity",
+    ["experiment_key", "severity"],
+)
+
+MONETIZATION_HEALTH_STATUS = Gauge(
+    "vocablens_monetization_health_status",
+    "Current monetization health state as a one-hot gauge",
+    ["scope_key", "status"],
+)
+
+MONETIZATION_HEALTH_RATE = Gauge(
+    "vocablens_monetization_health_metric",
+    "Current evaluated monetization health metrics",
+    ["scope_key", "metric"],
+)
+
+MONETIZATION_HEALTH_TRANSITIONS = Counter(
+    "vocablens_monetization_health_transitions_total",
+    "Monetization health state transitions",
+    ["scope_key", "from_status", "to_status"],
+)
+
+MONETIZATION_HEALTH_ALERTS = Counter(
+    "vocablens_monetization_health_alerts_total",
+    "Monetization health alerts emitted",
+    ["scope_key", "code", "severity"],
+)
+
+MONETIZATION_HEALTH_SCOPES = Gauge(
+    "vocablens_monetization_health_scopes",
+    "Current count of monetization scopes by health status",
+    ["status"],
+)
+
+MONETIZATION_ACTIVE_ALERTS = Gauge(
+    "vocablens_monetization_active_alerts",
+    "Current active monetization alerts by scope and severity",
+    ["scope_key", "severity"],
+)

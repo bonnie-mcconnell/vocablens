@@ -9,6 +9,7 @@ from vocablens.api.dependencies import (
     get_decision_trace_service,
     get_experiment_registry_service,
     get_experiment_results_service,
+    get_monetization_health_signal_service,
     get_notification_policy_registry_service,
     get_subscription_service,
 )
@@ -19,6 +20,7 @@ from vocablens.api.schemas import (
     DecisionTraceListResponse,
     ExperimentRegistryAuditResponse,
     ExperimentRegistryDetailResponse,
+    ExperimentHealthDashboardResponse,
     ExperimentRegistryListResponse,
     ExperimentOperatorReportResponse,
     ExperimentRegistryUpsertRequest,
@@ -26,6 +28,7 @@ from vocablens.api.schemas import (
     LifecycleDiagnosticsResponse,
     LifecycleOperatorReportResponse,
     MonetizationDiagnosticsResponse,
+    MonetizationHealthDashboardResponse,
     MonetizationOperatorReportResponse,
     NotificationOperatorReportResponse,
     NotificationPolicyAuditResponse,
@@ -47,10 +50,12 @@ from vocablens.services.experiment_registry_service import (
     ExperimentRegistryVariantInput,
 )
 from vocablens.services.experiment_results_service import ExperimentResultsService
+from vocablens.services.experiment_health_signal_service import ExperimentHealthSignalService
 from vocablens.services.notification_policy_registry_service import (
     NotificationPolicyRegistryService,
     NotificationPolicyRegistryUpsert,
 )
+from vocablens.services.monetization_health_signal_service import MonetizationHealthSignalService
 from vocablens.services.subscription_service import SubscriptionService
 
 
@@ -219,6 +224,18 @@ def create_admin_router() -> APIRouter:
             },
         }
 
+    @router.get("/experiments/health/report", response_model=ExperimentHealthDashboardResponse)
+    async def experiment_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.experiments.health_report"},
+        }
+
     @router.get("/notifications/policies", response_model=NotificationPolicyListResponse)
     async def notification_policy_list(
         _: str = Depends(get_admin_token),
@@ -240,6 +257,18 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.notifications.policies.health_report"},
+        }
+
+    @router.get("/monetization/health/report", response_model=MonetizationHealthDashboardResponse)
+    async def monetization_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: MonetizationHealthSignalService = Depends(get_monetization_health_signal_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.monetization.health_report"},
         }
 
     @router.get("/notifications/policies/{policy_key}", response_model=NotificationPolicyDetailResponse)

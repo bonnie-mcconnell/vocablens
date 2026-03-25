@@ -6,6 +6,7 @@ from vocablens.api.dependencies import (
     get_analytics_service,
     get_current_user,
     get_decision_trace_service,
+    get_monetization_health_signal_service,
     get_experiment_registry_service,
     get_experiment_results_service,
     get_frontend_service,
@@ -166,6 +167,35 @@ class FakeExperimentRegistryService:
                     }
                 ],
             }
+        }
+
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_experiments": 2,
+                "counts_by_health_status": {"critical": 1, "healthy": 1},
+                "experiments_with_alerts": 1,
+                "alert_counts_by_code": {"exposure_coverage_low": 1},
+                "latest_evaluated_at": "2026-03-24T11:00:00",
+            },
+            "attention": [
+                {
+                    "experiment_key": "paywall_offer",
+                    "registry_status": "active",
+                    "health_status": "critical",
+                    "is_killed": False,
+                    "rollout_percentage": 100,
+                    "holdout_percentage": 0,
+                    "baseline_variant": "control",
+                    "description": "Controls paywall offer composition.",
+                    "latest_alert_codes": ["exposure_coverage_low"],
+                    "metrics": {"exposure_coverage_percent": 88.0},
+                    "last_evaluated_at": "2026-03-24T11:00:00",
+                    "updated_at": "2026-03-24T09:00:00",
+                    "latest_change_note": "Raised annual anchor weight after review.",
+                }
+            ],
+            "experiments": [],
         }
 
     async def upsert_registry(self, *, experiment_key: str, command, changed_by: str | None):
@@ -352,6 +382,9 @@ class FakeNotificationPolicyRegistryService:
                 }
             ]
         }
+
+
+class FakeNotificationPolicyRegistryService(FakeNotificationPolicyRegistryService):
 
     async def get_policy(self, policy_key: str):
         return {
@@ -708,6 +741,44 @@ class FakeOnboardingFlowService:
             "ui_directives": {"show_personalization_form": True},
             "messaging": {"encouragement_message": "We will tailor this fast.", "urgency_message": "", "reward_message": ""},
             "next_action": {"action": "set_preferences", "target": {"skill_level": "beginner"}, "reason": "Tailor the first win."},
+        }
+
+
+class FakeMonetizationHealthSignalService:
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_scopes": 1,
+                "counts_by_health_status": {"warning": 1},
+                "scopes_with_alerts": 1,
+                "latest_evaluated_at": "2026-03-24T13:20:00",
+            },
+            "attention": [
+                {
+                    "scope_key": "global",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["dismissal_rate_high"],
+                    "metrics": {
+                        "impressions": 42,
+                        "conversion_rate_percent": 4.76,
+                        "dismissal_rate_percent": 57.14,
+                    },
+                    "last_evaluated_at": "2026-03-24T13:20:00",
+                }
+            ],
+            "scopes": [
+                {
+                    "scope_key": "global",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["dismissal_rate_high"],
+                    "metrics": {
+                        "impressions": 42,
+                        "conversion_rate_percent": 4.76,
+                        "dismissal_rate_percent": 57.14,
+                    },
+                    "last_evaluated_at": "2026-03-24T13:20:00",
+                }
+            ],
         }
 
 
@@ -1705,6 +1776,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
     app.dependency_overrides[get_experiment_results_service] = lambda: FakeExperimentResultsService()
     app.dependency_overrides[get_experiment_registry_service] = lambda: FakeExperimentRegistryService()
+    app.dependency_overrides[get_monetization_health_signal_service] = lambda: FakeMonetizationHealthSignalService()
     app.dependency_overrides[get_notification_policy_registry_service] = lambda: FakeNotificationPolicyRegistryService()
     app.dependency_overrides[get_decision_trace_service] = lambda: FakeDecisionTraceService()
     client = TestClient(app)
@@ -1729,6 +1801,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     )
     registry_audit = client.get("/admin/experiments/registry/paywall_offer/audit?limit=10", headers={"X-Admin-Token": "secret"})
     registry_report = client.get("/admin/experiments/registry/paywall_offer/report?limit=10", headers={"X-Admin-Token": "secret"})
+    experiment_health_report = client.get("/admin/experiments/health/report?limit=10", headers={"X-Admin-Token": "secret"})
     notification_policy_list = client.get("/admin/notifications/policies", headers={"X-Admin-Token": "secret"})
     notification_policy_health_report = client.get("/admin/notifications/policies/health/report?limit=10", headers={"X-Admin-Token": "secret"})
     notification_policy_detail = client.get("/admin/notifications/policies/default", headers={"X-Admin-Token": "secret"})
@@ -1785,6 +1858,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/monetization/1/report?geography=us",
         headers={"X-Admin-Token": "secret"},
     )
+    monetization_health_report = client.get(
+        "/admin/monetization/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
     daily_loop_report = client.get(
         "/admin/daily-loop/1/report",
         headers={"X-Admin-Token": "secret"},
@@ -1824,6 +1901,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert registry_report.json()["meta"]["source"] == "admin.experiments.registry.report"
     assert registry_report.json()["data"]["experiment"]["attribution_summary"]["users"] == 118
     assert registry_report.json()["data"]["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
+    assert experiment_health_report.status_code == 200
+    assert experiment_health_report.json()["meta"]["source"] == "admin.experiments.health_report"
+    assert experiment_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
+    assert experiment_health_report.json()["data"]["attention"][0]["experiment_key"] == "paywall_offer"
     assert notification_policy_list.status_code == 200
     assert notification_policy_list.json()["meta"]["source"] == "admin.notifications.policies.list"
     assert notification_policy_list.json()["data"]["policies"][0]["policy"]["cooldown_hours"] == 4
@@ -1888,6 +1969,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert monetization_report.json()["meta"]["source"] == "admin.monetization.report"
     assert monetization_report.json()["data"]["latest_decisions"]["monetization_decision"]["trace_type"] == "monetization_decision"
     assert monetization_report.json()["data"]["monetization_event_summary"]["counts_by_type"]["decision_evaluated"] == 1
+    assert monetization_health_report.status_code == 200
+    assert monetization_health_report.json()["meta"]["source"] == "admin.monetization.health_report"
+    assert monetization_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
+    assert monetization_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
     assert daily_loop_report.status_code == 200
     assert daily_loop_report.json()["meta"]["source"] == "admin.daily_loop.report"
     assert daily_loop_report.json()["data"]["latest_decisions"]["daily_mission_generation"]["trace_type"] == "daily_mission_generation"

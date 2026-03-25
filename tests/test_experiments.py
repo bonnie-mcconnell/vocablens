@@ -117,6 +117,11 @@ class FakeDecisionTracesRepo:
         return row
 
 
+class FakeExperimentHealthSignalService:
+    async def evaluate_experiment(self, experiment_key: str):
+        return {"experiment_key": experiment_key}
+
+
 class FakeExperimentUOW:
     def __init__(
         self,
@@ -162,7 +167,7 @@ def _experiment_service(experiments: dict[str, dict[str, int]]):
     registries = FakeExperimentRegistriesRepo(experiments)
     events = FakeEventService()
     factory = lambda: FakeExperimentUOW(repo, exposures, registries)
-    service = ExperimentService(factory, events)
+    service = ExperimentService(factory, events, health_signal_service=FakeExperimentHealthSignalService())
     return service, repo, exposures, events
 
 

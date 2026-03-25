@@ -173,6 +173,19 @@ class FakeDecisionTraceRepo:
         return rows[:limit]
 
 
+class FakeExperimentHealthStatesRepo:
+    async def list_all(self):
+        return [
+            SimpleNamespace(
+                experiment_key="paywall_offer",
+                current_status="warning",
+                latest_alert_codes=["exposure_coverage_low"],
+                metrics={"exposure_coverage_percent": 66.67},
+                last_evaluated_at=None,
+            )
+        ]
+
+
 class FakeUOW:
     def __init__(self):
         self.experiment_registries = FakeExperimentRegistryRepo()
@@ -181,6 +194,7 @@ class FakeUOW:
         self.experiment_outcome_attributions = FakeOutcomeAttributionRepo()
         self.experiment_registry_audits = FakeAuditRepo()
         self.decision_traces = FakeDecisionTraceRepo()
+        self.experiment_health_states = FakeExperimentHealthStatesRepo()
 
     async def __aenter__(self):
         return self
@@ -214,6 +228,18 @@ def test_experiment_registry_service_returns_operator_report():
     assert payload["experiment"]["attribution_summary"]["converted_users"] == 1
     assert payload["experiment"]["recent_exposures"][0]["variant"] == "annual_anchor"
     assert payload["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
+
+
+def test_experiment_registry_service_returns_health_dashboard():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(service.get_health_dashboard(limit=10))
+
+    assert payload["summary"]["total_experiments"] == 1
+    assert payload["summary"]["counts_by_health_status"]["warning"] == 1
+    assert payload["attention"][0]["experiment_key"] == "paywall_offer"
+    assert payload["attention"][0]["latest_alert_codes"] == ["exposure_coverage_low"]
 
 
 def test_experiment_registry_service_writes_audit_entry_on_update():

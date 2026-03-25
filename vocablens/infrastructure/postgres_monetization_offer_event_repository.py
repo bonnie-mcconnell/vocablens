@@ -50,3 +50,16 @@ class PostgresMonetizationOfferEventRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    async def list_all(self, geography: str | None = None, limit: int | None = None):
+        statement = select(MonetizationOfferEventORM)
+        if geography is not None:
+            statement = statement.where(MonetizationOfferEventORM.geography == geography)
+        statement = statement.order_by(
+            MonetizationOfferEventORM.created_at.desc(),
+            MonetizationOfferEventORM.id.desc(),
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
+        result = await self.session.execute(statement)
+        return result.scalars().all()

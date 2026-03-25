@@ -82,6 +82,7 @@ class FakeUOW:
         )
         self.monetization_states = FakeMonetizationStatesRepo()
         self.monetization_offer_events = FakeMonetizationOfferEventsRepo()
+        self.monetization_health_states = FakeMonetizationHealthStatesRepo()
 
     async def __aenter__(self):
         return self
@@ -131,6 +132,9 @@ class FakeMonetizationStatesRepo:
         self.updated.append(kwargs)
         return self.row
 
+    async def list_all(self):
+        return [self.row]
+
 
 class FakeMonetizationOfferEventsRepo:
     def __init__(self):
@@ -139,6 +143,30 @@ class FakeMonetizationOfferEventsRepo:
     async def record(self, **kwargs):
         self.recorded.append(kwargs)
         return SimpleNamespace(**kwargs)
+
+    async def list_all(self, geography: str | None = None, limit: int | None = None):
+        return []
+
+
+class FakeMonetizationHealthStatesRepo:
+    def __init__(self):
+        self.row = None
+
+    async def get(self, scope_key: str):
+        return self.row if self.row and self.row.scope_key == scope_key else None
+
+    async def list_all(self):
+        return [self.row] if self.row is not None else []
+
+    async def upsert(self, *, scope_key: str, current_status: str, latest_alert_codes: list[str], metrics: dict):
+        self.row = SimpleNamespace(
+            scope_key=scope_key,
+            current_status=current_status,
+            latest_alert_codes=list(latest_alert_codes),
+            metrics=dict(metrics),
+            last_evaluated_at=None,
+        )
+        return self.row
 
 
 def test_adaptive_paywall_service_is_more_aggressive_for_high_intent_users():

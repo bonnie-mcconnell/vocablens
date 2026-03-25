@@ -112,6 +112,15 @@ class FakeDecisionTraces:
         return row
 
 
+class FakeExperimentHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_experiment(self, experiment_key: str):
+        self.calls.append(experiment_key)
+        return {"experiment_key": experiment_key}
+
+
 class FakeUOW:
     def __init__(self, *, tier: str = "free", stage: str = "activating"):
         self.experiment_assignments = FakeAssignments()
@@ -162,8 +171,10 @@ def _definition(
 def test_experiment_service_persists_holdout_assignment_to_baseline():
     uow = FakeUOW()
     definition = _definition(holdout_percentage=99)
+    health_signals = FakeExperimentHealthSignalService()
     service = ExperimentService(
         lambda: uow,
+        health_signal_service=health_signals,
         experiments={
             "paywall_offer": definition,
         },
@@ -179,12 +190,15 @@ def test_experiment_service_persists_holdout_assignment_to_baseline():
     assert variant == "control"
     assert uow.experiment_assignments.rows[(user_id, "paywall_offer")].variant == "control"
     assert uow.experiment_outcome_attributions.rows[(user_id, "paywall_offer")].assignment_reason == "holdout"
+    assert health_signals.calls == ["paywall_offer"]
 
 
 def test_experiment_service_returns_baseline_without_persisting_when_context_is_ineligible():
     uow = FakeUOW(tier="free", stage="activating")
+    health_signals = FakeExperimentHealthSignalService()
     service = ExperimentService(
         lambda: uow,
+        health_signal_service=health_signals,
         experiments={
             "paywall_offer": _definition(
                 eligibility={"subscription_tiers": ("pro",), "lifecycle_stages": ("engaged",)},
@@ -197,6 +211,7 @@ def test_experiment_service_returns_baseline_without_persisting_when_context_is_
     assert variant == "control"
     assert uow.experiment_assignments.rows == {}
     assert uow.experiment_exposures.rows == {}
+    assert health_signals.calls == []
 
 
 def test_experiment_service_honors_mutual_exclusion_and_prerequisites():
@@ -208,8 +223,10 @@ def test_experiment_service_honors_mutual_exclusion_and_prerequisites():
             variant="control",
         )
     )
+    health_signals = FakeExperimentHealthSignalService()
     service = ExperimentService(
         lambda: uow,
+        health_signal_service=health_signals,
         experiments={
             "paywall_offer": _definition(
                 mutually_exclusive_with=("pricing_test",),
@@ -228,12 +245,15 @@ def test_experiment_service_honors_mutual_exclusion_and_prerequisites():
 
     assert variant == "control"
     assert (5, "paywall_offer") not in uow.experiment_assignments.rows
+    assert health_signals.calls == []
 
 
 def test_experiment_service_seeds_canonical_outcome_attribution_on_exposure():
     uow = FakeUOW()
+    health_signals = FakeExperimentHealthSignalService()
     service = ExperimentService(
         lambda: uow,
+        health_signal_service=health_signals,
         experiments={
             "paywall_offer": _definition(),
         },
@@ -247,3 +267,4 @@ def test_experiment_service_seeds_canonical_outcome_attribution_on_exposure():
     assert attribution.exposed_at <= utc_now()
     assert attribution.window_end_at == attribution.exposed_at + timedelta(days=30)
     assert uow.decision_traces.rows[0].trace_type == "experiment_assignment"
+    assert health_signals.calls == ["paywall_offer"]

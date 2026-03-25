@@ -183,6 +183,45 @@ class ExperimentRegistryService:
             }
         }
 
+    async def get_health_dashboard(self, *, limit: int = 50) -> dict:
+        normalized_limit = max(1, min(limit, 200))
+        async with self._uow_factory() as uow:
+            registries = await uow.experiment_registries.list_all()
+            health_states = await uow.experiment_health_states.list_all()
+            latest_audits = {}
+            for registry in registries:
+                latest_audits[registry.experiment_key] = await uow.experiment_registry_audits.latest_for_experiment(
+                    registry.experiment_key
+                )
+            await uow.commit()
+
+        state_by_key = {str(item.experiment_key): item for item in health_states}
+        rows = [
+            self._dashboard_experiment_payload(
+                registry,
+                latest_audit=latest_audits.get(registry.experiment_key),
+                health_state=state_by_key.get(str(registry.experiment_key)),
+            )
+            for registry in registries
+        ]
+        rows.sort(key=lambda item: (self._health_status_rank(item["health_status"]), item["experiment_key"]))
+        counts_by_status = Counter(str(item.get("health_status") or "unevaluated") for item in rows)
+        alert_code_counts = Counter()
+        for row in rows:
+            for code in row.get("latest_alert_codes", []):
+                alert_code_counts[str(code)] += 1
+        return {
+            "summary": {
+                "total_experiments": len(rows),
+                "counts_by_health_status": dict(sorted(counts_by_status.items())),
+                "experiments_with_alerts": sum(1 for row in rows if row.get("latest_alert_codes")),
+                "alert_counts_by_code": dict(sorted(alert_code_counts.items())),
+                "latest_evaluated_at": max((row.get("last_evaluated_at") for row in rows if row.get("last_evaluated_at")), default=None),
+            },
+            "attention": [row for row in rows if row["health_status"] != "healthy"][:normalized_limit],
+            "experiments": rows[:normalized_limit],
+        }
+
     def _validate_command(self, experiment_key: str, command: ExperimentRegistryUpsert) -> None:
         if command.status not in _VALID_STATUSES:
             raise ValidationError(f"Experiment '{experiment_key}' has invalid status '{command.status}'")
@@ -565,3 +604,29 @@ class ExperimentRegistryService:
 
     def _timestamp(self, value: datetime | None) -> str | None:
         return value.isoformat() if value is not None else None
+
+    def _dashboard_experiment_payload(self, registry, *, latest_audit, health_state) -> dict:
+        return {
+            "experiment_key": str(registry.experiment_key),
+            "registry_status": str(registry.status),
+            "health_status": str(getattr(health_state, "current_status", "unevaluated") or "unevaluated"),
+            "is_killed": bool(registry.is_killed),
+            "rollout_percentage": int(registry.rollout_percentage or 0),
+            "holdout_percentage": int(getattr(registry, "holdout_percentage", 0) or 0),
+            "baseline_variant": str(getattr(registry, "baseline_variant", "control") or "control"),
+            "description": registry.description,
+            "latest_alert_codes": list(getattr(health_state, "latest_alert_codes", []) or []),
+            "metrics": dict(getattr(health_state, "metrics", {}) or {}),
+            "last_evaluated_at": self._timestamp(getattr(health_state, "last_evaluated_at", None)),
+            "updated_at": self._timestamp(getattr(registry, "updated_at", None)),
+            "latest_change_note": getattr(latest_audit, "change_note", None),
+        }
+
+    def _health_status_rank(self, status: str) -> int:
+        ranking = {
+            "critical": 0,
+            "warning": 1,
+            "healthy": 2,
+            "unevaluated": 3,
+        }
+        return ranking.get(status, 4)
