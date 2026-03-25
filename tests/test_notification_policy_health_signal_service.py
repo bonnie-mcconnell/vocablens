@@ -12,6 +12,9 @@ class FakeNotificationPolicyHealthStatesRepo:
     async def get(self, policy_key: str):
         return self.rows.get(policy_key)
 
+    async def list_all(self):
+        return list(self.rows.values())
+
     async def upsert(
         self,
         *,
@@ -91,6 +94,14 @@ class FakeLogger:
         self.records.append({"message": message, "extra": dict(extra)})
 
 
+class FakeAlertSink:
+    def __init__(self):
+        self.records = []
+
+    async def emit(self, alert_type: str, payload: dict):
+        self.records.append({"alert_type": alert_type, "payload": dict(payload)})
+
+
 def _report(status: str, alerts: list[dict], metrics: dict) -> dict:
     return {
         "policy": {"policy_key": "default"},
@@ -108,15 +119,20 @@ def test_notification_policy_health_signal_service_persists_state_and_records_me
     rate_metric = FakeMetric()
     transition_metric = FakeMetric()
     alert_metric = FakeMetric()
+    policy_count_metric = FakeMetric()
+    active_alert_metric = FakeMetric()
     logger = FakeLogger()
+    alert_sink = FakeAlertSink()
 
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_STATUS", status_metric)
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_RATE", rate_metric)
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_TRANSITIONS", transition_metric)
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_ALERTS", alert_metric)
+    monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_POLICIES", policy_count_metric)
+    monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_ACTIVE_ALERTS", active_alert_metric)
     monkeypatch.setattr(health_signal_module, "logger", logger)
 
-    service = NotificationPolicyHealthSignalService(lambda: uow)
+    service = NotificationPolicyHealthSignalService(lambda: uow, alert_sink=alert_sink)
     service._registry_service = FakeRegistryService(
         [
             _report(
@@ -172,6 +188,30 @@ def test_notification_policy_health_signal_service_persists_state_and_records_me
             "value": 1.0,
         }
     ]
+    assert policy_count_metric.records == [
+        {"op": "set", "labels": {"status": "healthy"}, "value": 0.0},
+        {"op": "set", "labels": {"status": "warning"}, "value": 1.0},
+        {"op": "set", "labels": {"status": "critical"}, "value": 0.0},
+    ]
+    assert active_alert_metric.records[-2:] == [
+        {"op": "set", "labels": {"policy_key": "default", "severity": "warning"}, "value": 1.0},
+        {"op": "set", "labels": {"policy_key": "default", "severity": "critical"}, "value": 0.0},
+    ]
+    assert alert_sink.records == [
+        {
+            "alert_type": "notification_policy_health_alert",
+            "payload": {
+                "policy_key": "default",
+                "code": "suppression_rate_high",
+                "severity": "warning",
+                "alert": {"code": "suppression_rate_high", "severity": "warning"},
+                "metrics": {
+                    "failed_delivery_rate_percent": 10.0,
+                    "suppression_rate_percent": 66.7,
+                },
+            },
+        }
+    ]
     assert logger.records == [
         {
             "message": "notification_policy_health_alert",
@@ -195,15 +235,20 @@ def test_notification_policy_health_signal_service_emits_transition_only_when_st
     rate_metric = FakeMetric()
     transition_metric = FakeMetric()
     alert_metric = FakeMetric()
+    policy_count_metric = FakeMetric()
+    active_alert_metric = FakeMetric()
     logger = FakeLogger()
+    alert_sink = FakeAlertSink()
 
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_STATUS", status_metric)
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_RATE", rate_metric)
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_TRANSITIONS", transition_metric)
     monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_ALERTS", alert_metric)
+    monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_HEALTH_POLICIES", policy_count_metric)
+    monkeypatch.setattr(health_signal_module, "NOTIFICATION_POLICY_ACTIVE_ALERTS", active_alert_metric)
     monkeypatch.setattr(health_signal_module, "logger", logger)
 
-    service = NotificationPolicyHealthSignalService(lambda: uow)
+    service = NotificationPolicyHealthSignalService(lambda: uow, alert_sink=alert_sink)
     service._registry_service = FakeRegistryService(
         [
             _report(
@@ -286,3 +331,30 @@ def test_notification_policy_health_signal_service_emits_transition_only_when_st
         },
     }
     assert logger.records[1]["message"] == "notification_policy_health_alert"
+    assert alert_sink.records == [
+        {
+            "alert_type": "notification_policy_health_transition",
+            "payload": {
+                "policy_key": "default",
+                "from_status": "healthy",
+                "to_status": "critical",
+                "metrics": {
+                    "failed_delivery_rate_percent": 48.0,
+                    "suppression_rate_percent": 12.0,
+                },
+            },
+        },
+        {
+            "alert_type": "notification_policy_health_alert",
+            "payload": {
+                "policy_key": "default",
+                "code": "failed_delivery_rate_high",
+                "severity": "critical",
+                "alert": {"code": "failed_delivery_rate_high", "severity": "critical"},
+                "metrics": {
+                    "failed_delivery_rate_percent": 48.0,
+                    "suppression_rate_percent": 12.0,
+                },
+            },
+        },
+    ]

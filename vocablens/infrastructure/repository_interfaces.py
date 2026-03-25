@@ -219,6 +219,7 @@ class NotificationPolicyAuditRepository(Protocol):
 
 class NotificationPolicyHealthStateRepository(Protocol):
     async def get(self, policy_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
     async def upsert(
         self,
         *,

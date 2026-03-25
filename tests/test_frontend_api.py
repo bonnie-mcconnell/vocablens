@@ -627,6 +627,69 @@ class FakeNotificationPolicyRegistryService:
             ],
         }
 
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_policies": 2,
+                "evaluated_policies": 2,
+                "unevaluated_policies": 0,
+                "counts_by_health_status": {"critical": 1, "healthy": 1},
+                "counts_by_registry_status": {"active": 1, "paused": 1},
+                "policies_with_alerts": 1,
+                "alert_counts_by_code": {"failed_delivery_rate_high": 1},
+                "latest_evaluated_at": "2026-03-24T13:10:00",
+            },
+            "attention": [
+                {
+                    "policy_key": "default",
+                    "registry_status": "active",
+                    "health_status": "critical",
+                    "is_killed": False,
+                    "description": "Canonical notification policy.",
+                    "latest_alert_codes": ["failed_delivery_rate_high"],
+                    "metrics": {
+                        "failed_delivery_rate_percent": 50.0,
+                        "suppression_rate_percent": 33.33,
+                    },
+                    "last_evaluated_at": "2026-03-24T13:10:00",
+                    "updated_at": "2026-03-24T12:30:00",
+                    "latest_change_note": "Raised engaged recovery window.",
+                }
+            ],
+            "policies": [
+                {
+                    "policy_key": "default",
+                    "registry_status": "active",
+                    "health_status": "critical",
+                    "is_killed": False,
+                    "description": "Canonical notification policy.",
+                    "latest_alert_codes": ["failed_delivery_rate_high"],
+                    "metrics": {
+                        "failed_delivery_rate_percent": 50.0,
+                        "suppression_rate_percent": 33.33,
+                    },
+                    "last_evaluated_at": "2026-03-24T13:10:00",
+                    "updated_at": "2026-03-24T12:30:00",
+                    "latest_change_note": "Raised engaged recovery window.",
+                },
+                {
+                    "policy_key": "quiet_hours",
+                    "registry_status": "paused",
+                    "health_status": "healthy",
+                    "is_killed": False,
+                    "description": "Secondary notification policy.",
+                    "latest_alert_codes": [],
+                    "metrics": {
+                        "failed_delivery_rate_percent": 1.0,
+                        "suppression_rate_percent": 5.0,
+                    },
+                    "last_evaluated_at": "2026-03-24T12:20:00",
+                    "updated_at": "2026-03-24T12:00:00",
+                    "latest_change_note": "Paused pending review.",
+                },
+            ],
+        }
+
 
 class FakeOnboardingFlowService:
     async def start(self, user_id: int):
@@ -1667,6 +1730,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     registry_audit = client.get("/admin/experiments/registry/paywall_offer/audit?limit=10", headers={"X-Admin-Token": "secret"})
     registry_report = client.get("/admin/experiments/registry/paywall_offer/report?limit=10", headers={"X-Admin-Token": "secret"})
     notification_policy_list = client.get("/admin/notifications/policies", headers={"X-Admin-Token": "secret"})
+    notification_policy_health_report = client.get("/admin/notifications/policies/health/report?limit=10", headers={"X-Admin-Token": "secret"})
     notification_policy_detail = client.get("/admin/notifications/policies/default", headers={"X-Admin-Token": "secret"})
     notification_policy_update = client.put(
         "/admin/notifications/policies/default",
@@ -1763,6 +1827,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert notification_policy_list.status_code == 200
     assert notification_policy_list.json()["meta"]["source"] == "admin.notifications.policies.list"
     assert notification_policy_list.json()["data"]["policies"][0]["policy"]["cooldown_hours"] == 4
+    assert notification_policy_health_report.status_code == 200
+    assert notification_policy_health_report.json()["meta"]["source"] == "admin.notifications.policies.health_report"
+    assert notification_policy_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
+    assert notification_policy_health_report.json()["data"]["attention"][0]["policy_key"] == "default"
     assert notification_policy_detail.status_code == 200
     assert notification_policy_detail.json()["meta"]["source"] == "admin.notifications.policies.detail"
     assert notification_policy_detail.json()["data"]["policy"]["policy_key"] == "default"

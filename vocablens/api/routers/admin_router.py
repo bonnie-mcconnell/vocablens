@@ -30,6 +30,7 @@ from vocablens.api.schemas import (
     NotificationOperatorReportResponse,
     NotificationPolicyAuditResponse,
     NotificationPolicyDetailResponse,
+    NotificationPolicyHealthDashboardResponse,
     NotificationPolicyListResponse,
     NotificationPolicyOperatorReportResponse,
     NotificationPolicyUpsertRequest,
@@ -227,6 +228,18 @@ def create_admin_router() -> APIRouter:
         return {
             "data": policies,
             "meta": {"source": "admin.notifications.policies.list"},
+        }
+
+    @router.get("/notifications/policies/health/report", response_model=NotificationPolicyHealthDashboardResponse)
+    async def notification_policy_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: NotificationPolicyRegistryService = Depends(get_notification_policy_registry_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.notifications.policies.health_report"},
         }
 
     @router.get("/notifications/policies/{policy_key}", response_model=NotificationPolicyDetailResponse)

@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from vocablens.infrastructure.observability.ops_alerts import LoggingOpsAlertSink, OpsAlertSink
 from vocablens.infrastructure.logging.logger import get_logger
 from vocablens.infrastructure.observability.metrics import (
+    NOTIFICATION_POLICY_ACTIVE_ALERTS,
     NOTIFICATION_POLICY_HEALTH_ALERTS,
+    NOTIFICATION_POLICY_HEALTH_POLICIES,
     NOTIFICATION_POLICY_HEALTH_RATE,
     NOTIFICATION_POLICY_HEALTH_STATUS,
     NOTIFICATION_POLICY_HEALTH_TRANSITIONS,
@@ -26,9 +29,10 @@ class NotificationPolicyHealthSnapshot:
 
 
 class NotificationPolicyHealthSignalService:
-    def __init__(self, uow_factory: type[UnitOfWork]):
+    def __init__(self, uow_factory: type[UnitOfWork], alert_sink: OpsAlertSink | None = None):
         self._uow_factory = uow_factory
         self._registry_service = NotificationPolicyRegistryService(uow_factory)
+        self._alert_sink = alert_sink or LoggingOpsAlertSink()
 
     async def evaluate_policy(self, policy_key: str) -> dict[str, Any]:
         report = await self._registry_service.get_operator_report(policy_key, limit=100)
@@ -45,7 +49,8 @@ class NotificationPolicyHealthSignalService:
             metrics=metrics,
         )
         self._record_metrics(policy_key, status, metrics)
-        self._emit_signals(
+        await self._record_aggregate_metrics()
+        await self._emit_signals(
             policy_key=policy_key,
             previous_status=previous.current_status if previous else None,
             previous_alert_codes=previous.latest_alert_codes if previous else [],
@@ -93,8 +98,25 @@ class NotificationPolicyHealthSignalService:
             policy_key=policy_key,
             metric="suppression_rate_percent",
         ).set(float(metrics.get("suppression_rate_percent", 0.0) or 0.0))
+        alert_counts = {"warning": 0, "critical": 0}
+        for severity, count in alert_counts.items():
+            NOTIFICATION_POLICY_ACTIVE_ALERTS.labels(
+                policy_key=policy_key,
+                severity=severity,
+            ).set(float(count))
 
-    def _emit_signals(
+    async def _record_aggregate_metrics(self) -> None:
+        async with self._uow_factory() as uow:
+            states = await uow.notification_policy_health_states.list_all()
+        counts = {candidate: 0 for candidate in _HEALTH_STATUSES}
+        for state in states:
+            status = str(getattr(state, "current_status", "") or "")
+            if status in counts:
+                counts[status] += 1
+        for candidate in _HEALTH_STATUSES:
+            NOTIFICATION_POLICY_HEALTH_POLICIES.labels(status=candidate).set(float(counts[candidate]))
+
+    async def _emit_signals(
         self,
         *,
         policy_key: str,
@@ -104,6 +126,17 @@ class NotificationPolicyHealthSignalService:
         alerts: list[dict[str, Any]],
         metrics: dict[str, Any],
     ) -> None:
+        alert_counts = {"warning": 0, "critical": 0}
+        for alert in alerts:
+            severity = str(alert.get("severity") or "warning")
+            if severity in alert_counts:
+                alert_counts[severity] += 1
+        for severity, count in alert_counts.items():
+            NOTIFICATION_POLICY_ACTIVE_ALERTS.labels(
+                policy_key=policy_key,
+                severity=severity,
+            ).set(float(count))
+
         if previous_status and previous_status != status:
             NOTIFICATION_POLICY_HEALTH_TRANSITIONS.labels(
                 policy_key=policy_key,
@@ -117,6 +150,15 @@ class NotificationPolicyHealthSignalService:
                     "from_status": previous_status,
                     "to_status": status,
                     "metrics": metrics,
+                },
+            )
+            await self._alert_sink.emit(
+                "notification_policy_health_transition",
+                {
+                    "policy_key": policy_key,
+                    "from_status": previous_status,
+                    "to_status": status,
+                    "metrics": dict(metrics),
                 },
             )
 
@@ -139,5 +181,15 @@ class NotificationPolicyHealthSignalService:
                     "severity": severity,
                     "alert": alert,
                     "metrics": metrics,
+                },
+            )
+            await self._alert_sink.emit(
+                "notification_policy_health_alert",
+                {
+                    "policy_key": policy_key,
+                    "code": code,
+                    "severity": severity,
+                    "alert": dict(alert),
+                    "metrics": dict(metrics),
                 },
             )

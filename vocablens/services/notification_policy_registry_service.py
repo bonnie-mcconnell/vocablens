@@ -136,6 +136,43 @@ class NotificationPolicyRegistryService:
             "recent_traces": trace_payloads,
         }
 
+    async def get_health_dashboard(self, *, limit: int = 50) -> dict:
+        normalized_limit = max(1, min(limit, 200))
+        async with self._uow_factory() as uow:
+            registries = await uow.notification_policy_registries.list_all()
+            health_states = await uow.notification_policy_health_states.list_all()
+            latest_audits = {}
+            for registry in registries:
+                latest_audits[registry.policy_key] = await uow.notification_policy_audits.latest_for_policy(registry.policy_key)
+            await uow.commit()
+
+        state_by_key = {
+            str(item.policy_key): item
+            for item in health_states
+        }
+        rows = [
+            self._dashboard_policy_payload(
+                registry,
+                latest_audit=latest_audits.get(registry.policy_key),
+                health_state=state_by_key.get(str(registry.policy_key)),
+            )
+            for registry in registries
+        ]
+        sorted_rows = sorted(
+            rows,
+            key=lambda item: (
+                self._status_rank(item["health_status"]),
+                item["last_evaluated_at"] or "",
+                item["policy_key"],
+            ),
+        )
+        summary = self._dashboard_summary_payload(rows, total_registry_count=len(registries))
+        return {
+            "summary": summary,
+            "attention": [item for item in sorted_rows if item["health_status"] != "healthy"][:normalized_limit],
+            "policies": sorted_rows[:normalized_limit],
+        }
+
     def _validate_command(self, policy_key: str, command: NotificationPolicyRegistryUpsert) -> None:
         if command.status not in _VALID_STATUSES:
             raise ValidationError(f"Notification policy '{policy_key}' has invalid status '{command.status}'")
@@ -567,3 +604,46 @@ class NotificationPolicyRegistryService:
 
     def _timestamp(self, value) -> str | None:
         return value.isoformat() if getattr(value, "isoformat", None) else None
+
+    def _dashboard_policy_payload(self, registry, *, latest_audit, health_state) -> dict[str, Any]:
+        metrics = dict(getattr(health_state, "metrics", {}) or {})
+        return {
+            "policy_key": str(registry.policy_key),
+            "registry_status": str(registry.status),
+            "health_status": str(getattr(health_state, "current_status", "unevaluated") or "unevaluated"),
+            "is_killed": bool(registry.is_killed),
+            "description": registry.description,
+            "latest_alert_codes": list(getattr(health_state, "latest_alert_codes", []) or []),
+            "metrics": metrics,
+            "last_evaluated_at": self._timestamp(getattr(health_state, "last_evaluated_at", None)),
+            "updated_at": self._timestamp(getattr(registry, "updated_at", None)),
+            "latest_change_note": getattr(latest_audit, "change_note", None),
+        }
+
+    def _dashboard_summary_payload(self, rows: list[dict[str, Any]], *, total_registry_count: int) -> dict[str, Any]:
+        counts_by_status = Counter(str(item.get("health_status") or "unevaluated") for item in rows)
+        counts_by_registry_status = Counter(str(item.get("registry_status") or "") for item in rows)
+        alert_code_counts = Counter()
+        for item in rows:
+            for code in item.get("latest_alert_codes", []):
+                alert_code_counts[str(code)] += 1
+        evaluated_count = sum(1 for item in rows if item.get("health_status") != "unevaluated")
+        return {
+            "total_policies": total_registry_count,
+            "evaluated_policies": evaluated_count,
+            "unevaluated_policies": max(0, total_registry_count - evaluated_count),
+            "counts_by_health_status": dict(sorted(counts_by_status.items())),
+            "counts_by_registry_status": dict(sorted(counts_by_registry_status.items())),
+            "policies_with_alerts": sum(1 for item in rows if item.get("latest_alert_codes")),
+            "alert_counts_by_code": dict(sorted(alert_code_counts.items())),
+            "latest_evaluated_at": max((item.get("last_evaluated_at") for item in rows if item.get("last_evaluated_at")), default=None),
+        }
+
+    def _status_rank(self, status: str) -> int:
+        ranking = {
+            "critical": 0,
+            "warning": 1,
+            "healthy": 2,
+            "unevaluated": 3,
+        }
+        return ranking.get(status, 4)

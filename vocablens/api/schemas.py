@@ -563,6 +563,45 @@ class NotificationPolicyOperatorReportResponse(BaseModel):
     meta: NotificationPolicyOperatorReportMetaResponse
 
 
+class NotificationPolicyHealthDashboardPolicyResponse(BaseModel):
+    policy_key: str
+    registry_status: str
+    health_status: str
+    is_killed: bool = False
+    description: str | None = None
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
+    updated_at: datetime | None = None
+    latest_change_note: str | None = None
+
+
+class NotificationPolicyHealthDashboardSummaryResponse(BaseModel):
+    total_policies: int = 0
+    evaluated_policies: int = 0
+    unevaluated_policies: int = 0
+    counts_by_health_status: dict[str, int] = Field(default_factory=dict)
+    counts_by_registry_status: dict[str, int] = Field(default_factory=dict)
+    policies_with_alerts: int = 0
+    alert_counts_by_code: dict[str, int] = Field(default_factory=dict)
+    latest_evaluated_at: datetime | None = None
+
+
+class NotificationPolicyHealthDashboardDataResponse(BaseModel):
+    summary: NotificationPolicyHealthDashboardSummaryResponse
+    attention: list[NotificationPolicyHealthDashboardPolicyResponse] = Field(default_factory=list)
+    policies: list[NotificationPolicyHealthDashboardPolicyResponse] = Field(default_factory=list)
+
+
+class NotificationPolicyHealthDashboardMetaResponse(BaseModel):
+    source: Literal["admin.notifications.policies.health_report"]
+
+
+class NotificationPolicyHealthDashboardResponse(BaseModel):
+    data: NotificationPolicyHealthDashboardDataResponse
+    meta: NotificationPolicyHealthDashboardMetaResponse
+
+
 class DecisionTraceRecordResponse(BaseModel):
     id: int
     user_id: int

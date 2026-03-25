@@ -186,6 +186,22 @@ class FakeDecisionTraceRepo:
         ]
 
 
+class FakeNotificationPolicyHealthStatesRepo:
+    async def list_all(self):
+        return [
+            SimpleNamespace(
+                policy_key="default",
+                current_status="critical",
+                latest_alert_codes=["failed_delivery_rate_high"],
+                metrics={
+                    "failed_delivery_rate_percent": 50.0,
+                    "suppression_rate_percent": 33.33,
+                },
+                last_evaluated_at=None,
+            )
+        ]
+
+
 class FakeUOW:
     def __init__(self):
         self.notification_policy_registries = FakeNotificationPolicyRegistryRepo()
@@ -193,6 +209,7 @@ class FakeUOW:
         self.notification_deliveries = FakeNotificationDeliveryRepo()
         self.notification_suppression_events = FakeNotificationSuppressionEventsRepo()
         self.decision_traces = FakeDecisionTraceRepo()
+        self.notification_policy_health_states = FakeNotificationPolicyHealthStatesRepo()
 
     async def __aenter__(self):
         return self
@@ -304,3 +321,17 @@ def test_notification_policy_registry_service_returns_operator_report():
     assert payload["delivery_summary"]["counts_by_status"]["sent"] == 1
     assert payload["suppression_summary"]["counts_by_type"]["lifecycle_notification_suppressed"] == 1
     assert payload["version_summary"][0]["policy_version"] == "v1"
+
+
+def test_notification_policy_registry_service_returns_health_dashboard():
+    uow = FakeUOW()
+    service = NotificationPolicyRegistryService(lambda: uow)
+
+    payload = run_async(service.get_health_dashboard(limit=10))
+
+    assert payload["summary"]["total_policies"] == 1
+    assert payload["summary"]["counts_by_health_status"]["critical"] == 1
+    assert payload["summary"]["policies_with_alerts"] == 1
+    assert payload["attention"][0]["policy_key"] == "default"
+    assert payload["attention"][0]["health_status"] == "critical"
+    assert payload["attention"][0]["latest_alert_codes"] == ["failed_delivery_rate_high"]

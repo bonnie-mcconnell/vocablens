@@ -90,3 +90,15 @@ NOTIFICATION_POLICY_HEALTH_ALERTS = Counter(
     "Notification policy health alerts emitted",
     ["policy_key", "code", "severity"],
 )
+
+NOTIFICATION_POLICY_HEALTH_POLICIES = Gauge(
+    "vocablens_notification_policy_health_policies",
+    "Current count of notification policies by health status",
+    ["status"],
+)
+
+NOTIFICATION_POLICY_ACTIVE_ALERTS = Gauge(
+    "vocablens_notification_policy_active_alerts",
+    "Current active notification policy alerts by policy and severity",
+    ["policy_key", "severity"],
+)

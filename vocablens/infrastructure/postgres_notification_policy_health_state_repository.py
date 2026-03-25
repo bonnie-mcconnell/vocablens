@@ -17,6 +17,12 @@ class PostgresNotificationPolicyHealthStateRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_all(self):
+        result = await self.session.execute(
+            select(NotificationPolicyHealthStateORM).order_by(NotificationPolicyHealthStateORM.policy_key.asc())
+        )
+        return result.scalars().all()
+
     async def upsert(
         self,
         *,
