@@ -246,3 +246,75 @@ DAILY_LOOP_ACTIVE_ALERTS = Gauge(
     "Current active daily loop alerts by scope and severity",
     ["scope_key", "severity"],
 )
+
+SESSION_HEALTH_STATUS = Gauge(
+    "vocablens_session_health_status",
+    "Current session health state as a one-hot gauge",
+    ["scope_key", "status"],
+)
+
+SESSION_HEALTH_RATE = Gauge(
+    "vocablens_session_health_metric",
+    "Current evaluated session health metrics",
+    ["scope_key", "metric"],
+)
+
+SESSION_HEALTH_TRANSITIONS = Counter(
+    "vocablens_session_health_transitions_total",
+    "Session health state transitions",
+    ["scope_key", "from_status", "to_status"],
+)
+
+SESSION_HEALTH_ALERTS = Counter(
+    "vocablens_session_health_alerts_total",
+    "Session health alerts emitted",
+    ["scope_key", "code", "severity"],
+)
+
+SESSION_HEALTH_SCOPES = Gauge(
+    "vocablens_session_health_scopes",
+    "Current count of session scopes by health status",
+    ["status"],
+)
+
+SESSION_ACTIVE_ALERTS = Gauge(
+    "vocablens_session_active_alerts",
+    "Current active session alerts by scope and severity",
+    ["scope_key", "severity"],
+)
+
+LEARNING_HEALTH_STATUS = Gauge(
+    "vocablens_learning_health_status",
+    "Current learning health state as a one-hot gauge",
+    ["scope_key", "status"],
+)
+
+LEARNING_HEALTH_RATE = Gauge(
+    "vocablens_learning_health_metric",
+    "Current evaluated learning health metrics",
+    ["scope_key", "metric"],
+)
+
+LEARNING_HEALTH_TRANSITIONS = Counter(
+    "vocablens_learning_health_transitions_total",
+    "Learning health state transitions",
+    ["scope_key", "from_status", "to_status"],
+)
+
+LEARNING_HEALTH_ALERTS = Counter(
+    "vocablens_learning_health_alerts_total",
+    "Learning health alerts emitted",
+    ["scope_key", "code", "severity"],
+)
+
+LEARNING_HEALTH_SCOPES = Gauge(
+    "vocablens_learning_health_scopes",
+    "Current count of learning scopes by health status",
+    ["status"],
+)
+
+LEARNING_ACTIVE_ALERTS = Gauge(
+    "vocablens_learning_active_alerts",
+    "Current active learning alerts by scope and severity",
+    ["scope_key", "severity"],
+)

@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from tests.conftest import run_async
+from vocablens.core.time import utc_now
 from vocablens.services.session_engine import SessionEngine
 
 
@@ -146,6 +147,23 @@ class FakeGamificationService:
         )
 
 
+class FakeEventService:
+    def __init__(self):
+        self.events = []
+
+    async def track_event(self, user_id: int, event_type: str, payload: dict | None = None):
+        self.events.append((user_id, event_type, payload or {}))
+
+
+class FakeSessionHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_scope(self, scope_key: str = "global"):
+        self.calls.append(scope_key)
+        return {"scope_key": scope_key, "health": {"status": "healthy", "metrics": {}, "alerts": []}}
+
+
 def _factory_for(uow):
     return lambda: uow
 
@@ -250,11 +268,13 @@ def test_session_engine_persists_server_owned_session_and_evaluates_by_session_i
     )
     uow = FakeUOW(due_items=[due_item])
     learning_engine = FakeLearningEngine(recommendation)
+    health_signals = FakeSessionHealthSignalService()
     engine = SessionEngine(
         _factory_for(uow),
         learning_engine,
         FakeWowEngine(),
         FakeGamificationService(),
+        health_signal_service=health_signals,
     )
 
     started = run_async(engine.start_session(1))
@@ -278,6 +298,7 @@ def test_session_engine_persists_server_owned_session_and_evaluates_by_session_i
     assert uow.events.records[-1][1] == "lesson_completed"
     assert uow.decision_traces.records[-1]["trace_type"] == "session_evaluation"
     assert feedback.corrected_response == "I went there yesterday."
+    assert health_signals.calls == ["global", "global"]
 
 
 def test_session_engine_replays_same_submission_idempotently():
@@ -327,11 +348,13 @@ def test_session_engine_rejects_stale_contract_and_long_submission():
         skill_focus="vocabulary",
     )
     uow = FakeUOW()
+    event_service = FakeEventService()
     engine = SessionEngine(
         _factory_for(uow),
         FakeLearningEngine(recommendation),
         FakeWowEngine(),
         FakeGamificationService(),
+        event_service=event_service,
     )
     started = run_async(engine.start_session(3))
 
@@ -364,3 +387,49 @@ def test_session_engine_rejects_stale_contract_and_long_submission():
         assert False, "expected format conflict"
     except ConflictError as exc:
         assert "format" in str(exc) or "allowed length" in str(exc)
+
+    assert event_service.events[1][1] == "session_submission_rejected"
+    assert event_service.events[1][2]["reason"] == "stale_contract"
+    assert event_service.events[2][2]["reason"] == "response_too_long"
+
+
+def test_session_engine_records_health_after_expired_submission():
+    recommendation = SimpleNamespace(
+        action="review_word",
+        target="travel",
+        reason="Review is due",
+        skill_focus="vocabulary",
+    )
+    uow = FakeUOW()
+    event_service = FakeEventService()
+    health_signals = FakeSessionHealthSignalService()
+    engine = SessionEngine(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeWowEngine(),
+        FakeGamificationService(),
+        event_service=event_service,
+        health_signal_service=health_signals,
+    )
+    started = run_async(engine.start_session(4))
+    uow.created_sessions[started["session_id"]].expires_at = utc_now()
+
+    from vocablens.domain.errors import ConflictError
+
+    try:
+        run_async(
+            engine.evaluate_session(
+                4,
+                started["session_id"],
+                "travel",
+                submission_id="submit_expired",
+                contract_version=started["contract_version"],
+            )
+        )
+        assert False, "expected expired session conflict"
+    except ConflictError as exc:
+        assert "expired" in str(exc)
+
+    assert started["session_id"] in uow.expired_sessions
+    assert event_service.events[-1][2]["reason"] == "session_expired"
+    assert health_signals.calls == ["global", "global"]

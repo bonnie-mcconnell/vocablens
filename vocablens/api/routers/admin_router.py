@@ -10,9 +10,11 @@ from vocablens.api.dependencies import (
     get_decision_trace_service,
     get_experiment_registry_service,
     get_experiment_results_service,
+    get_learning_health_signal_service,
     get_lifecycle_health_signal_service,
     get_monetization_health_signal_service,
     get_notification_policy_registry_service,
+    get_session_health_signal_service,
     get_subscription_service,
 )
 from vocablens.api.schemas import (
@@ -28,6 +30,7 @@ from vocablens.api.schemas import (
     ExperimentOperatorReportResponse,
     ExperimentRegistryUpsertRequest,
     ExperimentResultsResponse,
+    LearningHealthDashboardResponse,
     LifecycleDiagnosticsResponse,
     LifecycleHealthDashboardResponse,
     LifecycleOperatorReportResponse,
@@ -43,6 +46,7 @@ from vocablens.api.schemas import (
     NotificationPolicyUpsertRequest,
     OnboardingDiagnosticsResponse,
     RetentionAnalyticsResponse,
+    SessionHealthDashboardResponse,
     UsageAnalyticsResponse,
 )
 from vocablens.domain.errors import NotFoundError, ValidationError
@@ -55,6 +59,7 @@ from vocablens.services.experiment_registry_service import (
 )
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.experiment_health_signal_service import ExperimentHealthSignalService
+from vocablens.services.learning_health_signal_service import LearningHealthSignalService
 from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
 from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
 from vocablens.services.notification_policy_registry_service import (
@@ -62,6 +67,7 @@ from vocablens.services.notification_policy_registry_service import (
     NotificationPolicyRegistryUpsert,
 )
 from vocablens.services.monetization_health_signal_service import MonetizationHealthSignalService
+from vocablens.services.session_health_signal_service import SessionHealthSignalService
 from vocablens.services.subscription_service import SubscriptionService
 
 
@@ -299,6 +305,30 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.daily_loop.health_report"},
+        }
+
+    @router.get("/sessions/health/report", response_model=SessionHealthDashboardResponse)
+    async def session_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: SessionHealthSignalService = Depends(get_session_health_signal_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.sessions.health_report"},
+        }
+
+    @router.get("/learning/health/report", response_model=LearningHealthDashboardResponse)
+    async def learning_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: LearningHealthSignalService = Depends(get_learning_health_signal_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.learning.health_report"},
         }
 
     @router.get("/notifications/policies/{policy_key}", response_model=NotificationPolicyDetailResponse)

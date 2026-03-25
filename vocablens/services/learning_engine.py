@@ -8,6 +8,7 @@ from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.learning_policy import LearningRecommendationPolicy, LearningSnapshot
+from vocablens.services.learning_health_signal_service import LearningHealthSignalService
 from vocablens.services.learning_session_updater import LearningSessionUpdater
 from vocablens.services.learning_state_projector import LearningStateProjector
 from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
@@ -72,6 +73,7 @@ class LearningEngine:
         experiment_service: ExperimentService | None = None,
         event_service: EventService | None = None,
         global_decision_engine: GlobalDecisionEngine | None = None,
+        health_signal_service: LearningHealthSignalService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
@@ -80,6 +82,7 @@ class LearningEngine:
         self._experiments = experiment_service
         self._event_service = event_service
         self._global_decision = global_decision_engine
+        self._health_signals = health_signal_service
         self._scheduler = SpacedRepetitionService()
         self._policy = LearningRecommendationPolicy(self._scheduler)
         self._state_projector = LearningStateProjector()
@@ -182,6 +185,8 @@ class LearningEngine:
                     reference_id=reference_id,
                 )
                 await managed_uow.commit()
+                if self._health_signals is not None:
+                    await self._health_signals.evaluate_scope("global")
                 return summary
         return await self._apply_session_result(
             uow,
@@ -333,6 +338,8 @@ class LearningEngine:
                     "review_window_minutes": decorated.review_window_minutes,
                 },
             )
+        if self._health_signals is not None:
+            await self._health_signals.evaluate_scope("global")
         return decorated
 
     async def _recommend_from_global_decision(self, user_id: int) -> LearningRecommendation:

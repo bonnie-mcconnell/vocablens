@@ -229,6 +229,15 @@ class FakePersonalizationService:
         return self._adaptation
 
 
+class FakeLearningHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_scope(self, scope_key: str = "global"):
+        self.calls.append(scope_key)
+        return {"scope_key": scope_key, "health": {"status": "healthy", "metrics": {}, "alerts": []}}
+
+
 def _factory_for(uow):
     return lambda: uow
 
@@ -284,7 +293,8 @@ def test_learning_engine_prioritizes_high_decay_due_reviews():
         total_vocab=total_vocab,
         recent_events=[SimpleNamespace(event_type="word_learned") for _ in range(3)],
     )
-    engine = LearningEngine(_factory_for(uow), RetentionEngine())
+    health_signals = FakeLearningHealthSignalService()
+    engine = LearningEngine(_factory_for(uow), RetentionEngine(), health_signal_service=health_signals)
 
     recommendation = run_async(engine.get_next_lesson(1))
 
@@ -294,6 +304,7 @@ def test_learning_engine_prioritizes_high_decay_due_reviews():
     assert recommendation.review_priority > 0.5
     assert recommendation.goal_label == "Bring a due word back into active memory"
     assert recommendation.review_window_minutes == 5
+    assert health_signals.calls == ["global"]
 
 
 def test_learning_engine_prioritizes_grammar_when_skill_is_weak():
@@ -401,7 +412,13 @@ def test_update_knowledge_updates_decay_and_emits_event():
         skills={"grammar": 0.6, "vocabulary": 0.5, "fluency": 0.4},
     )
     event_service = FakeEventService()
-    engine = LearningEngine(_factory_for(uow), RetentionEngine(), event_service=event_service)
+    health_signals = FakeLearningHealthSignalService()
+    engine = LearningEngine(
+        _factory_for(uow),
+        RetentionEngine(),
+        event_service=event_service,
+        health_signal_service=health_signals,
+    )
 
     summary = run_async(
         engine.update_knowledge(
@@ -429,6 +446,7 @@ def test_update_knowledge_updates_decay_and_emits_event():
     assert event_service.events[-1][1] == "knowledge_updated"
     assert uow.events.records[-1][1] == "knowledge_updated"
     assert uow.decision_traces.records[-1]["trace_type"] == "knowledge_update"
+    assert health_signals.calls == ["global"]
 
 
 async def _retention_assessment(state: str):

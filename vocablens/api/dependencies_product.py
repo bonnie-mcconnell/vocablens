@@ -29,6 +29,7 @@ from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.habit_engine import HabitEngine
 from vocablens.services.knowledge_graph_service import KnowledgeGraphService
 from vocablens.services.learning_engine import LearningEngine
+from vocablens.services.learning_health_signal_service import LearningHealthSignalService
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
@@ -46,6 +47,7 @@ from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.session_engine import SessionEngine
+from vocablens.services.session_health_signal_service import SessionHealthSignalService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.subscription_service import SubscriptionService
 from vocablens.services.wow_engine import WowEngine
@@ -130,6 +132,14 @@ def get_lifecycle_health_signal_service(uow_factory=Depends(get_uow_factory)) ->
 
 def get_daily_loop_health_signal_service(uow_factory=Depends(get_uow_factory)) -> DailyLoopHealthSignalService:
     return DailyLoopHealthSignalService(uow_factory)
+
+
+def get_session_health_signal_service(uow_factory=Depends(get_uow_factory)) -> SessionHealthSignalService:
+    return SessionHealthSignalService(uow_factory)
+
+
+def get_learning_health_signal_service(uow_factory=Depends(get_uow_factory)) -> LearningHealthSignalService:
+    return LearningHealthSignalService(uow_factory)
 
 
 def get_notification_state_service(uow_factory=Depends(get_uow_factory)) -> NotificationStateService:
@@ -339,6 +349,7 @@ def get_learning_engine(
     experiment_service=Depends(get_experiment_service),
     event_service=Depends(get_event_service),
     global_decision_engine=Depends(get_global_decision_engine),
+    health_signal_service=Depends(get_learning_health_signal_service),
 ):
     return LearningEngine(
         uow_factory,
@@ -348,6 +359,7 @@ def get_learning_engine(
         experiment_service,
         event_service,
         global_decision_engine,
+        health_signal_service,
     )
 
 
@@ -357,6 +369,7 @@ def get_session_engine(
     wow_engine=Depends(get_wow_engine),
     gamification_service=Depends(get_gamification_service),
     event_service=Depends(get_event_service),
+    health_signal_service=Depends(get_session_health_signal_service),
 ) -> SessionEngine:
     attribution = ExperimentAttributionService(uow_factory)
     return SessionEngine(
@@ -366,6 +379,7 @@ def get_session_engine(
         gamification_service,
         event_service,
         attribution,
+        health_signal_service,
     )
 
 

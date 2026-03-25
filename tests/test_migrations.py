@@ -53,6 +53,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "monetization_health_states" in tables
     assert "lifecycle_health_states" in tables
     assert "daily_loop_health_states" in tables
+    assert "session_health_states" in tables
+    assert "learning_health_states" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -480,6 +482,28 @@ def test_upgrade_downgrade_upgrade_round_trip():
         "last_evaluated_at",
     } <= daily_loop_health_columns
 
+    session_health_indexes = {idx["name"] for idx in inspector.get_indexes("session_health_states")}
+    assert "idx_session_health_states_status" in session_health_indexes
+    session_health_columns = {col["name"] for col in inspector.get_columns("session_health_states")}
+    assert {
+        "scope_key",
+        "current_status",
+        "latest_alert_codes",
+        "metrics",
+        "last_evaluated_at",
+    } <= session_health_columns
+
+    learning_health_indexes = {idx["name"] for idx in inspector.get_indexes("learning_health_states")}
+    assert "idx_learning_health_states_status" in learning_health_indexes
+    learning_health_columns = {col["name"] for col in inspector.get_columns("learning_health_states")}
+    assert {
+        "scope_key",
+        "current_status",
+        "latest_alert_codes",
+        "metrics",
+        "last_evaluated_at",
+    } <= learning_health_columns
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -660,6 +684,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "monetization_health_states" not in tables
     assert "lifecycle_health_states" not in tables
     assert "daily_loop_health_states" not in tables
+    assert "session_health_states" not in tables
+    assert "learning_health_states" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -686,6 +712,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "monetization_health_states" in tables
     assert "lifecycle_health_states" in tables
     assert "daily_loop_health_states" in tables
+    assert "session_health_states" in tables
+    assert "learning_health_states" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

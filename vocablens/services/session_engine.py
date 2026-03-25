@@ -12,6 +12,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.gamification_service import GamificationService
+from vocablens.services.session_health_signal_service import SessionHealthSignalService
 from vocablens.services.learning_engine import LearningEngine, ReviewedKnowledge, SessionResult
 from vocablens.services.wow_engine import WowEngine
 
@@ -92,6 +93,7 @@ class SessionEngine:
         gamification_service: GamificationService | None = None,
         event_service: EventService | None = None,
         experiment_attribution_service: ExperimentAttributionService | None = None,
+        health_signal_service: SessionHealthSignalService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning_engine = learning_engine
@@ -99,10 +101,19 @@ class SessionEngine:
         self._gamification = gamification_service
         self._event_service = event_service
         self._attribution = experiment_attribution_service
+        self._health_signals = health_signal_service
 
     async def start_session(self, user_id: int) -> dict[str, Any]:
         session = await self.build_session(user_id)
-        self._assert_session_quality(session)
+        try:
+            self._assert_session_quality(session)
+        except ConflictError:
+            await self._track_rejection(
+                user_id=user_id,
+                event_type="session_generation_rejected",
+                reason="quality_validation_failed",
+            )
+            raise
         payload = self.to_payload(session)
         session_id = uuid4().hex
         created_at = utc_now()
@@ -137,6 +148,8 @@ class SessionEngine:
                     "goal_label": session.goal_label,
                 },
             )
+
+        await self._evaluate_health()
 
         response = dict(payload)
         response["session_id"] = session_id
@@ -247,8 +260,20 @@ class SessionEngine:
                 await uow.commit()
                 return self.feedback_from_payload(prior_attempt.feedback_payload)
             if stored_session.contract_version != contract_version:
+                await self._track_rejection(
+                    user_id=user_id,
+                    event_type="session_submission_rejected",
+                    reason="stale_contract",
+                    session_id=session_id,
+                )
                 raise ConflictError("Session contract is stale")
             if stored_session.status == "completed":
+                await self._track_rejection(
+                    user_id=user_id,
+                    event_type="session_submission_rejected",
+                    reason="already_completed",
+                    session_id=session_id,
+                )
                 raise ConflictError("Session already completed")
             if stored_session.expires_at <= now:
                 await uow.learning_sessions.mark_expired(
@@ -257,10 +282,26 @@ class SessionEngine:
                     expired_at=now,
                 )
                 await uow.commit()
+                await self._track_rejection(
+                    user_id=user_id,
+                    event_type="session_submission_rejected",
+                    reason="session_expired",
+                    session_id=session_id,
+                )
+                await self._evaluate_health()
                 raise ConflictError("Session expired")
 
         session = self.from_payload(stored_session.session_payload)
-        validation = self._validate_submission(session, learner_response, stored_session.max_response_words)
+        try:
+            validation = self._validate_submission(session, learner_response, stored_session.max_response_words)
+        except ConflictError as exc:
+            await self._track_rejection(
+                user_id=user_id,
+                event_type="session_submission_rejected",
+                reason=self._submission_rejection_reason(str(exc)),
+                session_id=session_id,
+            )
+            raise
         evaluation = await self._evaluate_session(user_id, session, learner_response)
         feedback = evaluation.feedback
         feedback_payload = {
@@ -355,7 +396,44 @@ class SessionEngine:
                 occurred_at=now,
             )
 
+        await self._evaluate_health()
+
         return feedback
+
+    async def _track_rejection(
+        self,
+        *,
+        user_id: int,
+        event_type: str,
+        reason: str,
+        session_id: str | None = None,
+    ) -> None:
+        if self._event_service is None:
+            return
+        await self._event_service.track_event(
+            user_id=user_id,
+            event_type=event_type,
+            payload={
+                "source": "session_engine",
+                "session_id": session_id,
+                "reason": reason,
+            },
+        )
+
+    async def _evaluate_health(self) -> None:
+        if self._health_signals is None:
+            return
+        await self._health_signals.evaluate_scope("global")
+
+    def _submission_rejection_reason(self, message: str) -> str:
+        normalized = message.strip().lower()
+        reason_map = {
+            "session answer is empty": "empty_response",
+            "session answer must be a single short response": "multiline_response",
+            "session answer exceeds the allowed length": "response_too_long",
+            "session answer does not match the round format": "response_format_mismatch",
+        }
+        return reason_map.get(normalized, "validation_conflict")
 
     def to_payload(self, session: StructuredSession) -> dict[str, Any]:
         return asdict(session)

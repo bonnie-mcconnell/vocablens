@@ -7,6 +7,7 @@ from vocablens.api.dependencies import (
     get_current_user,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
+    get_learning_health_signal_service,
     get_monetization_health_signal_service,
     get_experiment_registry_service,
     get_experiment_results_service,
@@ -14,6 +15,7 @@ from vocablens.api.dependencies import (
     get_lifecycle_health_signal_service,
     get_notification_policy_registry_service,
     get_onboarding_flow_service,
+    get_session_health_signal_service,
     get_subscription_service,
 )
 from vocablens.main import create_app
@@ -870,6 +872,84 @@ class FakeDailyLoopHealthSignalService:
                         "mission_completion_rate_percent": 61.0,
                     },
                     "last_evaluated_at": "2026-03-25T08:12:00",
+                }
+            ],
+        }
+
+
+class FakeSessionHealthSignalService:
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_scopes": 1,
+                "counts_by_health_status": {"critical": 1},
+                "scopes_with_alerts": 1,
+                "alert_counts_by_code": {"session_completion_rate_low": 1},
+                "latest_evaluated_at": "2026-03-25T19:20:00",
+            },
+            "attention": [
+                {
+                    "scope_key": "global",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["session_completion_rate_low"],
+                    "metrics": {
+                        "sessions_started_7d": 64,
+                        "session_completion_rate_percent": 31.2,
+                        "expired_session_rate_percent": 22.0,
+                    },
+                    "last_evaluated_at": "2026-03-25T19:20:00",
+                }
+            ],
+            "scopes": [
+                {
+                    "scope_key": "global",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["session_completion_rate_low"],
+                    "metrics": {
+                        "sessions_started_7d": 64,
+                        "session_completion_rate_percent": 31.2,
+                        "expired_session_rate_percent": 22.0,
+                    },
+                    "last_evaluated_at": "2026-03-25T19:20:00",
+                }
+            ],
+        }
+
+
+class FakeLearningHealthSignalService:
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_scopes": 1,
+                "counts_by_health_status": {"warning": 1},
+                "scopes_with_alerts": 1,
+                "alert_counts_by_code": {"recommendation_target_generic": 1},
+                "latest_evaluated_at": "2026-03-25T19:22:00",
+            },
+            "attention": [
+                {
+                    "scope_key": "global",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["recommendation_target_generic"],
+                    "metrics": {
+                        "recommendations_7d": 42,
+                        "knowledge_updates_7d": 24,
+                        "generic_target_rate_percent": 42.8,
+                    },
+                    "last_evaluated_at": "2026-03-25T19:22:00",
+                }
+            ],
+            "scopes": [
+                {
+                    "scope_key": "global",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["recommendation_target_generic"],
+                    "metrics": {
+                        "recommendations_7d": 42,
+                        "knowledge_updates_7d": 24,
+                        "generic_target_rate_percent": 42.8,
+                    },
+                    "last_evaluated_at": "2026-03-25T19:22:00",
                 }
             ],
         }
@@ -1872,6 +1952,8 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_lifecycle_health_signal_service] = lambda: FakeLifecycleHealthSignalService()
     app.dependency_overrides[get_monetization_health_signal_service] = lambda: FakeMonetizationHealthSignalService()
     app.dependency_overrides[get_daily_loop_health_signal_service] = lambda: FakeDailyLoopHealthSignalService()
+    app.dependency_overrides[get_session_health_signal_service] = lambda: FakeSessionHealthSignalService()
+    app.dependency_overrides[get_learning_health_signal_service] = lambda: FakeLearningHealthSignalService()
     app.dependency_overrides[get_notification_policy_registry_service] = lambda: FakeNotificationPolicyRegistryService()
     app.dependency_overrides[get_decision_trace_service] = lambda: FakeDecisionTraceService()
     client = TestClient(app)
@@ -1967,6 +2049,14 @@ def test_admin_conversion_report_is_protected_and_standardized():
     )
     daily_loop_health_report = client.get(
         "/admin/daily-loop/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
+    session_health_report = client.get(
+        "/admin/sessions/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
+    learning_health_report = client.get(
+        "/admin/learning/health/report?limit=10",
         headers={"X-Admin-Token": "secret"},
     )
     notification_report = client.get(
@@ -2089,6 +2179,14 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert daily_loop_health_report.json()["meta"]["source"] == "admin.daily_loop.health_report"
     assert daily_loop_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
     assert daily_loop_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert session_health_report.status_code == 200
+    assert session_health_report.json()["meta"]["source"] == "admin.sessions.health_report"
+    assert session_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
+    assert session_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert learning_health_report.status_code == 200
+    assert learning_health_report.json()["meta"]["source"] == "admin.learning.health_report"
+    assert learning_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
+    assert learning_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
     assert notification_report.status_code == 200
     assert notification_report.json()["meta"]["source"] == "admin.notifications.report"
     assert notification_report.json()["meta"]["policy_key"] == "default"
