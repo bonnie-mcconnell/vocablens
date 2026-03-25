@@ -415,6 +415,27 @@ class ContentQualityGateService:
         return {
             "exercise_count": len(exercises),
             "exercise_types": [str(item.get("type") or "") for item in exercises],
+            "template_keys": sorted(
+                {
+                    str(item.get("template_key") or "").strip()
+                    for item in exercises
+                    if str(item.get("template_key") or "").strip()
+                }
+            ),
+            "objectives": sorted(
+                {
+                    str(item.get("objective") or "").strip()
+                    for item in exercises
+                    if str(item.get("objective") or "").strip()
+                }
+            ),
+            "difficulties": sorted(
+                {
+                    str(item.get("difficulty") or "").strip()
+                    for item in exercises
+                    if str(item.get("difficulty") or "").strip()
+                }
+            ),
             "has_next_action": bool(lesson.get("next_action")),
             "target": dict(lesson.get("next_action") or {}).get("target"),
         }

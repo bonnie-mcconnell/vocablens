@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 import re
 from typing import Any
 
+from vocablens.core.time import utc_now
 from vocablens.domain.errors import NotFoundError, ValidationError
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.content_quality_gate_service import ContentQualityGateService
@@ -115,6 +117,102 @@ class ExerciseTemplateRegistryAdminService:
             await uow.commit()
         return {"audit_entries": [self._audit_payload(item) for item in audits]}
 
+    async def get_health_dashboard(self, *, limit: int = 50) -> dict[str, Any]:
+        normalized_limit = max(1, min(limit, 200))
+        window_start = utc_now() - timedelta(days=7)
+        async with self._uow_factory() as uow:
+            templates = await uow.exercise_templates.list_all()
+            latest_audits: dict[str, Any] = {}
+            recent_audits: list[Any] = []
+            for template in templates:
+                template_key = str(template.template_key)
+                latest_audits[template_key] = await uow.exercise_template_audits.latest_for_template(template_key)
+                recent_audits.extend(await uow.exercise_template_audits.list_by_template(template_key, limit=10))
+            checks = await uow.content_quality_checks.list_since(window_start, limit=5000)
+            await uow.commit()
+
+        usage_by_template: dict[str, int] = {}
+        rejection_by_template: dict[str, int] = {}
+        for check in checks:
+            if str(getattr(check, "artifact_type", "") or "") != "generated_lesson":
+                continue
+            summary = dict(getattr(check, "artifact_summary", {}) or {})
+            template_keys = [
+                str(item).strip()
+                for item in list(summary.get("template_keys") or [])
+                if str(item).strip()
+            ]
+            for template_key in template_keys:
+                usage_by_template[template_key] = usage_by_template.get(template_key, 0) + 1
+                if str(getattr(check, "status", "") or "") == "rejected":
+                    rejection_by_template[template_key] = rejection_by_template.get(template_key, 0) + 1
+
+        rows = []
+        counts_by_status: dict[str, int] = {}
+        failed_fixtures = 0
+        runtime_rejections = 0
+        latest_audit_at = None
+        recent_audit_count = 0
+        for audit in recent_audits:
+            created_at = getattr(audit, "created_at", None)
+            if created_at is not None and created_at >= window_start:
+                recent_audit_count += 1
+            latest_audit_at = self._max_timestamp(latest_audit_at, created_at)
+
+        for template in templates:
+            template_key = str(template.template_key)
+            latest_audit = latest_audits.get(template_key)
+            fixture_summary = self._fixture_summary(latest_audit)
+            runtime_usage_count = usage_by_template.get(template_key, 0)
+            runtime_rejection_count = rejection_by_template.get(template_key, 0)
+            status = str(template.status)
+            counts_by_status[status] = counts_by_status.get(status, 0) + 1
+            if fixture_summary["failed_fixture_count"] > 0:
+                failed_fixtures += 1
+            if runtime_rejection_count > 0:
+                runtime_rejections += 1
+            rows.append(
+                {
+                    "template_key": template_key,
+                    "exercise_type": str(template.exercise_type),
+                    "objective": str(template.objective),
+                    "difficulty": str(template.difficulty),
+                    "status": status,
+                    "runtime_usage_count_7d": runtime_usage_count,
+                    "runtime_rejection_count_7d": runtime_rejection_count,
+                    "latest_fixture_status": fixture_summary["status"],
+                    "latest_failed_fixture_count": fixture_summary["failed_fixture_count"],
+                    "latest_audit_at": self._timestamp(getattr(latest_audit, "created_at", None)),
+                    "latest_change_note": str(getattr(latest_audit, "change_note", "") or "") or None,
+                }
+            )
+
+        rows.sort(
+            key=lambda item: (
+                self._attention_rank(item),
+                -int(item["runtime_rejection_count_7d"]),
+                -int(item["runtime_usage_count_7d"]),
+                item["template_key"],
+            )
+        )
+        attention = [
+            row
+            for row in rows
+            if row["latest_failed_fixture_count"] > 0 or row["runtime_rejection_count_7d"] > 0
+        ]
+        return {
+            "summary": {
+                "total_templates": len(rows),
+                "counts_by_status": dict(sorted(counts_by_status.items())),
+                "templates_with_failed_fixtures": failed_fixtures,
+                "templates_with_runtime_rejections": runtime_rejections,
+                "recent_audit_count_7d": recent_audit_count,
+                "latest_audit_at": self._timestamp(latest_audit_at),
+            },
+            "attention": attention[:normalized_limit],
+            "templates": rows[:normalized_limit],
+        }
+
     def _validate_command(self, template_key: str, command: ExerciseTemplateRegistryUpsert) -> None:
         if command.status not in _VALID_STATUSES:
             raise ValidationError(f"Exercise template '{template_key}' has invalid status '{command.status}'")
@@ -221,6 +319,34 @@ class ExerciseTemplateRegistryAdminService:
             "fixture_report": dict(audit.fixture_report or {}),
             "created_at": self._timestamp(getattr(audit, "created_at", None)),
         }
+
+    def _fixture_summary(self, audit) -> dict[str, Any]:
+        if audit is None:
+            return {"status": "unknown", "failed_fixture_count": 0}
+        report = dict(getattr(audit, "fixture_report", {}) or {})
+        fixtures = [dict(item or {}) for item in list(report.get("fixtures") or [])]
+        failed_fixture_count = sum(1 for item in fixtures if str(item.get("status") or "") == "rejected")
+        if not fixtures:
+            status = "unknown"
+        elif failed_fixture_count > 0:
+            status = "rejected"
+        else:
+            status = "passed"
+        return {"status": status, "failed_fixture_count": failed_fixture_count}
+
+    def _attention_rank(self, row: dict[str, Any]) -> int:
+        if int(row.get("latest_failed_fixture_count", 0) or 0) > 0:
+            return 0
+        if int(row.get("runtime_rejection_count_7d", 0) or 0) > 0:
+            return 1
+        return 2
+
+    def _max_timestamp(self, current, candidate):
+        if current is None:
+            return candidate
+        if candidate is None:
+            return current
+        return candidate if candidate > current else current
 
     def _audit_action(self, existing, command: ExerciseTemplateRegistryUpsert) -> str:
         if existing is None:

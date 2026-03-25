@@ -171,3 +171,42 @@ def test_content_quality_gate_rejects_multiple_choice_answer_contract():
     assert report["status"] == "rejected"
     assert any(item["code"] == "answer_contract_invalid" for item in report["violations"])
     assert uow.content_quality_checks.rows[0].artifact_type == "generated_lesson"
+    assert uow.content_quality_checks.rows[0].artifact_summary["template_keys"] == []
+
+
+def test_content_quality_gate_records_template_metadata_in_lesson_summary():
+    uow = FakeUOW()
+    service = ContentQualityGateService(lambda: uow)
+
+    report = run_async(
+        service.validate_generated_lesson(
+            user_id=1,
+            reference_id="lesson_templates",
+            lesson={
+                "exercises": [
+                    {
+                        "template_key": "recall_fill_blank_v1",
+                        "type": "fill_blank",
+                        "objective": "recall",
+                        "difficulty": "easy",
+                        "question": "Fill in the sentence with the travel word airport.",
+                        "answer": "airport",
+                    },
+                    {
+                        "template_key": "discrimination_choice_v1",
+                        "type": "multiple_choice",
+                        "objective": "discrimination",
+                        "difficulty": "medium",
+                        "question": "Choose the word that best matches airport.",
+                        "answer": "airport",
+                        "choices": ["airport", "bread", "water"],
+                    },
+                ],
+                "next_action": {"action": "learn_new_word", "target": "travel"},
+            },
+        )
+    )
+
+    assert report["artifact_summary"]["template_keys"] == ["discrimination_choice_v1", "recall_fill_blank_v1"]
+    assert report["artifact_summary"]["objectives"] == ["discrimination", "recall"]
+    assert report["artifact_summary"]["difficulties"] == ["easy", "medium"]

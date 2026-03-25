@@ -1480,6 +1480,44 @@ class ExerciseTemplateRegistryAuditResponse(BaseModel):
     meta: ExerciseTemplateRegistryAuditMetaResponse
 
 
+class ExerciseTemplateRegistryHealthTemplateResponse(BaseModel):
+    template_key: str
+    exercise_type: str
+    objective: str
+    difficulty: str
+    status: str
+    runtime_usage_count_7d: int = 0
+    runtime_rejection_count_7d: int = 0
+    latest_fixture_status: str
+    latest_failed_fixture_count: int = 0
+    latest_audit_at: datetime | None = None
+    latest_change_note: str | None = None
+
+
+class ExerciseTemplateRegistryHealthSummaryResponse(BaseModel):
+    total_templates: int = 0
+    counts_by_status: dict[str, int] = Field(default_factory=dict)
+    templates_with_failed_fixtures: int = 0
+    templates_with_runtime_rejections: int = 0
+    recent_audit_count_7d: int = 0
+    latest_audit_at: datetime | None = None
+
+
+class ExerciseTemplateRegistryHealthDataResponse(BaseModel):
+    summary: ExerciseTemplateRegistryHealthSummaryResponse
+    attention: list[ExerciseTemplateRegistryHealthTemplateResponse] = Field(default_factory=list)
+    templates: list[ExerciseTemplateRegistryHealthTemplateResponse] = Field(default_factory=list)
+
+
+class ExerciseTemplateRegistryHealthMetaResponse(BaseModel):
+    source: Literal["admin.content.templates.health_report"]
+
+
+class ExerciseTemplateRegistryHealthResponse(BaseModel):
+    data: ExerciseTemplateRegistryHealthDataResponse
+    meta: ExerciseTemplateRegistryHealthMetaResponse
+
+
 class SessionHealthScopeResponse(BaseModel):
     scope_key: str
     health_status: str

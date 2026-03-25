@@ -943,6 +943,61 @@ class FakeExerciseTemplateRegistryAdminService:
             ]
         }
 
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_templates": 3,
+                "counts_by_status": {"active": 1, "archived": 1, "draft": 1},
+                "templates_with_failed_fixtures": 1,
+                "templates_with_runtime_rejections": 2,
+                "recent_audit_count_7d": 2,
+                "latest_audit_at": "2026-03-25T19:20:00",
+            },
+            "attention": [
+                {
+                    "template_key": "discrimination_choice_v1",
+                    "exercise_type": "multiple_choice",
+                    "objective": "discrimination",
+                    "difficulty": "medium",
+                    "status": "draft",
+                    "runtime_usage_count_7d": 1,
+                    "runtime_rejection_count_7d": 1,
+                    "latest_fixture_status": "rejected",
+                    "latest_failed_fixture_count": 1,
+                    "latest_audit_at": "2026-03-25T19:20:00",
+                    "latest_change_note": "Left in draft after fixture failure.",
+                }
+            ],
+            "templates": [
+                {
+                    "template_key": "discrimination_choice_v1",
+                    "exercise_type": "multiple_choice",
+                    "objective": "discrimination",
+                    "difficulty": "medium",
+                    "status": "draft",
+                    "runtime_usage_count_7d": 1,
+                    "runtime_rejection_count_7d": 1,
+                    "latest_fixture_status": "rejected",
+                    "latest_failed_fixture_count": 1,
+                    "latest_audit_at": "2026-03-25T19:20:00",
+                    "latest_change_note": "Left in draft after fixture failure.",
+                },
+                {
+                    "template_key": "recall_fill_blank_v1",
+                    "exercise_type": "fill_blank",
+                    "objective": "recall",
+                    "difficulty": "medium",
+                    "status": "active",
+                    "runtime_usage_count_7d": 2,
+                    "runtime_rejection_count_7d": 1,
+                    "latest_fixture_status": "passed",
+                    "latest_failed_fixture_count": 0,
+                    "latest_audit_at": "2026-03-24T19:20:00",
+                    "latest_change_note": "Promoted recall template after fixture review.",
+                },
+            ][:limit],
+        }
+
     async def get_template(self, template_key: str):
         return {
             "template": {
@@ -2207,6 +2262,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/content/templates",
         headers={"X-Admin-Token": "secret"},
     )
+    content_template_health = client.get(
+        "/admin/content/templates/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
     content_template_detail = client.get(
         "/admin/content/templates/recall_fill_blank_v1",
         headers={"X-Admin-Token": "secret"},
@@ -2366,6 +2425,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert content_template_list.status_code == 200
     assert content_template_list.json()["meta"]["source"] == "admin.content.templates.list"
     assert content_template_list.json()["data"]["templates"][0]["template_key"] == "recall_fill_blank_v1"
+    assert content_template_health.status_code == 200
+    assert content_template_health.json()["meta"]["source"] == "admin.content.templates.health_report"
+    assert content_template_health.json()["data"]["summary"]["templates_with_failed_fixtures"] == 1
+    assert content_template_health.json()["data"]["attention"][0]["template_key"] == "discrimination_choice_v1"
     assert content_template_detail.status_code == 200
     assert content_template_detail.json()["meta"]["source"] == "admin.content.templates.detail"
     assert content_template_detail.json()["data"]["template"]["audit_entries"][0]["fixture_report"]["fixture_count"] == 2

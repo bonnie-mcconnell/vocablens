@@ -28,6 +28,7 @@ from vocablens.api.schemas import (
     DecisionTraceListResponse,
     ExerciseTemplateRegistryAuditResponse,
     ExerciseTemplateRegistryDetailResponse,
+    ExerciseTemplateRegistryHealthResponse,
     ExerciseTemplateRegistryListResponse,
     ExerciseTemplateRegistryUpsertRequest,
     ExperimentRegistryAuditResponse,
@@ -340,6 +341,18 @@ def create_admin_router() -> APIRouter:
         return {
             "data": payload,
             "meta": {"source": "admin.content.templates.list"},
+        }
+
+    @router.get("/content/templates/health/report", response_model=ExerciseTemplateRegistryHealthResponse)
+    async def exercise_template_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: ExerciseTemplateRegistryAdminService = Depends(get_exercise_template_registry_admin_service),
+    ):
+        payload = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": payload,
+            "meta": {"source": "admin.content.templates.health_report"},
         }
 
     @router.get("/content/templates/{template_key}", response_model=ExerciseTemplateRegistryDetailResponse)
