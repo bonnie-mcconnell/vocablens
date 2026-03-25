@@ -217,6 +217,18 @@ class NotificationPolicyAuditRepository(Protocol):
     async def latest_for_policy(self, policy_key: str) -> Optional[Any]: ...
 
 
+class NotificationPolicyHealthStateRepository(Protocol):
+    async def get(self, policy_key: str) -> Optional[Any]: ...
+    async def upsert(
+        self,
+        *,
+        policy_key: str,
+        current_status: str,
+        latest_alert_codes: List[str],
+        metrics: Dict[str, Any],
+    ) -> Any: ...
+
+
 class NotificationDeliveryRepository(Protocol):
     async def create_attempt(
         self,

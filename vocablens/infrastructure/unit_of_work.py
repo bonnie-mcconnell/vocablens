@@ -28,6 +28,9 @@ from vocablens.infrastructure.postgres_notification_policy_registry_repository i
 from vocablens.infrastructure.postgres_notification_policy_audit_repository import (
     PostgresNotificationPolicyAuditRepository,
 )
+from vocablens.infrastructure.postgres_notification_policy_health_state_repository import (
+    PostgresNotificationPolicyHealthStateRepository,
+)
 from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
@@ -100,6 +103,7 @@ class UnitOfWork:
         self._notification_suppression_events: Optional[PostgresNotificationSuppressionEventRepository] = None
         self._notification_policy_registries: Optional[PostgresNotificationPolicyRegistryRepository] = None
         self._notification_policy_audits: Optional[PostgresNotificationPolicyAuditRepository] = None
+        self._notification_policy_health_states: Optional[PostgresNotificationPolicyHealthStateRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
         self._experiment_outcome_attributions: Optional[PostgresExperimentOutcomeAttributionRepository] = None
@@ -287,6 +291,14 @@ class UnitOfWork:
         if self._notification_policy_audits is None:
             self._notification_policy_audits = PostgresNotificationPolicyAuditRepository(self.session)
         return self._notification_policy_audits
+
+    @property
+    def notification_policy_health_states(self) -> PostgresNotificationPolicyHealthStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._notification_policy_health_states is None:
+            self._notification_policy_health_states = PostgresNotificationPolicyHealthStateRepository(self.session)
+        return self._notification_policy_health_states
 
     @property
     def experiment_assignments(self) -> PostgresExperimentAssignmentRepository:

@@ -1,4 +1,4 @@
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 # HTTP
 REQUEST_LATENCY = Histogram(
@@ -65,4 +65,28 @@ JOB_EVENTS = Counter(
     "vocablens_job_events_total",
     "Background job lifecycle events",
     ["task", "event"],
+)
+
+NOTIFICATION_POLICY_HEALTH_STATUS = Gauge(
+    "vocablens_notification_policy_health_status",
+    "Current notification policy health state as a one-hot gauge",
+    ["policy_key", "status"],
+)
+
+NOTIFICATION_POLICY_HEALTH_RATE = Gauge(
+    "vocablens_notification_policy_health_rate_percent",
+    "Current evaluated notification policy rates",
+    ["policy_key", "metric"],
+)
+
+NOTIFICATION_POLICY_HEALTH_TRANSITIONS = Counter(
+    "vocablens_notification_policy_health_transitions_total",
+    "Notification policy health state transitions",
+    ["policy_key", "from_status", "to_status"],
+)
+
+NOTIFICATION_POLICY_HEALTH_ALERTS = Counter(
+    "vocablens_notification_policy_health_alerts_total",
+    "Notification policy health alerts emitted",
+    ["policy_key", "code", "severity"],
 )

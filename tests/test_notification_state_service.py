@@ -81,6 +81,15 @@ class FakeNotificationPolicyRegistryRepo:
         )
 
 
+class FakeNotificationPolicyHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_policy(self, policy_key: str):
+        self.calls.append(policy_key)
+        return {"policy_key": policy_key}
+
+
 class FakeUOW:
     def __init__(self):
         self.notification_states = FakeNotificationStatesRepo()
@@ -99,7 +108,8 @@ class FakeUOW:
 
 def test_notification_state_service_applies_engaged_lifecycle_suppression():
     uow = FakeUOW()
-    service = NotificationStateService(lambda: uow)
+    health_signals = FakeNotificationPolicyHealthSignalService()
+    service = NotificationStateService(lambda: uow, health_signal_service=health_signals)
 
     state = run_async(
         service.apply_lifecycle_policy(
@@ -115,11 +125,13 @@ def test_notification_state_service_applies_engaged_lifecycle_suppression():
     assert uow.notification_suppression_events.created[0]["event_type"] == "lifecycle_policy_updated"
     assert uow.notification_suppression_events.created[0]["policy_key"] == "default"
     assert uow.notification_suppression_events.created[0]["policy_version"] == "v1"
+    assert health_signals.calls == ["default"]
 
 
 def test_notification_state_service_records_sent_delivery_cadence():
     uow = FakeUOW()
-    service = NotificationStateService(lambda: uow)
+    health_signals = FakeNotificationPolicyHealthSignalService()
+    service = NotificationStateService(lambda: uow, health_signal_service=health_signals)
 
     state = run_async(
         service.record_delivery(
@@ -137,3 +149,4 @@ def test_notification_state_service_records_sent_delivery_cadence():
     assert state.last_delivery_channel == "email"
     assert state.last_delivery_status == "sent"
     assert state.cooldown_until is not None
+    assert health_signals.calls == []

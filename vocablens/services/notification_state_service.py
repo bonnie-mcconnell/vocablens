@@ -6,6 +6,7 @@ from typing import Any
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.notification_policy_health_signal_service import NotificationPolicyHealthSignalService
 from vocablens.services.notification_policy_service import NotificationPolicyService
 
 
@@ -23,10 +24,12 @@ class NotificationStateService:
         *,
         cooldown_hours: int = 4,
         policy_service: NotificationPolicyService | None = None,
+        health_signal_service: NotificationPolicyHealthSignalService | None = None,
     ):
         self._uow_factory = uow_factory
         self._cooldown = timedelta(hours=cooldown_hours)
         self._policy_service = policy_service or NotificationPolicyService(uow_factory)
+        self._health_signals = health_signal_service or NotificationPolicyHealthSignalService(uow_factory)
 
     async def sync_preferences(
         self,
@@ -99,6 +102,8 @@ class NotificationStateService:
                     payload=dict(updated.lifecycle_policy or {}),
                 )
             await uow.commit()
+        if previous_stage != lifecycle_stage or previous_policy != dict(updated.lifecycle_policy or {}):
+            await self._health_signals.evaluate_policy(runtime_policy.policy_key)
         return updated
 
     async def record_delivery(
@@ -177,4 +182,6 @@ class NotificationStateService:
                         created_at=now,
                     )
             await uow.commit()
+        if "lifecycle_service" in source_context and reason:
+            await self._health_signals.evaluate_policy(runtime_policy.policy_key)
         return state

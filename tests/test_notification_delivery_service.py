@@ -83,6 +83,15 @@ class FakeNotificationPolicyRegistryRepo:
         )()
 
 
+class FakeNotificationPolicyHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_policy(self, policy_key: str):
+        self.calls.append(policy_key)
+        return {"policy_key": policy_key}
+
+
 class FakeUOW:
     def __init__(self):
         self.notification_deliveries = FakeNotificationDeliveryRepo()
@@ -106,11 +115,13 @@ async def _no_sleep(seconds: float):
 def test_notification_delivery_service_retries_with_backoff_until_success():
     uow = FakeUOW()
     backend = FakeBackend("email", failures_before_success=1)
+    health_signals = FakeNotificationPolicyHealthSignalService()
     service = NotificationDeliveryService(
         lambda: uow,
         {"email": backend},
         max_attempts=3,
         sleeper=_no_sleep,
+        health_signal_service=health_signals,
     )
 
     result = run_async(
@@ -136,16 +147,19 @@ def test_notification_delivery_service_retries_with_backoff_until_success():
     assert uow.notification_deliveries.status_updates[-1]["status"] == "sent"
     assert uow.notification_states.row.sent_count_today == 1
     assert uow.notification_states.row.last_delivery_status == "sent"
+    assert health_signals.calls == ["default", "default"]
 
 
 def test_notification_delivery_service_records_final_failure():
     uow = FakeUOW()
     backend = FakeBackend("push", failures_before_success=5)
+    health_signals = FakeNotificationPolicyHealthSignalService()
     service = NotificationDeliveryService(
         lambda: uow,
         {"push": backend},
         max_attempts=2,
         sleeper=_no_sleep,
+        health_signal_service=health_signals,
     )
 
     result = run_async(
@@ -167,18 +181,21 @@ def test_notification_delivery_service_records_final_failure():
     assert uow.notification_deliveries.created[-1]["policy_key"] == "default"
     assert uow.notification_deliveries.status_updates[-1]["status"] == "failed"
     assert uow.notification_states.row.last_delivery_status == "failed"
+    assert health_signals.calls == ["default", "default"]
 
 
 def test_notification_delivery_service_batches_by_channel():
     uow = FakeUOW()
     email = FakeBackend("email")
     in_app = FakeBackend("in_app")
+    health_signals = FakeNotificationPolicyHealthSignalService()
     service = NotificationDeliveryService(
         lambda: uow,
         {"email": email, "in_app": in_app},
         max_attempts=1,
         batch_size=2,
         sleeper=_no_sleep,
+        health_signal_service=health_signals,
     )
 
     results = run_async(
@@ -195,3 +212,4 @@ def test_notification_delivery_service_batches_by_channel():
     assert len(email.calls) == 2
     assert len(in_app.calls) == 1
     assert all(result.success for result in results)
+    assert health_signals.calls == ["default", "default", "default"]

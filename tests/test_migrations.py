@@ -48,6 +48,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
     assert {"user_notification_states", "notification_suppression_events"} <= tables
     assert {"notification_policy_registries", "notification_policy_audits"} <= tables
+    assert "notification_policy_health_states" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -416,6 +417,19 @@ def test_upgrade_downgrade_upgrade_round_trip():
     notification_policy_audit_fks = inspector.get_foreign_keys("notification_policy_audits")
     assert any(fk["referred_table"] == "notification_policy_registries" for fk in notification_policy_audit_fks)
 
+    notification_policy_health_indexes = {idx["name"] for idx in inspector.get_indexes("notification_policy_health_states")}
+    assert "idx_notification_policy_health_states_status" in notification_policy_health_indexes
+    notification_policy_health_columns = {col["name"] for col in inspector.get_columns("notification_policy_health_states")}
+    assert {
+        "policy_key",
+        "current_status",
+        "latest_alert_codes",
+        "metrics",
+        "last_evaluated_at",
+    } <= notification_policy_health_columns
+    notification_policy_health_fks = inspector.get_foreign_keys("notification_policy_health_states")
+    assert any(fk["referred_table"] == "notification_policy_registries" for fk in notification_policy_health_fks)
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -591,6 +605,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "notification_suppression_events" not in tables
     assert "notification_policy_registries" not in tables
     assert "notification_policy_audits" not in tables
+    assert "notification_policy_health_states" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -612,6 +627,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"user_lifecycle_states", "lifecycle_transitions"} <= tables
     assert {"user_notification_states", "notification_suppression_events"} <= tables
     assert {"notification_policy_registries", "notification_policy_audits"} <= tables
+    assert "notification_policy_health_states" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

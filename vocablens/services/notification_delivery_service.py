@@ -7,6 +7,7 @@ from typing import Protocol
 from vocablens.config.settings import settings
 from vocablens.infrastructure.notifications.base import NotificationMessage, NotificationSink
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.notification_policy_health_signal_service import NotificationPolicyHealthSignalService
 from vocablens.services.notification_policy_service import NotificationPolicyService
 from vocablens.services.notification_state_service import NotificationStateService
 
@@ -62,6 +63,7 @@ class NotificationDeliveryService:
         backoff_base: float = 0.5,
         sleeper=None,
         batch_size: int = 25,
+        health_signal_service: NotificationPolicyHealthSignalService | None = None,
     ):
         self._uow_factory = uow_factory
         self._backends = dict(backends)
@@ -71,6 +73,7 @@ class NotificationDeliveryService:
         self._batch_size = max(1, int(batch_size))
         self._policy_service = NotificationPolicyService(uow_factory)
         self._notification_states = NotificationStateService(uow_factory)
+        self._health_signals = health_signal_service or NotificationPolicyHealthSignalService(uow_factory)
 
     async def send(self, message: NotificationMessage) -> DeliveryResult:
         channel = self._channel_for(message)
@@ -104,6 +107,7 @@ class NotificationDeliveryService:
                     policy_version=runtime_policy.policy_version,
                     reference_id=reference_id,
                 )
+                await self._health_signals.evaluate_policy(runtime_policy.policy_key)
                 if attempt < self._max_attempts:
                     await self._sleep(self._backoff_base * (2 ** (attempt - 1)))
                     continue
@@ -126,6 +130,7 @@ class NotificationDeliveryService:
                 policy_version=runtime_policy.policy_version,
                 reference_id=reference_id,
             )
+            await self._health_signals.evaluate_policy(runtime_policy.policy_key)
             return DeliveryResult(
                 user_id=message.user_id,
                 channel=channel,
