@@ -49,6 +49,40 @@ class ContentQualityGateService:
             "artifact_summary": artifact_summary,
         }
 
+    async def validate_generated_lesson(
+        self,
+        *,
+        user_id: int,
+        reference_id: str,
+        lesson: dict[str, Any],
+        source: str = "lesson_generation_service",
+    ) -> dict[str, Any]:
+        normalized_lesson = dict(lesson or {})
+        violations = self._lint_generated_lesson(normalized_lesson)
+        rejected = any(str(item.get("severity") or "") == "critical" for item in violations)
+        score = self._score(violations)
+        artifact_summary = self._lesson_summary(normalized_lesson)
+        async with self._uow_factory() as uow:
+            await uow.content_quality_checks.create(
+                user_id=user_id,
+                source=source,
+                artifact_type="generated_lesson",
+                reference_id=reference_id,
+                status="rejected" if rejected else "passed",
+                score=score,
+                violations=violations,
+                artifact_summary=artifact_summary,
+            )
+            await uow.commit()
+        if self._health_signals is not None:
+            await self._health_signals.evaluate_scope("global")
+        return {
+            "status": "rejected" if rejected else "passed",
+            "score": score,
+            "violations": violations,
+            "artifact_summary": artifact_summary,
+        }
+
     def ensure_passed(self, report: dict[str, Any]) -> None:
         if str(report.get("status") or "") != "rejected":
             return
@@ -125,6 +159,106 @@ class ContentQualityGateService:
                             "Correction phase is missing accepted keyword guidance.",
                         )
                     )
+        return violations
+
+    def _lint_generated_lesson(self, lesson: dict[str, Any]) -> list[dict[str, Any]]:
+        violations: list[dict[str, Any]] = []
+        exercises = list(lesson.get("exercises") or [])
+        if not exercises:
+            violations.append(
+                self._violation(
+                    "exercise_set_empty",
+                    "critical",
+                    "Generated lesson is missing exercises.",
+                )
+            )
+            return violations
+
+        for index, exercise in enumerate(exercises):
+            item = dict(exercise or {})
+            exercise_type = str(item.get("type") or "").strip()
+            question = str(item.get("question") or "").strip()
+            answer = str(item.get("answer") or "").strip()
+            label = f"exercise_{index + 1}"
+            if exercise_type not in {"fill_blank", "multiple_choice"}:
+                violations.append(
+                    self._violation(
+                        "exercise_type_invalid",
+                        "critical",
+                        f"{label} uses an unsupported exercise type.",
+                    )
+                )
+            if len(question) < 12:
+                violations.append(
+                    self._violation(
+                        "ambiguous_prompt",
+                        "warning",
+                        f"{label} question is too short to be reliably interpreted.",
+                    )
+                )
+            if not answer:
+                violations.append(
+                    self._violation(
+                        "answer_contract_invalid",
+                        "critical",
+                        f"{label} is missing an answer contract.",
+                    )
+                )
+            if answer and question.lower() == answer.lower():
+                violations.append(
+                    self._violation(
+                        "ambiguous_prompt",
+                        "warning",
+                        f"{label} question mirrors the answer too closely.",
+                    )
+                )
+            if exercise_type == "multiple_choice":
+                choices = [str(choice).strip() for choice in list(item.get("choices") or []) if str(choice).strip()]
+                if len(choices) < 3:
+                    violations.append(
+                        self._violation(
+                            "answer_contract_invalid",
+                            "critical",
+                            f"{label} multiple-choice exercise has too few answer choices.",
+                        )
+                    )
+                elif len({choice.lower() for choice in choices}) != len(choices):
+                    violations.append(
+                        self._violation(
+                            "weak_distractors",
+                            "warning",
+                            f"{label} multiple-choice exercise contains duplicate choices.",
+                        )
+                    )
+                if answer and answer not in choices:
+                    violations.append(
+                        self._violation(
+                            "answer_contract_invalid",
+                            "critical",
+                            f"{label} multiple-choice answer is missing from the choices.",
+                        )
+                    )
+                wrong_choices = [choice for choice in choices if answer and choice != answer]
+                if wrong_choices and len(set(choice.lower() for choice in wrong_choices)) < 2:
+                    violations.append(
+                        self._violation(
+                            "weak_distractors",
+                            "warning",
+                            f"{label} multiple-choice distractors are too weak.",
+                        )
+                    )
+
+        next_action = dict(lesson.get("next_action") or {})
+        if next_action:
+            target = str(next_action.get("target") or "").strip().lower()
+            if target in {"", "general", "mixed", "unknown", "vocabulary"}:
+                violations.append(
+                    self._violation(
+                        "target_contract_invalid",
+                        "critical",
+                        "Generated lesson next action target is missing or too generic.",
+                    )
+                )
         return violations
 
     def _lint_prompt_phase(self, phase_name: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -218,6 +352,15 @@ class ContentQualityGateService:
             "lesson_target": getattr(session, "lesson_target", None),
             "max_response_words": int(getattr(session, "max_response_words", 0) or 0),
             "phase_names": [str(getattr(phase, "name", "") or "") for phase in phases],
+        }
+
+    def _lesson_summary(self, lesson: dict[str, Any]) -> dict[str, Any]:
+        exercises = [dict(item or {}) for item in list(lesson.get("exercises") or [])]
+        return {
+            "exercise_count": len(exercises),
+            "exercise_types": [str(item.get("type") or "") for item in exercises],
+            "has_next_action": bool(lesson.get("next_action")),
+            "target": dict(lesson.get("next_action") or {}).get("target"),
         }
 
     def _score(self, violations: list[dict[str, Any]]) -> float:

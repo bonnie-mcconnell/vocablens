@@ -144,3 +144,30 @@ def test_content_quality_gate_rejects_generic_target_contract():
         assert False, "expected quality gate conflict"
     except ConflictError as exc:
         assert "quality validation" in str(exc)
+
+
+def test_content_quality_gate_rejects_multiple_choice_answer_contract():
+    uow = FakeUOW()
+    service = ContentQualityGateService(lambda: uow)
+
+    report = run_async(
+        service.validate_generated_lesson(
+            user_id=1,
+            reference_id="lesson_bad",
+            lesson={
+                "exercises": [
+                    {
+                        "type": "multiple_choice",
+                        "question": "Choose the travel word.",
+                        "choices": ["bread", "water", "apple"],
+                        "answer": "airport",
+                    }
+                ],
+                "next_action": {"action": "learn_new_word", "target": "travel"},
+            },
+        )
+    )
+
+    assert report["status"] == "rejected"
+    assert any(item["code"] == "answer_contract_invalid" for item in report["violations"])
+    assert uow.content_quality_checks.rows[0].artifact_type == "generated_lesson"
