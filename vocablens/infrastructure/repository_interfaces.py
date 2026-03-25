@@ -339,6 +339,17 @@ class ContentQualityHealthStateRepository(Protocol):
     ) -> Any: ...
 
 
+class ExerciseTemplateRepository(Protocol):
+    async def get_by_key(self, template_key: str) -> Optional[Any]: ...
+    async def list_active(
+        self,
+        *,
+        objectives: List[str] | None = None,
+        difficulty: str | None = None,
+        limit: int = 20,
+    ) -> List[Any]: ...
+
+
 class NotificationDeliveryRepository(Protocol):
     async def create_attempt(
         self,

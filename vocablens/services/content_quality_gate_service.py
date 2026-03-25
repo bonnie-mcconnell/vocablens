@@ -86,7 +86,7 @@ class ContentQualityGateService:
     def ensure_passed(self, report: dict[str, Any]) -> None:
         if str(report.get("status") or "") != "rejected":
             return
-        raise ConflictError("Session content failed quality validation")
+        raise ConflictError("Content failed quality validation")
 
     def _lint_structured_session(self, session) -> list[dict[str, Any]]:
         violations: list[dict[str, Any]] = []
@@ -176,16 +176,35 @@ class ContentQualityGateService:
 
         for index, exercise in enumerate(exercises):
             item = dict(exercise or {})
+            template_key = str(item.get("template_key") or "").strip()
             exercise_type = str(item.get("type") or "").strip()
+            objective = str(item.get("objective") or "").strip()
+            difficulty = str(item.get("difficulty") or "").strip()
             question = str(item.get("question") or "").strip()
             answer = str(item.get("answer") or "").strip()
             label = f"exercise_{index + 1}"
+            if not template_key:
+                violations.append(
+                    self._violation(
+                        "template_contract_invalid",
+                        "critical",
+                        f"{label} is missing a template key.",
+                    )
+                )
             if exercise_type not in {"fill_blank", "multiple_choice"}:
                 violations.append(
                     self._violation(
                         "exercise_type_invalid",
                         "critical",
                         f"{label} uses an unsupported exercise type.",
+                    )
+                )
+            if not objective or not difficulty:
+                violations.append(
+                    self._violation(
+                        "template_contract_invalid",
+                        "critical",
+                        f"{label} is missing objective or difficulty metadata.",
                     )
                 )
             if len(question) < 12:

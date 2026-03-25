@@ -20,6 +20,7 @@ from vocablens.services.decision_trace_service import DecisionTraceService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
+from vocablens.services.exercise_template_registry_service import ExerciseTemplateRegistryService
 from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_results_service import ExperimentResultsService
@@ -145,6 +146,12 @@ def get_content_quality_gate_service(
     health_signal_service=Depends(get_content_quality_health_signal_service),
 ) -> ContentQualityGateService:
     return ContentQualityGateService(uow_factory, health_signal_service)
+
+
+def get_exercise_template_registry_service(
+    uow_factory=Depends(get_uow_factory),
+) -> ExerciseTemplateRegistryService:
+    return ExerciseTemplateRegistryService(uow_factory)
 
 
 def get_session_health_signal_service(uow_factory=Depends(get_uow_factory)) -> SessionHealthSignalService:

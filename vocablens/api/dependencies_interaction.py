@@ -13,6 +13,7 @@ from vocablens.api.dependencies_core import (
 from vocablens.api.dependencies_product import (
     get_content_quality_gate_service,
     get_event_service,
+    get_exercise_template_registry_service,
     get_gamification_service,
     get_global_decision_engine,
     get_learning_engine,
@@ -132,8 +133,15 @@ def get_lesson_generation_service(
     graph_service=Depends(get_learning_graph_service),
     learning_engine=Depends(get_learning_engine),
     content_quality_gate_service=Depends(get_content_quality_gate_service),
+    template_registry_service=Depends(get_exercise_template_registry_service),
 ) -> LessonGenerationService:
-    return LessonGenerationService(llm_provider, graph_service, learning_engine, content_quality_gate_service)
+    return LessonGenerationService(
+        llm_provider,
+        graph_service,
+        learning_engine,
+        content_quality_gate_service,
+        template_registry_service,
+    )
 
 
 def get_scenario_service(llm_provider=Depends(get_llm_provider)) -> ScenarioService:

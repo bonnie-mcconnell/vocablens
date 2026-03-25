@@ -754,6 +754,32 @@ class ContentQualityHealthStateORM(Base):
     last_evaluated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class ExerciseTemplateORM(Base):
+    __tablename__ = "exercise_templates"
+    __table_args__ = (
+        UniqueConstraint("template_key", name="uq_exercise_templates_key"),
+        CheckConstraint(
+            "status IN ('active', 'archived')",
+            name="ck_exercise_templates_status_valid",
+        ),
+        Index("idx_exercise_templates_status", "status", "objective", "difficulty"),
+        Index("idx_exercise_templates_type", "exercise_type", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    template_key = Column(String, nullable=False)
+    exercise_type = Column(String, nullable=False)
+    objective = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="active")
+    prompt_template = Column(Text, nullable=False)
+    answer_source = Column(String, nullable=False)
+    choice_count = Column(Integer)
+    template_metadata = Column("metadata", JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+
 class MonetizationOfferEventORM(Base):
     __tablename__ = "monetization_offer_events"
     __table_args__ = (

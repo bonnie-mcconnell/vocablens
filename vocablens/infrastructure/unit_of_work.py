@@ -55,6 +55,9 @@ from vocablens.infrastructure.postgres_content_quality_check_repository import (
 from vocablens.infrastructure.postgres_content_quality_health_state_repository import (
     PostgresContentQualityHealthStateRepository,
 )
+from vocablens.infrastructure.postgres_exercise_template_repository import (
+    PostgresExerciseTemplateRepository,
+)
 from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
@@ -136,6 +139,7 @@ class UnitOfWork:
         self._learning_health_states: Optional[PostgresLearningHealthStateRepository] = None
         self._content_quality_checks: Optional[PostgresContentQualityCheckRepository] = None
         self._content_quality_health_states: Optional[PostgresContentQualityHealthStateRepository] = None
+        self._exercise_templates: Optional[PostgresExerciseTemplateRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
         self._experiment_outcome_attributions: Optional[PostgresExperimentOutcomeAttributionRepository] = None
@@ -395,6 +399,14 @@ class UnitOfWork:
         if self._content_quality_health_states is None:
             self._content_quality_health_states = PostgresContentQualityHealthStateRepository(self.session)
         return self._content_quality_health_states
+
+    @property
+    def exercise_templates(self) -> PostgresExerciseTemplateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._exercise_templates is None:
+            self._exercise_templates = PostgresExerciseTemplateRepository(self.session)
+        return self._exercise_templates
 
     @property
     def experiment_assignments(self) -> PostgresExperimentAssignmentRepository:

@@ -34,6 +34,65 @@ class FakeLearningEngine:
         )
 
 
+class FakeTemplateRegistryService:
+    async def get_lesson_blueprint(self, recommendation, vocab: list[str]):
+        return [
+            SimpleNamespace(
+                template_key="discrimination_choice_v1",
+                exercise_type="multiple_choice",
+                objective="discrimination",
+                difficulty="medium",
+                prompt_template="Choose the option that best matches {target}.",
+                answer_source="target",
+                choice_count=4,
+                metadata={},
+            ),
+            SimpleNamespace(
+                template_key="recall_fill_blank_v1",
+                exercise_type="fill_blank",
+                objective="recall",
+                difficulty="medium",
+                prompt_template="Fill the blank with {target}.",
+                answer_source="target",
+                choice_count=None,
+                metadata={},
+            ),
+        ]
+
+    def render_exercises(self, *, blueprint, recommendation, vocab: list[str]):
+        return [
+            {
+                "template_key": "discrimination_choice_v1",
+                "type": "multiple_choice",
+                "objective": "discrimination",
+                "difficulty": "medium",
+                "question": "Choose the option that best matches travel.",
+                "choices": ["travel", "airport", "hotel", "bread"],
+                "answer": "travel",
+            },
+            {
+                "template_key": "recall_fill_blank_v1",
+                "type": "fill_blank",
+                "objective": "recall",
+                "difficulty": "medium",
+                "question": "Fill the blank with travel.",
+                "answer": "travel",
+            },
+        ]
+
+    def merge_generated_exercises(self, *, blueprint, fallback_exercises: list[dict], generated_exercises: list[dict]):
+        return [
+            {
+                **fallback_exercises[0],
+                **generated_exercises[0],
+                "template_key": "discrimination_choice_v1",
+                "objective": "discrimination",
+                "difficulty": "medium",
+            },
+            dict(fallback_exercises[1]),
+        ]
+
+
 class FakeContentQualityGateService:
     def __init__(self, *, reject: bool = False):
         self.reject = reject
@@ -73,11 +132,14 @@ def test_lesson_generation_service_runs_canonical_content_gate():
         FakeGraphService(),
         FakeLearningEngine(),
         content_gate,
+        FakeTemplateRegistryService(),
     )
 
     lesson = run_async(service.generate_lesson(1))
 
     assert lesson["next_action"]["target"] == "travel"
+    assert lesson["exercises"][0]["template_key"] == "discrimination_choice_v1"
+    assert lesson["exercises"][1]["template_key"] == "recall_fill_blank_v1"
     assert content_gate.calls
     assert content_gate.calls[0][2] == "lesson_generation_service"
     assert "Vocabulary:" in llm.prompts[0]
@@ -101,6 +163,7 @@ def test_lesson_generation_service_rejects_bad_generated_content():
         FakeGraphService(),
         FakeLearningEngine(),
         FakeContentQualityGateService(reject=True),
+        FakeTemplateRegistryService(),
     )
 
     try:

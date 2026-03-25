@@ -57,6 +57,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "learning_health_states" in tables
     assert "content_quality_checks" in tables
     assert "content_quality_health_states" in tables
+    assert "exercise_templates" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -537,6 +538,25 @@ def test_upgrade_downgrade_upgrade_round_trip():
         "last_evaluated_at",
     } <= content_quality_health_columns
 
+    exercise_template_indexes = {idx["name"] for idx in inspector.get_indexes("exercise_templates")}
+    assert "idx_exercise_templates_status" in exercise_template_indexes
+    assert "idx_exercise_templates_type" in exercise_template_indexes
+    exercise_template_columns = {col["name"] for col in inspector.get_columns("exercise_templates")}
+    assert {
+        "id",
+        "template_key",
+        "exercise_type",
+        "objective",
+        "difficulty",
+        "status",
+        "prompt_template",
+        "answer_source",
+        "choice_count",
+        "metadata",
+        "created_at",
+        "updated_at",
+    } <= exercise_template_columns
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -721,6 +741,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "learning_health_states" not in tables
     assert "content_quality_checks" not in tables
     assert "content_quality_health_states" not in tables
+    assert "exercise_templates" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -751,6 +772,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "learning_health_states" in tables
     assert "content_quality_checks" in tables
     assert "content_quality_health_states" in tables
+    assert "exercise_templates" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)
