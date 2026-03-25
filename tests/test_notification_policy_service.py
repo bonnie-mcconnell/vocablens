@@ -56,6 +56,7 @@ def test_notification_policy_service_resolves_source_override():
 
     assert policy.cooldown_hours == 6
     assert policy.default_frequency_limit == 1
+    assert policy.governance.min_sample_size == 25
     assert stage_policy.lifecycle_notifications_enabled is False
     assert stage_policy.suppression_reason == "quiet engaged users"
     assert stage_policy.recovery_window_hours == 24

@@ -343,6 +343,7 @@ class NotificationPolicyConfigResponse(BaseModel):
     default_preferred_time_of_day: int
     stage_policies: dict[str, NotificationPolicyStageResponse] = Field(default_factory=dict)
     suppression_overrides: list[NotificationPolicyOverrideResponse] = Field(default_factory=list)
+    governance: dict[str, Any] = Field(default_factory=dict)
 
 
 class NotificationPolicyAuditEntryResponse(BaseModel):
@@ -505,9 +506,44 @@ class NotificationPolicyOperatorLatestResponse(BaseModel):
     latest_audit_entry: NotificationPolicyAuditEntryResponse | None = None
 
 
+class NotificationPolicyHealthGovernanceResponse(BaseModel):
+    min_sample_size: int
+    max_failed_delivery_rate_percent: float
+    max_suppression_rate_percent: float
+    max_send_rate_drop_percent: float
+
+
+class NotificationPolicyHealthMetricsResponse(BaseModel):
+    delivery_count: int = 0
+    sent_count: int = 0
+    failed_count: int = 0
+    suppression_count: int = 0
+    failed_delivery_rate_percent: float = 0.0
+    suppression_rate_percent: float = 0.0
+
+
+class NotificationPolicyHealthAlertResponse(BaseModel):
+    code: str
+    severity: str
+    message: str
+    observed_percent: float
+    threshold_percent: float
+    current_policy_version: str | None = None
+    previous_policy_version: str | None = None
+
+
+class NotificationPolicyHealthResponse(BaseModel):
+    status: str
+    evaluated_window_size: int = 0
+    governance: NotificationPolicyHealthGovernanceResponse
+    metrics: NotificationPolicyHealthMetricsResponse
+    alerts: list[NotificationPolicyHealthAlertResponse] = Field(default_factory=list)
+
+
 class NotificationPolicyOperatorReportDataResponse(BaseModel):
     policy: NotificationPolicyDetailResponseModel
     latest_decisions: NotificationPolicyOperatorLatestResponse
+    health: NotificationPolicyHealthResponse
     delivery_summary: NotificationPolicyOperatorDeliverySummaryResponse
     suppression_summary: NotificationPolicyOperatorSuppressionSummaryResponse
     trace_summary: NotificationPolicyOperatorTraceSummaryResponse
@@ -1328,6 +1364,7 @@ class NotificationPolicyConfigRequest(BaseModel):
     default_preferred_time_of_day: int = Field(..., ge=0, le=23)
     stage_policies: dict[str, NotificationPolicyStageRequest]
     suppression_overrides: list[NotificationPolicyOverrideRequest] = Field(default_factory=list)
+    governance: dict[str, Any] = Field(default_factory=dict)
 
 
 class NotificationPolicyUpsertRequest(BaseModel):

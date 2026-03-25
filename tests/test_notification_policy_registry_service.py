@@ -31,6 +31,12 @@ def _policy_payload():
                 "recovery_window_hours": 24,
             }
         ],
+        "governance": {
+            "min_sample_size": 1,
+            "max_failed_delivery_rate_percent": 25.0,
+            "max_suppression_rate_percent": 60.0,
+            "max_send_rate_drop_percent": 20.0,
+        },
     }
 
 
@@ -255,6 +261,28 @@ def test_notification_policy_registry_service_rejects_invalid_stage_shape():
         )
 
 
+def test_notification_policy_registry_service_rejects_invalid_governance_threshold():
+    uow = FakeUOW()
+    service = NotificationPolicyRegistryService(lambda: uow)
+    invalid_policy = _policy_payload()
+    invalid_policy["governance"]["max_failed_delivery_rate_percent"] = 120.0
+
+    with pytest.raises(ValidationError):
+        run_async(
+            service.upsert_policy(
+                policy_key="default",
+                command=NotificationPolicyRegistryUpsert(
+                    status="active",
+                    is_killed=False,
+                    description="Canonical notification policy.",
+                    policy=invalid_policy,
+                    change_note="Trying invalid governance thresholds.",
+                ),
+                changed_by="ops@vocablens",
+            )
+        )
+
+
 def test_notification_policy_registry_service_raises_on_missing_policy():
     uow = FakeUOW()
     service = NotificationPolicyRegistryService(lambda: uow)
@@ -271,6 +299,8 @@ def test_notification_policy_registry_service_returns_operator_report():
 
     assert payload["policy"]["policy_key"] == "default"
     assert payload["latest_decisions"]["latest_notification_selection"]["trace_type"] == "notification_selection"
+    assert payload["health"]["status"] == "critical"
+    assert payload["health"]["alerts"][0]["code"] == "failed_delivery_rate_high"
     assert payload["delivery_summary"]["counts_by_status"]["sent"] == 1
     assert payload["suppression_summary"]["counts_by_type"]["lifecycle_notification_suppressed"] == 1
     assert payload["version_summary"][0]["policy_version"] == "v1"

@@ -48,6 +48,12 @@ DEFAULT_NOTIFICATION_POLICY = {
             "recovery_window_hours": 24,
         }
     ],
+    "governance": {
+        "min_sample_size": 25,
+        "max_failed_delivery_rate_percent": 8.0,
+        "max_suppression_rate_percent": 45.0,
+        "max_send_rate_drop_percent": 20.0,
+    },
 }
 
 
@@ -59,6 +65,14 @@ class NotificationStagePolicy:
 
 
 @dataclass(frozen=True)
+class NotificationGovernancePolicy:
+    min_sample_size: int
+    max_failed_delivery_rate_percent: float
+    max_suppression_rate_percent: float
+    max_send_rate_drop_percent: float
+
+
+@dataclass(frozen=True)
 class NotificationRuntimePolicy:
     policy_key: str
     policy_version: str
@@ -67,6 +81,7 @@ class NotificationRuntimePolicy:
     default_preferred_time_of_day: int
     stage_policies: dict[str, NotificationStagePolicy]
     suppression_overrides: tuple[dict[str, Any], ...]
+    governance: NotificationGovernancePolicy
 
 
 class NotificationPolicyService:
@@ -123,4 +138,15 @@ class NotificationPolicyService:
             default_preferred_time_of_day=max(0, min(23, int(payload.get("default_preferred_time_of_day", 18) or 18))),
             stage_policies=stage_policies,
             suppression_overrides=tuple(dict(item or {}) for item in list(payload.get("suppression_overrides") or [])),
+            governance=self._governance_from_payload(dict(payload.get("governance") or {})),
+        )
+
+    def _governance_from_payload(self, payload: dict[str, Any]) -> NotificationGovernancePolicy:
+        defaults = dict(DEFAULT_NOTIFICATION_POLICY.get("governance") or {})
+        defaults.update(dict(payload or {}))
+        return NotificationGovernancePolicy(
+            min_sample_size=max(1, int(defaults.get("min_sample_size", 25) or 25)),
+            max_failed_delivery_rate_percent=max(0.0, float(defaults.get("max_failed_delivery_rate_percent", 8.0) or 0.0)),
+            max_suppression_rate_percent=max(0.0, float(defaults.get("max_suppression_rate_percent", 45.0) or 0.0)),
+            max_send_rate_drop_percent=max(0.0, float(defaults.get("max_send_rate_drop_percent", 20.0) or 0.0)),
         )

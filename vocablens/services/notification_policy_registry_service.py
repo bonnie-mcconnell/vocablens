@@ -10,6 +10,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.notification_policy_service import (
     DEFAULT_NOTIFICATION_POLICY,
     DEFAULT_NOTIFICATION_POLICY_KEY,
+    NotificationPolicyService,
 )
 
 
@@ -30,6 +31,7 @@ class NotificationPolicyRegistryUpsert:
 class NotificationPolicyRegistryService:
     def __init__(self, uow_factory: type[UnitOfWork]):
         self._uow_factory = uow_factory
+        self._policy_service = NotificationPolicyService(uow_factory)
 
     async def list_policies(self) -> dict:
         async with self._uow_factory() as uow:
@@ -120,6 +122,7 @@ class NotificationPolicyRegistryService:
                 "latest_suppression": suppression_payloads[0] if suppression_payloads else None,
                 "latest_audit_entry": self._audit_payload(audits[0]) if audits else None,
             },
+            "health": self._health_payload(registry, delivery_payloads, suppression_payloads, trace_payloads),
             "delivery_summary": self._delivery_summary_payload(delivery_payloads),
             "suppression_summary": self._suppression_summary_payload(suppression_payloads),
             "trace_summary": self._trace_summary_payload(trace_payloads),
@@ -152,6 +155,7 @@ class NotificationPolicyRegistryService:
         preferred_hour = int(policy.get("default_preferred_time_of_day", 0) or 0)
         if preferred_hour < 0 or preferred_hour > 23:
             raise ValidationError(f"Notification policy '{policy_key}' default_preferred_time_of_day must be between 0 and 23")
+        self._validate_governance(policy_key, dict(policy.get("governance") or {}))
         self._validate_stage_policies(policy_key, dict(policy.get("stage_policies") or {}))
         self._validate_overrides(policy_key, list(policy.get("suppression_overrides") or []))
 
@@ -197,6 +201,21 @@ class NotificationPolicyRegistryService:
                 raise ValidationError(f"Notification policy '{policy_key}' contains duplicate override for source_context '{source_context}' and stage '{stage}'")
             seen.add(signature)
 
+    def _validate_governance(self, policy_key: str, governance: dict[str, Any]) -> None:
+        payload = dict(DEFAULT_NOTIFICATION_POLICY.get("governance") or {})
+        payload.update(dict(governance or {}))
+        min_sample_size = int(payload.get("min_sample_size", 25) or 0)
+        if min_sample_size < 1 or min_sample_size > 100000:
+            raise ValidationError(f"Notification policy '{policy_key}' governance min_sample_size must be between 1 and 100000")
+        for field_name in (
+            "max_failed_delivery_rate_percent",
+            "max_suppression_rate_percent",
+            "max_send_rate_drop_percent",
+        ):
+            value = float(payload.get(field_name, 0.0) or 0.0)
+            if value < 0.0 or value > 100.0:
+                raise ValidationError(f"Notification policy '{policy_key}' governance {field_name} must be between 0 and 100")
+
     def _normalized_policy_payload(self, policy: dict) -> dict:
         merged = dict(DEFAULT_NOTIFICATION_POLICY)
         merged.update({key: value for key, value in dict(policy or {}).items() if key in DEFAULT_NOTIFICATION_POLICY})
@@ -205,6 +224,9 @@ class NotificationPolicyRegistryService:
             for stage, values in dict(merged.get("stage_policies") or {}).items()
         }
         merged["suppression_overrides"] = [dict(item or {}) for item in list(merged.get("suppression_overrides") or [])]
+        governance = dict(DEFAULT_NOTIFICATION_POLICY.get("governance") or {})
+        governance.update(dict(merged.get("governance") or {}))
+        merged["governance"] = governance
         return merged
 
     def _registry_config(self, registry) -> dict:
@@ -431,6 +453,111 @@ class NotificationPolicyRegistryService:
         if right is None:
             return left
         return max(left, right)
+
+    def _health_payload(
+        self,
+        registry,
+        deliveries: list[dict[str, Any]],
+        suppressions: list[dict[str, Any]],
+        traces: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        runtime_policy = self._policy_service._policy_from_config(
+            str(registry.policy_key),
+            dict(registry.policy or {}),
+        )
+        governance = runtime_policy.governance
+        sent_count = sum(1 for item in deliveries if str(item.get("status") or "") == "sent")
+        failed_count = sum(1 for item in deliveries if str(item.get("status") or "") == "failed")
+        delivery_count = len(deliveries)
+        suppression_count = len(suppressions)
+        total_outcomes = delivery_count + suppression_count
+        failed_rate = self._percent(failed_count, delivery_count)
+        suppression_rate = self._percent(suppression_count, total_outcomes)
+        version_summary = self._version_summary_payload(
+            deliveries=deliveries,
+            suppressions=suppressions,
+            traces=traces,
+        )
+        alerts: list[dict[str, Any]] = []
+
+        if delivery_count >= governance.min_sample_size and failed_rate > governance.max_failed_delivery_rate_percent:
+            alerts.append(
+                {
+                    "code": "failed_delivery_rate_high",
+                    "severity": "critical",
+                    "message": "Failed delivery rate is above the configured threshold.",
+                    "observed_percent": failed_rate,
+                    "threshold_percent": governance.max_failed_delivery_rate_percent,
+                }
+            )
+        if total_outcomes >= governance.min_sample_size and suppression_rate > governance.max_suppression_rate_percent:
+            alerts.append(
+                {
+                    "code": "suppression_rate_high",
+                    "severity": "warning",
+                    "message": "Suppression rate is above the configured threshold.",
+                    "observed_percent": suppression_rate,
+                    "threshold_percent": governance.max_suppression_rate_percent,
+                }
+            )
+        if len(version_summary) >= 2:
+            current = version_summary[0]
+            previous = version_summary[1]
+            current_sample = int(current.get("delivery_count", 0) or 0)
+            previous_sample = int(previous.get("delivery_count", 0) or 0)
+            if current_sample >= governance.min_sample_size and previous_sample >= governance.min_sample_size:
+                current_send_rate = self._percent(
+                    int(current.get("delivery_statuses", {}).get("sent", 0) or 0),
+                    current_sample,
+                )
+                previous_send_rate = self._percent(
+                    int(previous.get("delivery_statuses", {}).get("sent", 0) or 0),
+                    previous_sample,
+                )
+                send_rate_drop = max(0.0, previous_send_rate - current_send_rate)
+                if send_rate_drop > governance.max_send_rate_drop_percent:
+                    alerts.append(
+                        {
+                            "code": "send_rate_regression",
+                            "severity": "critical",
+                            "message": "Current policy version send rate regressed beyond the configured threshold.",
+                            "observed_percent": send_rate_drop,
+                            "threshold_percent": governance.max_send_rate_drop_percent,
+                            "current_policy_version": current.get("policy_version"),
+                            "previous_policy_version": previous.get("policy_version"),
+                        }
+                    )
+
+        status = "healthy"
+        if any(item["severity"] == "critical" for item in alerts):
+            status = "critical"
+        elif alerts:
+            status = "warning"
+
+        return {
+            "status": status,
+            "evaluated_window_size": max(delivery_count, suppression_count, len(traces)),
+            "governance": {
+                "min_sample_size": governance.min_sample_size,
+                "max_failed_delivery_rate_percent": governance.max_failed_delivery_rate_percent,
+                "max_suppression_rate_percent": governance.max_suppression_rate_percent,
+                "max_send_rate_drop_percent": governance.max_send_rate_drop_percent,
+            },
+            "metrics": {
+                "delivery_count": delivery_count,
+                "sent_count": sent_count,
+                "failed_count": failed_count,
+                "suppression_count": suppression_count,
+                "failed_delivery_rate_percent": failed_rate,
+                "suppression_rate_percent": suppression_rate,
+            },
+            "alerts": alerts,
+        }
+
+    def _percent(self, numerator: int, denominator: int) -> float:
+        if denominator <= 0:
+            return 0.0
+        return round((float(numerator) / float(denominator)) * 100.0, 2)
 
     def _normalize_actor(self, changed_by: str | None) -> str:
         actor = (changed_by or "").strip()

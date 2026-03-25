@@ -372,6 +372,12 @@ class FakeNotificationPolicyRegistryService:
                         "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 12},
                     },
                     "suppression_overrides": [],
+                    "governance": {
+                        "min_sample_size": 10,
+                        "max_failed_delivery_rate_percent": 15.0,
+                        "max_suppression_rate_percent": 50.0,
+                        "max_send_rate_drop_percent": 20.0,
+                    },
                 },
                 "created_at": "2026-03-24T12:00:00",
                 "updated_at": "2026-03-24T12:30:00",
@@ -509,6 +515,35 @@ class FakeNotificationPolicyRegistryService:
                     "new_config": {"status": "active"},
                     "created_at": "2026-03-24T13:00:00",
                 },
+            },
+            "health": {
+                "status": "warning",
+                "evaluated_window_size": 2,
+                "governance": {
+                    "min_sample_size": 10,
+                    "max_failed_delivery_rate_percent": 15.0,
+                    "max_suppression_rate_percent": 50.0,
+                    "max_send_rate_drop_percent": 20.0,
+                },
+                "metrics": {
+                    "delivery_count": 2,
+                    "sent_count": 1,
+                    "failed_count": 1,
+                    "suppression_count": 1,
+                    "failed_delivery_rate_percent": 50.0,
+                    "suppression_rate_percent": 33.33,
+                },
+                "alerts": [
+                    {
+                        "code": "failed_delivery_rate_high",
+                        "severity": "critical",
+                        "message": "Failed delivery rate is above the configured threshold.",
+                        "observed_percent": 50.0,
+                        "threshold_percent": 15.0,
+                        "current_policy_version": None,
+                        "previous_policy_version": None,
+                    }
+                ],
             },
             "delivery_summary": {
                 "total_deliveries": 2,
@@ -1740,6 +1775,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert notification_policy_report.status_code == 200
     assert notification_policy_report.json()["meta"]["source"] == "admin.notifications.policies.report"
     assert notification_policy_report.json()["data"]["policy"]["policy_key"] == "default"
+    assert notification_policy_report.json()["data"]["health"]["alerts"][0]["code"] == "failed_delivery_rate_high"
     assert notification_policy_report.json()["data"]["delivery_summary"]["counts_by_status"]["sent"] == 1
     assert notification_policy_report.json()["data"]["version_summary"][0]["policy_version"] == "v1"
     assert traces.status_code == 200
