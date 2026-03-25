@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 import re
+from typing import Any
 
 from vocablens.domain.errors import NotFoundError, ValidationError
 from vocablens.infrastructure.unit_of_work import UnitOfWork
@@ -88,6 +90,48 @@ class NotificationPolicyRegistryService:
             audits = await uow.notification_policy_audits.list_by_policy(normalized_key, limit=max(1, min(limit, 200)))
             await uow.commit()
         return {"audit_entries": [self._audit_payload(item) for item in audits]}
+
+    async def get_operator_report(self, policy_key: str, *, limit: int = 50) -> dict:
+        normalized_key = self._validate_policy_key(policy_key)
+        normalized_limit = max(1, min(limit, 200))
+        async with self._uow_factory() as uow:
+            registry = await uow.notification_policy_registries.get(normalized_key)
+            if registry is None:
+                raise NotFoundError(f"Notification policy '{normalized_key}' not found")
+            audits = await uow.notification_policy_audits.list_by_policy(normalized_key, limit=50)
+            deliveries = await uow.notification_deliveries.list_by_policy(normalized_key, limit=normalized_limit)
+            suppressions = await uow.notification_suppression_events.list_by_policy(normalized_key, limit=normalized_limit)
+            traces = await uow.decision_traces.list_recent(trace_type="notification_selection", limit=max(200, normalized_limit * 4))
+            await uow.commit()
+
+        trace_payloads = [
+            self._trace_payload(item)
+            for item in traces
+            if str((item.inputs or {}).get("policy", {}).get("policy_key") or "") == normalized_key
+        ][:normalized_limit]
+        delivery_payloads = [self._delivery_payload(item) for item in deliveries]
+        suppression_payloads = [self._suppression_payload(item) for item in suppressions]
+
+        return {
+            "policy": self._detail_payload(registry, audits),
+            "latest_decisions": {
+                "latest_notification_selection": trace_payloads[0] if trace_payloads else None,
+                "latest_delivery": delivery_payloads[0] if delivery_payloads else None,
+                "latest_suppression": suppression_payloads[0] if suppression_payloads else None,
+                "latest_audit_entry": self._audit_payload(audits[0]) if audits else None,
+            },
+            "delivery_summary": self._delivery_summary_payload(delivery_payloads),
+            "suppression_summary": self._suppression_summary_payload(suppression_payloads),
+            "trace_summary": self._trace_summary_payload(trace_payloads),
+            "version_summary": self._version_summary_payload(
+                deliveries=delivery_payloads,
+                suppressions=suppression_payloads,
+                traces=trace_payloads,
+            ),
+            "recent_deliveries": delivery_payloads,
+            "recent_suppressions": suppression_payloads,
+            "recent_traces": trace_payloads,
+        }
 
     def _validate_command(self, policy_key: str, command: NotificationPolicyRegistryUpsert) -> None:
         if command.status not in _VALID_STATUSES:
@@ -210,6 +254,183 @@ class NotificationPolicyRegistryService:
             "new_config": dict(audit.new_config or {}),
             "created_at": self._timestamp(getattr(audit, "created_at", None)),
         }
+
+    def _delivery_payload(self, row) -> dict:
+        return {
+            "id": int(row.id),
+            "user_id": int(row.user_id),
+            "category": str(row.category),
+            "provider": str(row.provider),
+            "status": str(row.status),
+            "policy_key": row.policy_key,
+            "policy_version": row.policy_version,
+            "source_context": row.source_context,
+            "reference_id": row.reference_id,
+            "title": str(row.title),
+            "body": str(row.body),
+            "error_message": row.error_message,
+            "attempt_count": int(row.attempt_count or 0),
+            "created_at": self._timestamp(getattr(row, "created_at", None)),
+            "updated_at": self._timestamp(getattr(row, "updated_at", None)),
+        }
+
+    def _suppression_payload(self, row) -> dict:
+        return {
+            "id": int(row.id),
+            "user_id": int(row.user_id),
+            "event_type": str(row.event_type),
+            "source": str(row.source),
+            "reference_id": row.reference_id,
+            "policy_key": row.policy_key,
+            "policy_version": row.policy_version,
+            "lifecycle_stage": row.lifecycle_stage,
+            "suppression_reason": row.suppression_reason,
+            "suppressed_until": self._timestamp(getattr(row, "suppressed_until", None)),
+            "payload": dict(row.payload or {}),
+            "created_at": self._timestamp(getattr(row, "created_at", None)),
+        }
+
+    def _trace_payload(self, trace) -> dict:
+        return {
+            "id": int(trace.id),
+            "user_id": int(trace.user_id),
+            "trace_type": str(trace.trace_type),
+            "source": str(trace.source),
+            "reference_id": trace.reference_id,
+            "policy_version": str(trace.policy_version),
+            "inputs": dict(trace.inputs or {}),
+            "outputs": dict(trace.outputs or {}),
+            "reason": trace.reason,
+            "created_at": self._timestamp(getattr(trace, "created_at", None)),
+        }
+
+    def _delivery_summary_payload(self, deliveries: list[dict[str, Any]]) -> dict:
+        status_counts = Counter(str(item.get("status") or "") for item in deliveries)
+        provider_counts = Counter(str(item.get("provider") or "") for item in deliveries)
+        category_counts = Counter(str(item.get("category") or "") for item in deliveries)
+        unique_users = {int(item["user_id"]) for item in deliveries}
+        return {
+            "total_deliveries": len(deliveries),
+            "affected_users": len(unique_users),
+            "counts_by_status": dict(sorted(status_counts.items())),
+            "counts_by_provider": dict(sorted(provider_counts.items())),
+            "counts_by_category": dict(sorted(category_counts.items())),
+            "latest_delivery_at": self._latest_timestamp(deliveries),
+        }
+
+    def _suppression_summary_payload(self, suppressions: list[dict[str, Any]]) -> dict:
+        event_counts = Counter(str(item.get("event_type") or "") for item in suppressions)
+        stage_counts = Counter(str(item.get("lifecycle_stage") or "") for item in suppressions)
+        unique_users = {int(item["user_id"]) for item in suppressions}
+        return {
+            "total_suppressions": len(suppressions),
+            "affected_users": len(unique_users),
+            "counts_by_type": dict(sorted(event_counts.items())),
+            "counts_by_stage": dict(sorted(stage_counts.items())),
+            "latest_suppression_at": self._latest_timestamp(suppressions),
+        }
+
+    def _trace_summary_payload(self, traces: list[dict[str, Any]]) -> dict:
+        reason_counts = Counter(str(item.get("reason") or "") for item in traces if item.get("reason"))
+        return {
+            "total_traces": len(traces),
+            "counts_by_reason": dict(sorted(reason_counts.items())),
+            "latest_trace_at": self._latest_timestamp(traces),
+        }
+
+    def _version_summary_payload(
+        self,
+        *,
+        deliveries: list[dict[str, Any]],
+        suppressions: list[dict[str, Any]],
+        traces: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        versions: dict[str, dict[str, Any]] = {}
+        for item in deliveries:
+            version = str(item.get("policy_version") or "unknown")
+            payload = versions.setdefault(
+                version,
+                {
+                    "policy_version": version,
+                    "delivery_count": 0,
+                    "suppression_count": 0,
+                    "trace_count": 0,
+                    "delivery_statuses": Counter(),
+                    "suppression_types": Counter(),
+                    "latest_activity_at": None,
+                },
+            )
+            payload["delivery_count"] += 1
+            payload["delivery_statuses"][str(item.get("status") or "")] += 1
+            payload["latest_activity_at"] = self._max_timestamp(
+                payload["latest_activity_at"],
+                item.get("created_at"),
+            )
+        for item in suppressions:
+            version = str(item.get("policy_version") or "unknown")
+            payload = versions.setdefault(
+                version,
+                {
+                    "policy_version": version,
+                    "delivery_count": 0,
+                    "suppression_count": 0,
+                    "trace_count": 0,
+                    "delivery_statuses": Counter(),
+                    "suppression_types": Counter(),
+                    "latest_activity_at": None,
+                },
+            )
+            payload["suppression_count"] += 1
+            payload["suppression_types"][str(item.get("event_type") or "")] += 1
+            payload["latest_activity_at"] = self._max_timestamp(
+                payload["latest_activity_at"],
+                item.get("created_at"),
+            )
+        for item in traces:
+            version = str(item.get("policy_version") or "unknown")
+            payload = versions.setdefault(
+                version,
+                {
+                    "policy_version": version,
+                    "delivery_count": 0,
+                    "suppression_count": 0,
+                    "trace_count": 0,
+                    "delivery_statuses": Counter(),
+                    "suppression_types": Counter(),
+                    "latest_activity_at": None,
+                },
+            )
+            payload["trace_count"] += 1
+            payload["latest_activity_at"] = self._max_timestamp(
+                payload["latest_activity_at"],
+                item.get("created_at"),
+            )
+        return [
+            {
+                "policy_version": item["policy_version"],
+                "delivery_count": int(item["delivery_count"]),
+                "suppression_count": int(item["suppression_count"]),
+                "trace_count": int(item["trace_count"]),
+                "delivery_statuses": dict(sorted(item["delivery_statuses"].items())),
+                "suppression_types": dict(sorted(item["suppression_types"].items())),
+                "latest_activity_at": item["latest_activity_at"],
+            }
+            for item in sorted(
+                versions.values(),
+                key=lambda value: (value["latest_activity_at"] or "", value["policy_version"]),
+                reverse=True,
+            )
+        ]
+
+    def _latest_timestamp(self, items: list[dict[str, Any]]) -> str | None:
+        return max((item.get("created_at") for item in items if item.get("created_at")), default=None)
+
+    def _max_timestamp(self, left: str | None, right: str | None) -> str | None:
+        if left is None:
+            return right
+        if right is None:
+            return left
+        return max(left, right)
 
     def _normalize_actor(self, changed_by: str | None) -> str:
         actor = (changed_by or "").strip()

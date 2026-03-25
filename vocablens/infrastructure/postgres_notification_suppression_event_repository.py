@@ -51,3 +51,12 @@ class PostgresNotificationSuppressionEventRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    async def list_by_policy(self, policy_key: str, limit: int = 100):
+        result = await self.session.execute(
+            select(NotificationSuppressionEventORM)
+            .where(NotificationSuppressionEventORM.policy_key == policy_key)
+            .order_by(NotificationSuppressionEventORM.created_at.desc(), NotificationSuppressionEventORM.id.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()

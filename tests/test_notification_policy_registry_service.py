@@ -88,10 +88,105 @@ class FakeNotificationPolicyAuditRepo:
         return None
 
 
+class FakeNotificationDeliveryRepo:
+    async def list_by_policy(self, policy_key: str, limit: int = 100):
+        rows = [
+            SimpleNamespace(
+                id=11,
+                user_id=3,
+                category="retention:streak_nudge",
+                provider="push",
+                status="sent",
+                policy_key=policy_key,
+                policy_version="v1",
+                source_context="lifecycle_service.notification",
+                reference_id="lifecycle:3",
+                title="Keep your streak going",
+                body="One short round keeps your streak clean.",
+                error_message=None,
+                attempt_count=1,
+                created_at=None,
+                updated_at=None,
+            ),
+            SimpleNamespace(
+                id=10,
+                user_id=4,
+                category="retention:review_reminder",
+                provider="email",
+                status="failed",
+                policy_key=policy_key,
+                policy_version="v1",
+                source_context="notification_delivery_service.send",
+                reference_id="notification:4",
+                title="Review ready",
+                body="Come back for a quick review.",
+                error_message="provider timeout",
+                attempt_count=2,
+                created_at=None,
+                updated_at=None,
+            ),
+        ]
+        return rows[:limit]
+
+
+class FakeNotificationSuppressionEventsRepo:
+    async def list_by_policy(self, policy_key: str, limit: int = 100):
+        rows = [
+            SimpleNamespace(
+                id=21,
+                user_id=3,
+                event_type="lifecycle_notification_suppressed",
+                source="lifecycle_service.notification",
+                reference_id="lifecycle:3",
+                policy_key=policy_key,
+                policy_version="v1",
+                lifecycle_stage="engaged",
+                suppression_reason="quiet engaged users",
+                suppressed_until=None,
+                payload={"recovery_window_hours": 24},
+                created_at=None,
+            )
+        ]
+        return rows[:limit]
+
+
+class FakeDecisionTraceRepo:
+    async def list_recent(self, **kwargs):
+        return [
+            SimpleNamespace(
+                id=31,
+                user_id=3,
+                trace_type="notification_selection",
+                source="notification_decision_engine",
+                reference_id="lifecycle:3",
+                policy_version="v1",
+                inputs={"policy": {"policy_key": "default", "policy_version": "v1"}},
+                outputs={"should_send": True, "channel": "push"},
+                reason="retention action selected",
+                created_at=None,
+            ),
+            SimpleNamespace(
+                id=32,
+                user_id=9,
+                trace_type="notification_selection",
+                source="notification_decision_engine",
+                reference_id="lifecycle:9",
+                policy_version="v1",
+                inputs={"policy": {"policy_key": "other_policy", "policy_version": "v1"}},
+                outputs={"should_send": False},
+                reason="daily frequency limit reached",
+                created_at=None,
+            ),
+        ]
+
+
 class FakeUOW:
     def __init__(self):
         self.notification_policy_registries = FakeNotificationPolicyRegistryRepo()
         self.notification_policy_audits = FakeNotificationPolicyAuditRepo()
+        self.notification_deliveries = FakeNotificationDeliveryRepo()
+        self.notification_suppression_events = FakeNotificationSuppressionEventsRepo()
+        self.decision_traces = FakeDecisionTraceRepo()
 
     async def __aenter__(self):
         return self
@@ -166,3 +261,16 @@ def test_notification_policy_registry_service_raises_on_missing_policy():
 
     with pytest.raises(NotFoundError):
         run_async(service.get_policy("missing"))
+
+
+def test_notification_policy_registry_service_returns_operator_report():
+    uow = FakeUOW()
+    service = NotificationPolicyRegistryService(lambda: uow)
+
+    payload = run_async(service.get_operator_report("default", limit=10))
+
+    assert payload["policy"]["policy_key"] == "default"
+    assert payload["latest_decisions"]["latest_notification_selection"]["trace_type"] == "notification_selection"
+    assert payload["delivery_summary"]["counts_by_status"]["sent"] == 1
+    assert payload["suppression_summary"]["counts_by_type"]["lifecycle_notification_suppressed"] == 1
+    assert payload["version_summary"][0]["policy_version"] == "v1"

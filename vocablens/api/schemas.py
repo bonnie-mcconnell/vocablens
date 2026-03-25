@@ -419,6 +419,114 @@ class NotificationPolicyAuditResponse(BaseModel):
     meta: NotificationPolicyAuditMetaResponse
 
 
+class NotificationPolicyOperatorDeliveryResponse(BaseModel):
+    id: int
+    user_id: int
+    category: str
+    provider: str
+    status: str
+    policy_key: str | None = None
+    policy_version: str | None = None
+    source_context: str | None = None
+    reference_id: str | None = None
+    title: str
+    body: str
+    error_message: str | None = None
+    attempt_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class NotificationPolicyOperatorSuppressionResponse(BaseModel):
+    id: int
+    user_id: int
+    event_type: str
+    source: str
+    reference_id: str | None = None
+    policy_key: str | None = None
+    policy_version: str | None = None
+    lifecycle_stage: str | None = None
+    suppression_reason: str | None = None
+    suppressed_until: datetime | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class NotificationPolicyOperatorTraceResponse(BaseModel):
+    id: int
+    user_id: int
+    trace_type: str
+    source: str
+    reference_id: str | None = None
+    policy_version: str
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+    created_at: datetime | None = None
+
+
+class NotificationPolicyOperatorDeliverySummaryResponse(BaseModel):
+    total_deliveries: int = 0
+    affected_users: int = 0
+    counts_by_status: dict[str, int] = Field(default_factory=dict)
+    counts_by_provider: dict[str, int] = Field(default_factory=dict)
+    counts_by_category: dict[str, int] = Field(default_factory=dict)
+    latest_delivery_at: datetime | None = None
+
+
+class NotificationPolicyOperatorSuppressionSummaryResponse(BaseModel):
+    total_suppressions: int = 0
+    affected_users: int = 0
+    counts_by_type: dict[str, int] = Field(default_factory=dict)
+    counts_by_stage: dict[str, int] = Field(default_factory=dict)
+    latest_suppression_at: datetime | None = None
+
+
+class NotificationPolicyOperatorTraceSummaryResponse(BaseModel):
+    total_traces: int = 0
+    counts_by_reason: dict[str, int] = Field(default_factory=dict)
+    latest_trace_at: datetime | None = None
+
+
+class NotificationPolicyVersionSummaryResponse(BaseModel):
+    policy_version: str
+    delivery_count: int = 0
+    suppression_count: int = 0
+    trace_count: int = 0
+    delivery_statuses: dict[str, int] = Field(default_factory=dict)
+    suppression_types: dict[str, int] = Field(default_factory=dict)
+    latest_activity_at: datetime | None = None
+
+
+class NotificationPolicyOperatorLatestResponse(BaseModel):
+    latest_notification_selection: NotificationPolicyOperatorTraceResponse | None = None
+    latest_delivery: NotificationPolicyOperatorDeliveryResponse | None = None
+    latest_suppression: NotificationPolicyOperatorSuppressionResponse | None = None
+    latest_audit_entry: NotificationPolicyAuditEntryResponse | None = None
+
+
+class NotificationPolicyOperatorReportDataResponse(BaseModel):
+    policy: NotificationPolicyDetailResponseModel
+    latest_decisions: NotificationPolicyOperatorLatestResponse
+    delivery_summary: NotificationPolicyOperatorDeliverySummaryResponse
+    suppression_summary: NotificationPolicyOperatorSuppressionSummaryResponse
+    trace_summary: NotificationPolicyOperatorTraceSummaryResponse
+    version_summary: list[NotificationPolicyVersionSummaryResponse] = Field(default_factory=list)
+    recent_deliveries: list[NotificationPolicyOperatorDeliveryResponse] = Field(default_factory=list)
+    recent_suppressions: list[NotificationPolicyOperatorSuppressionResponse] = Field(default_factory=list)
+    recent_traces: list[NotificationPolicyOperatorTraceResponse] = Field(default_factory=list)
+
+
+class NotificationPolicyOperatorReportMetaResponse(BaseModel):
+    source: Literal["admin.notifications.policies.report"]
+    policy_key: str
+
+
+class NotificationPolicyOperatorReportResponse(BaseModel):
+    data: NotificationPolicyOperatorReportDataResponse
+    meta: NotificationPolicyOperatorReportMetaResponse
+
+
 class DecisionTraceRecordResponse(BaseModel):
     id: int
     user_id: int

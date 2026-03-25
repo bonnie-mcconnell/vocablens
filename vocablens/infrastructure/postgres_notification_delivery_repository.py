@@ -75,3 +75,12 @@ class PostgresNotificationDeliveryRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    async def list_by_policy(self, policy_key: str, limit: int = 100):
+        result = await self.session.execute(
+            select(NotificationDeliveryORM)
+            .where(NotificationDeliveryORM.policy_key == policy_key)
+            .order_by(NotificationDeliveryORM.created_at.desc(), NotificationDeliveryORM.id.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()

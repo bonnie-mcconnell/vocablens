@@ -420,6 +420,178 @@ class FakeNotificationPolicyRegistryService:
             ][:limit]
         }
 
+    async def get_operator_report(self, policy_key: str, *, limit: int = 50):
+        return {
+            "policy": {
+                "policy_key": policy_key,
+                "status": "active",
+                "is_killed": False,
+                "description": "Canonical notification policy.",
+                "policy": {
+                    "cooldown_hours": 4,
+                    "default_frequency_limit": 2,
+                    "default_preferred_time_of_day": 18,
+                    "stage_policies": {
+                        "new_user": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                        "activating": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 0},
+                        "engaged": {"lifecycle_notifications_enabled": False, "suppression_reason": "quiet engaged users", "recovery_window_hours": 24},
+                        "at_risk": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 6},
+                        "churned": {"lifecycle_notifications_enabled": True, "suppression_reason": None, "recovery_window_hours": 12},
+                    },
+                    "suppression_overrides": [],
+                },
+                "created_at": "2026-03-24T12:00:00",
+                "updated_at": "2026-03-24T12:30:00",
+                "audit_entries": [
+                    {
+                        "id": 2,
+                        "policy_key": policy_key,
+                        "action": "updated",
+                        "changed_by": "ops@vocablens",
+                        "change_note": "Raised engaged recovery window.",
+                        "previous_config": {"status": "active"},
+                        "new_config": {"status": "active"},
+                        "created_at": "2026-03-24T13:00:00",
+                    }
+                ],
+            },
+            "latest_decisions": {
+                "latest_notification_selection": {
+                    "id": 71,
+                    "user_id": 1,
+                    "trace_type": "notification_selection",
+                    "source": "notification_decision_engine",
+                    "reference_id": "lifecycle:1",
+                    "policy_version": "v1",
+                    "inputs": {"policy": {"policy_key": policy_key, "policy_version": "v1"}},
+                    "outputs": {"should_send": True, "channel": "push"},
+                    "reason": "retention action selected",
+                    "created_at": "2026-03-24T12:07:50",
+                },
+                "latest_delivery": {
+                    "id": 81,
+                    "user_id": 1,
+                    "category": "retention:streak_nudge",
+                    "provider": "push",
+                    "status": "sent",
+                    "policy_key": policy_key,
+                    "policy_version": "v1",
+                    "source_context": "lifecycle_service.notification",
+                    "reference_id": "lifecycle:1",
+                    "title": "Keep your streak going",
+                    "body": "One short round keeps your streak clean.",
+                    "error_message": None,
+                    "attempt_count": 1,
+                    "created_at": "2026-03-24T12:08:00",
+                    "updated_at": "2026-03-24T12:08:03",
+                },
+                "latest_suppression": {
+                    "id": 73,
+                    "user_id": 1,
+                    "event_type": "lifecycle_notification_suppressed",
+                    "source": "lifecycle_service.notification",
+                    "reference_id": "lifecycle:1",
+                    "policy_key": policy_key,
+                    "policy_version": "v1",
+                    "lifecycle_stage": "engaged",
+                    "suppression_reason": "quiet engaged users",
+                    "suppressed_until": "2026-03-23T10:00:00",
+                    "payload": {"recovery_window_hours": 24},
+                    "created_at": "2026-03-23T10:00:00",
+                },
+                "latest_audit_entry": {
+                    "id": 2,
+                    "policy_key": policy_key,
+                    "action": "updated",
+                    "changed_by": "ops@vocablens",
+                    "change_note": "Raised engaged recovery window.",
+                    "previous_config": {"status": "active"},
+                    "new_config": {"status": "active"},
+                    "created_at": "2026-03-24T13:00:00",
+                },
+            },
+            "delivery_summary": {
+                "total_deliveries": 2,
+                "affected_users": 2,
+                "counts_by_status": {"failed": 1, "sent": 1},
+                "counts_by_provider": {"email": 1, "push": 1},
+                "counts_by_category": {"retention:review_reminder": 1, "retention:streak_nudge": 1},
+                "latest_delivery_at": "2026-03-24T12:08:00",
+            },
+            "suppression_summary": {
+                "total_suppressions": 1,
+                "affected_users": 1,
+                "counts_by_type": {"lifecycle_notification_suppressed": 1},
+                "counts_by_stage": {"engaged": 1},
+                "latest_suppression_at": "2026-03-23T10:00:00",
+            },
+            "trace_summary": {
+                "total_traces": 1,
+                "counts_by_reason": {"retention action selected": 1},
+                "latest_trace_at": "2026-03-24T12:07:50",
+            },
+            "version_summary": [
+                {
+                    "policy_version": "v1",
+                    "delivery_count": 2,
+                    "suppression_count": 1,
+                    "trace_count": 1,
+                    "delivery_statuses": {"failed": 1, "sent": 1},
+                    "suppression_types": {"lifecycle_notification_suppressed": 1},
+                    "latest_activity_at": "2026-03-24T12:08:00",
+                }
+            ],
+            "recent_deliveries": [
+                {
+                    "id": 81,
+                    "user_id": 1,
+                    "category": "retention:streak_nudge",
+                    "provider": "push",
+                    "status": "sent",
+                    "policy_key": policy_key,
+                    "policy_version": "v1",
+                    "source_context": "lifecycle_service.notification",
+                    "reference_id": "lifecycle:1",
+                    "title": "Keep your streak going",
+                    "body": "One short round keeps your streak clean.",
+                    "error_message": None,
+                    "attempt_count": 1,
+                    "created_at": "2026-03-24T12:08:00",
+                    "updated_at": "2026-03-24T12:08:03",
+                }
+            ],
+            "recent_suppressions": [
+                {
+                    "id": 73,
+                    "user_id": 1,
+                    "event_type": "lifecycle_notification_suppressed",
+                    "source": "lifecycle_service.notification",
+                    "reference_id": "lifecycle:1",
+                    "policy_key": policy_key,
+                    "policy_version": "v1",
+                    "lifecycle_stage": "engaged",
+                    "suppression_reason": "quiet engaged users",
+                    "suppressed_until": "2026-03-23T10:00:00",
+                    "payload": {"recovery_window_hours": 24},
+                    "created_at": "2026-03-23T10:00:00",
+                }
+            ],
+            "recent_traces": [
+                {
+                    "id": 71,
+                    "user_id": 1,
+                    "trace_type": "notification_selection",
+                    "source": "notification_decision_engine",
+                    "reference_id": "lifecycle:1",
+                    "policy_version": "v1",
+                    "inputs": {"policy": {"policy_key": policy_key, "policy_version": "v1"}},
+                    "outputs": {"should_send": True, "channel": "push"},
+                    "reason": "retention action selected",
+                    "created_at": "2026-03-24T12:07:50",
+                }
+            ],
+        }
+
 
 class FakeOnboardingFlowService:
     async def start(self, user_id: int):
@@ -1485,6 +1657,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
         headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
     )
     notification_policy_audit = client.get("/admin/notifications/policies/default/audit?limit=10", headers={"X-Admin-Token": "secret"})
+    notification_policy_report = client.get("/admin/notifications/policies/default/report?limit=10", headers={"X-Admin-Token": "secret"})
     traces = client.get(
         "/admin/decision-traces?user_id=1&trace_type=session_evaluation&reference_id=sess_123&limit=25",
         headers={"X-Admin-Token": "secret"},
@@ -1564,6 +1737,11 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert notification_policy_audit.status_code == 200
     assert notification_policy_audit.json()["meta"]["source"] == "admin.notifications.policies.audit"
     assert notification_policy_audit.json()["data"]["audit_entries"][0]["action"] == "updated"
+    assert notification_policy_report.status_code == 200
+    assert notification_policy_report.json()["meta"]["source"] == "admin.notifications.policies.report"
+    assert notification_policy_report.json()["data"]["policy"]["policy_key"] == "default"
+    assert notification_policy_report.json()["data"]["delivery_summary"]["counts_by_status"]["sent"] == 1
+    assert notification_policy_report.json()["data"]["version_summary"][0]["policy_version"] == "v1"
     assert traces.status_code == 200
     assert traces.json()["meta"]["source"] == "admin.decision_traces"
     assert traces.json()["meta"]["filters"]["trace_type"] == "session_evaluation"

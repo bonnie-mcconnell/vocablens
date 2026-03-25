@@ -217,6 +217,27 @@ class NotificationPolicyAuditRepository(Protocol):
     async def latest_for_policy(self, policy_key: str) -> Optional[Any]: ...
 
 
+class NotificationDeliveryRepository(Protocol):
+    async def create_attempt(
+        self,
+        *,
+        user_id: int,
+        category: str,
+        provider: str,
+        policy_key: str | None,
+        policy_version: str | None,
+        source_context: str | None,
+        reference_id: str | None,
+        title: str,
+        body: str,
+        payload: Dict[str, Any] | None = None,
+    ) -> Any: ...
+    async def mark_status(self, delivery_id: int, status: str, error_message: str | None = None) -> None: ...
+    async def list_recent(self, user_id: int, limit: int = 20) -> List[Any]: ...
+    async def list_since(self, user_id: int, since: datetime, limit: int = 100) -> List[Any]: ...
+    async def list_by_policy(self, policy_key: str, limit: int = 100) -> List[Any]: ...
+
+
 class MonetizationOfferEventRepository(Protocol):
     async def record(
         self,
