@@ -8,6 +8,7 @@ from vocablens.api.dependencies import (
     get_current_user,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
+    get_exercise_template_registry_admin_service,
     get_learning_health_signal_service,
     get_monetization_health_signal_service,
     get_experiment_registry_service,
@@ -917,6 +918,108 @@ class FakeContentQualityHealthSignalService:
                     "last_evaluated_at": "2026-03-25T20:20:00",
                 }
             ],
+        }
+
+
+class FakeExerciseTemplateRegistryAdminService:
+    async def list_templates(self):
+        return {
+            "templates": [
+                {
+                    "template_key": "recall_fill_blank_v1",
+                    "exercise_type": "fill_blank",
+                    "objective": "recall",
+                    "difficulty": "medium",
+                    "status": "active",
+                    "prompt_template": "Fill the blank with {target}.",
+                    "answer_source": "target",
+                    "choice_count": None,
+                    "description": "Recall template.",
+                    "metadata": {"surface": "lesson"},
+                    "created_at": None,
+                    "updated_at": None,
+                    "latest_change": None,
+                }
+            ]
+        }
+
+    async def get_template(self, template_key: str):
+        return {
+            "template": {
+                "template_key": template_key,
+                "exercise_type": "fill_blank",
+                "objective": "recall",
+                "difficulty": "medium",
+                "status": "active",
+                "prompt_template": "Fill the blank with {target}.",
+                "answer_source": "target",
+                "choice_count": None,
+                "description": "Recall template.",
+                "metadata": {"surface": "lesson"},
+                "created_at": None,
+                "updated_at": None,
+                "audit_entries": [
+                    {
+                        "id": 1,
+                        "template_key": template_key,
+                        "action": "updated",
+                        "changed_by": "ops@vocablens",
+                        "change_note": "Promoted recall template after fixture review.",
+                        "previous_config": {"status": "draft"},
+                        "new_config": {"status": "active"},
+                        "fixture_report": {"fixture_count": 2},
+                        "created_at": None,
+                    }
+                ],
+            }
+        }
+
+    async def upsert_template(self, *, template_key: str, command, changed_by: str | None):
+        return {
+            "template": {
+                "template_key": template_key,
+                "exercise_type": command.exercise_type,
+                "objective": command.objective,
+                "difficulty": command.difficulty,
+                "status": command.status,
+                "prompt_template": command.prompt_template,
+                "answer_source": command.answer_source,
+                "choice_count": command.choice_count,
+                "description": command.description,
+                "metadata": dict(command.metadata),
+                "created_at": None,
+                "updated_at": None,
+                "audit_entries": [
+                    {
+                        "id": 2,
+                        "template_key": template_key,
+                        "action": "updated",
+                        "changed_by": changed_by or "system_admin",
+                        "change_note": command.change_note,
+                        "previous_config": {"status": "draft"},
+                        "new_config": {"status": command.status},
+                        "fixture_report": {"fixture_count": 1},
+                        "created_at": None,
+                    }
+                ],
+            }
+        }
+
+    async def list_audit_history(self, template_key: str, *, limit: int = 50):
+        return {
+            "audit_entries": [
+                {
+                    "id": 2,
+                    "template_key": template_key,
+                    "action": "updated",
+                    "changed_by": "ops@vocablens",
+                    "change_note": "Promoted recall template after fixture review.",
+                    "previous_config": {"status": "draft"},
+                    "new_config": {"status": "active"},
+                    "fixture_report": {"fixture_count": 1},
+                    "created_at": None,
+                }
+            ][:limit]
         }
 
 
@@ -1996,6 +2099,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_monetization_health_signal_service] = lambda: FakeMonetizationHealthSignalService()
     app.dependency_overrides[get_daily_loop_health_signal_service] = lambda: FakeDailyLoopHealthSignalService()
     app.dependency_overrides[get_content_quality_health_signal_service] = lambda: FakeContentQualityHealthSignalService()
+    app.dependency_overrides[get_exercise_template_registry_admin_service] = lambda: FakeExerciseTemplateRegistryAdminService()
     app.dependency_overrides[get_session_health_signal_service] = lambda: FakeSessionHealthSignalService()
     app.dependency_overrides[get_learning_health_signal_service] = lambda: FakeLearningHealthSignalService()
     app.dependency_overrides[get_notification_policy_registry_service] = lambda: FakeNotificationPolicyRegistryService()
@@ -2097,6 +2201,34 @@ def test_admin_conversion_report_is_protected_and_standardized():
     )
     content_health_report = client.get(
         "/admin/content/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
+    content_template_list = client.get(
+        "/admin/content/templates",
+        headers={"X-Admin-Token": "secret"},
+    )
+    content_template_detail = client.get(
+        "/admin/content/templates/recall_fill_blank_v1",
+        headers={"X-Admin-Token": "secret"},
+    )
+    content_template_update = client.put(
+        "/admin/content/templates/recall_fill_blank_v1",
+        json={
+            "status": "active",
+            "exercise_type": "fill_blank",
+            "objective": "recall",
+            "difficulty": "medium",
+            "prompt_template": "Fill the blank with {target}.",
+            "answer_source": "target",
+            "choice_count": None,
+            "description": "Recall template.",
+            "metadata": {"surface": "lesson"},
+            "change_note": "Promoted recall template after fixture review.",
+        },
+        headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+    )
+    content_template_audit = client.get(
+        "/admin/content/templates/recall_fill_blank_v1/audit?limit=10",
         headers={"X-Admin-Token": "secret"},
     )
     session_health_report = client.get(
@@ -2231,6 +2363,18 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert content_health_report.json()["meta"]["source"] == "admin.content.health_report"
     assert content_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
     assert content_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert content_template_list.status_code == 200
+    assert content_template_list.json()["meta"]["source"] == "admin.content.templates.list"
+    assert content_template_list.json()["data"]["templates"][0]["template_key"] == "recall_fill_blank_v1"
+    assert content_template_detail.status_code == 200
+    assert content_template_detail.json()["meta"]["source"] == "admin.content.templates.detail"
+    assert content_template_detail.json()["data"]["template"]["audit_entries"][0]["fixture_report"]["fixture_count"] == 2
+    assert content_template_update.status_code == 200
+    assert content_template_update.json()["meta"]["source"] == "admin.content.templates.update"
+    assert content_template_update.json()["data"]["template"]["audit_entries"][0]["changed_by"] == "ops@vocablens"
+    assert content_template_audit.status_code == 200
+    assert content_template_audit.json()["meta"]["source"] == "admin.content.templates.audit"
+    assert content_template_audit.json()["data"]["audit_entries"][0]["action"] == "updated"
     assert session_health_report.status_code == 200
     assert session_health_report.json()["meta"]["source"] == "admin.sessions.health_report"
     assert session_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1

@@ -1382,6 +1382,104 @@ class ContentQualityHealthDashboardResponse(BaseModel):
     meta: ContentQualityHealthDashboardMetaResponse
 
 
+class ExerciseTemplateRegistryAuditEntryResponse(BaseModel):
+    id: int
+    template_key: str
+    action: str
+    changed_by: str
+    change_note: str
+    previous_config: dict[str, Any] = Field(default_factory=dict)
+    new_config: dict[str, Any] = Field(default_factory=dict)
+    fixture_report: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class ExerciseTemplateRegistrySummaryResponse(BaseModel):
+    template_key: str
+    exercise_type: str
+    objective: str
+    difficulty: str
+    status: str
+    prompt_template: str
+    answer_source: str
+    choice_count: int | None = None
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    latest_change: ExerciseTemplateRegistryAuditEntryResponse | None = None
+
+
+class ExerciseTemplateRegistryDetailResponseModel(BaseModel):
+    template_key: str
+    exercise_type: str
+    objective: str
+    difficulty: str
+    status: str
+    prompt_template: str
+    answer_source: str
+    choice_count: int | None = None
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    audit_entries: list[ExerciseTemplateRegistryAuditEntryResponse] = Field(default_factory=list)
+
+
+class ExerciseTemplateRegistryUpsertRequest(BaseModel):
+    status: str
+    exercise_type: str
+    objective: str
+    difficulty: str
+    prompt_template: str
+    answer_source: str
+    choice_count: int | None = None
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    change_note: str
+
+
+class ExerciseTemplateRegistryListDataResponse(BaseModel):
+    templates: list[ExerciseTemplateRegistrySummaryResponse] = Field(default_factory=list)
+
+
+class ExerciseTemplateRegistryListMetaResponse(BaseModel):
+    source: Literal["admin.content.templates.list"]
+
+
+class ExerciseTemplateRegistryListResponse(BaseModel):
+    data: ExerciseTemplateRegistryListDataResponse
+    meta: ExerciseTemplateRegistryListMetaResponse
+
+
+class ExerciseTemplateRegistryDetailDataResponse(BaseModel):
+    template: ExerciseTemplateRegistryDetailResponseModel
+
+
+class ExerciseTemplateRegistryDetailMetaResponse(BaseModel):
+    source: Literal["admin.content.templates.detail", "admin.content.templates.update"]
+    template_key: str
+
+
+class ExerciseTemplateRegistryDetailResponse(BaseModel):
+    data: ExerciseTemplateRegistryDetailDataResponse
+    meta: ExerciseTemplateRegistryDetailMetaResponse
+
+
+class ExerciseTemplateRegistryAuditDataResponse(BaseModel):
+    audit_entries: list[ExerciseTemplateRegistryAuditEntryResponse] = Field(default_factory=list)
+
+
+class ExerciseTemplateRegistryAuditMetaResponse(BaseModel):
+    source: Literal["admin.content.templates.audit"]
+    template_key: str
+
+
+class ExerciseTemplateRegistryAuditResponse(BaseModel):
+    data: ExerciseTemplateRegistryAuditDataResponse
+    meta: ExerciseTemplateRegistryAuditMetaResponse
+
+
 class SessionHealthScopeResponse(BaseModel):
     scope_key: str
     health_status: str

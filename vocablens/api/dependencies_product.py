@@ -21,6 +21,7 @@ from vocablens.services.event_processors.knowledge_graph_processor import Knowle
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
 from vocablens.services.exercise_template_registry_service import ExerciseTemplateRegistryService
+from vocablens.services.exercise_template_registry_admin_service import ExerciseTemplateRegistryAdminService
 from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_results_service import ExperimentResultsService
@@ -152,6 +153,13 @@ def get_exercise_template_registry_service(
     uow_factory=Depends(get_uow_factory),
 ) -> ExerciseTemplateRegistryService:
     return ExerciseTemplateRegistryService(uow_factory)
+
+
+def get_exercise_template_registry_admin_service(
+    uow_factory=Depends(get_uow_factory),
+    content_quality_gate_service=Depends(get_content_quality_gate_service),
+) -> ExerciseTemplateRegistryAdminService:
+    return ExerciseTemplateRegistryAdminService(uow_factory, content_quality_gate_service)
 
 
 def get_session_health_signal_service(uow_factory=Depends(get_uow_factory)) -> SessionHealthSignalService:

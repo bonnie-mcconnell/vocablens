@@ -11,6 +11,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    ForeignKeyConstraint,
     UniqueConstraint,
     PrimaryKeyConstraint,
 )
@@ -778,6 +779,29 @@ class ExerciseTemplateORM(Base):
     template_metadata = Column("metadata", JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ExerciseTemplateAuditORM(Base):
+    __tablename__ = "exercise_template_audits"
+    __table_args__ = (
+        Index("idx_exercise_template_audits_template", "template_key", "created_at"),
+        Index("idx_exercise_template_audits_action", "action", "created_at"),
+        ForeignKeyConstraint(
+            ["template_key"],
+            ["exercise_templates.template_key"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    template_key = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    changed_by = Column(String, nullable=False)
+    change_note = Column(Text, nullable=False)
+    previous_config = Column(JSON, nullable=False, default=dict)
+    new_config = Column(JSON, nullable=False, default=dict)
+    fixture_report = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class MonetizationOfferEventORM(Base):

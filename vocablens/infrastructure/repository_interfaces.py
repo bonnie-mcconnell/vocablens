@@ -341,6 +341,7 @@ class ContentQualityHealthStateRepository(Protocol):
 
 class ExerciseTemplateRepository(Protocol):
     async def get_by_key(self, template_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
     async def list_active(
         self,
         *,
@@ -348,6 +349,35 @@ class ExerciseTemplateRepository(Protocol):
         difficulty: str | None = None,
         limit: int = 20,
     ) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        template_key: str,
+        exercise_type: str,
+        objective: str,
+        difficulty: str,
+        status: str,
+        prompt_template: str,
+        answer_source: str,
+        choice_count: int | None,
+        template_metadata: Dict[str, Any],
+    ) -> Any: ...
+
+
+class ExerciseTemplateAuditRepository(Protocol):
+    async def create(
+        self,
+        *,
+        template_key: str,
+        action: str,
+        changed_by: str,
+        change_note: str,
+        previous_config: Dict[str, Any],
+        new_config: Dict[str, Any],
+        fixture_report: Dict[str, Any],
+    ) -> Any: ...
+    async def list_by_template(self, template_key: str, limit: int = 50) -> List[Any]: ...
+    async def latest_for_template(self, template_key: str) -> Optional[Any]: ...
 
 
 class NotificationDeliveryRepository(Protocol):

@@ -9,6 +9,7 @@ from vocablens.api.dependencies import (
     get_content_quality_health_signal_service,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
+    get_exercise_template_registry_admin_service,
     get_experiment_registry_service,
     get_experiment_results_service,
     get_learning_health_signal_service,
@@ -25,6 +26,10 @@ from vocablens.api.schemas import (
     DailyLoopOperatorReportResponse,
     DecisionTraceDetailResponse,
     DecisionTraceListResponse,
+    ExerciseTemplateRegistryAuditResponse,
+    ExerciseTemplateRegistryDetailResponse,
+    ExerciseTemplateRegistryListResponse,
+    ExerciseTemplateRegistryUpsertRequest,
     ExperimentRegistryAuditResponse,
     ExperimentRegistryDetailResponse,
     ExperimentHealthDashboardResponse,
@@ -64,6 +69,10 @@ from vocablens.services.experiment_health_signal_service import ExperimentHealth
 from vocablens.services.learning_health_signal_service import LearningHealthSignalService
 from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
 from vocablens.services.content_quality_health_signal_service import ContentQualityHealthSignalService
+from vocablens.services.exercise_template_registry_admin_service import (
+    ExerciseTemplateRegistryAdminService,
+    ExerciseTemplateRegistryUpsert,
+)
 from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
 from vocablens.services.notification_policy_registry_service import (
     NotificationPolicyRegistryService,
@@ -320,6 +329,80 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.content.health_report"},
+        }
+
+    @router.get("/content/templates", response_model=ExerciseTemplateRegistryListResponse)
+    async def exercise_template_list(
+        _: str = Depends(get_admin_token),
+        service: ExerciseTemplateRegistryAdminService = Depends(get_exercise_template_registry_admin_service),
+    ):
+        payload = await service.list_templates()
+        return {
+            "data": payload,
+            "meta": {"source": "admin.content.templates.list"},
+        }
+
+    @router.get("/content/templates/{template_key}", response_model=ExerciseTemplateRegistryDetailResponse)
+    async def exercise_template_detail(
+        template_key: str,
+        _: str = Depends(get_admin_token),
+        service: ExerciseTemplateRegistryAdminService = Depends(get_exercise_template_registry_admin_service),
+    ):
+        try:
+            payload = await service.get_template(template_key)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": payload,
+            "meta": {"source": "admin.content.templates.detail", "template_key": template_key},
+        }
+
+    @router.put("/content/templates/{template_key}", response_model=ExerciseTemplateRegistryDetailResponse)
+    async def exercise_template_upsert(
+        template_key: str,
+        request: ExerciseTemplateRegistryUpsertRequest,
+        admin_actor: str | None = Header(default=None, alias="X-Admin-Actor"),
+        _: str = Depends(get_admin_token),
+        service: ExerciseTemplateRegistryAdminService = Depends(get_exercise_template_registry_admin_service),
+    ):
+        try:
+            payload = await service.upsert_template(
+                template_key=template_key,
+                command=ExerciseTemplateRegistryUpsert(
+                    status=request.status,
+                    exercise_type=request.exercise_type,
+                    objective=request.objective,
+                    difficulty=request.difficulty,
+                    prompt_template=request.prompt_template,
+                    answer_source=request.answer_source,
+                    choice_count=request.choice_count,
+                    description=request.description,
+                    metadata=dict(request.metadata),
+                    change_note=request.change_note,
+                ),
+                changed_by=admin_actor,
+            )
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": payload,
+            "meta": {"source": "admin.content.templates.update", "template_key": template_key},
+        }
+
+    @router.get("/content/templates/{template_key}/audit", response_model=ExerciseTemplateRegistryAuditResponse)
+    async def exercise_template_audit(
+        template_key: str,
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: ExerciseTemplateRegistryAdminService = Depends(get_exercise_template_registry_admin_service),
+    ):
+        try:
+            payload = await service.list_audit_history(template_key, limit=limit)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": payload,
+            "meta": {"source": "admin.content.templates.audit", "template_key": template_key},
         }
 
     @router.get("/sessions/health/report", response_model=SessionHealthDashboardResponse)

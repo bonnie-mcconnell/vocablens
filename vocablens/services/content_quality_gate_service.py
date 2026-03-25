@@ -88,6 +88,43 @@ class ContentQualityGateService:
             return
         raise ConflictError("Content failed quality validation")
 
+    def lint_template_fixture(
+        self,
+        *,
+        template_key: str,
+        exercise_type: str,
+        objective: str,
+        difficulty: str,
+        prompt_template: str,
+        answer_source: str,
+        choice_count: int | None,
+        fixture: dict[str, Any],
+    ) -> dict[str, Any]:
+        answer = str(fixture.get("target") if answer_source == "target" else fixture.get("vocab_word") or fixture.get("target") or "").strip()
+        question = prompt_template.format(
+            target=str(fixture.get("target") or answer),
+            answer=answer,
+            vocab_word=str(fixture.get("vocab_word") or answer),
+        )
+        exercise = {
+            "template_key": template_key,
+            "type": exercise_type,
+            "objective": objective,
+            "difficulty": difficulty,
+            "question": question,
+            "answer": answer,
+        }
+        if exercise_type == "multiple_choice":
+            choices = [answer, f"{answer} alt 1", f"{answer} alt 2", f"{answer} alt 3"]
+            exercise["choices"] = choices[: max(3, int(choice_count or 4))]
+        violations = self._lint_generated_lesson({"exercises": [exercise], "next_action": {"target": fixture.get("target")}})
+        return {
+            "fixture": dict(fixture),
+            "exercise": exercise,
+            "violations": violations,
+            "status": "rejected" if any(item["severity"] == "critical" for item in violations) else "passed",
+        }
+
     def _lint_structured_session(self, session) -> list[dict[str, Any]]:
         violations: list[dict[str, Any]] = []
         phases = list(getattr(session, "phases", []) or [])
