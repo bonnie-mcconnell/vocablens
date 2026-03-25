@@ -9,6 +9,7 @@ from vocablens.api.dependencies import (
     get_content_quality_health_signal_service,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
+    get_exercise_template_health_signal_service,
     get_exercise_template_registry_admin_service,
     get_experiment_registry_service,
     get_experiment_results_service,
@@ -74,6 +75,7 @@ from vocablens.services.exercise_template_registry_admin_service import (
     ExerciseTemplateRegistryAdminService,
     ExerciseTemplateRegistryUpsert,
 )
+from vocablens.services.exercise_template_health_signal_service import ExerciseTemplateHealthSignalService
 from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
 from vocablens.services.notification_policy_registry_service import (
     NotificationPolicyRegistryService,
@@ -347,7 +349,7 @@ def create_admin_router() -> APIRouter:
     async def exercise_template_health_report(
         limit: int = Query(default=50, ge=1, le=200),
         _: str = Depends(get_admin_token),
-        service: ExerciseTemplateRegistryAdminService = Depends(get_exercise_template_registry_admin_service),
+        service: ExerciseTemplateHealthSignalService = Depends(get_exercise_template_health_signal_service),
     ):
         payload = await service.get_health_dashboard(limit=limit)
         return {

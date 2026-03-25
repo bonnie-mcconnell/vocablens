@@ -47,6 +47,7 @@ from vocablens.api.dependencies_product import (
     get_daily_loop_service,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
+    get_exercise_template_health_signal_service,
     get_event_service,
     get_exercise_template_registry_admin_service,
     get_exercise_template_registry_service,

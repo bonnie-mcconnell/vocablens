@@ -12,9 +12,11 @@ class ContentQualityGateService:
         self,
         uow_factory: type[UnitOfWork],
         health_signal_service: ContentQualityHealthSignalService | None = None,
+        exercise_template_health_signal_service=None,
     ):
         self._uow_factory = uow_factory
         self._health_signals = health_signal_service
+        self._exercise_template_health_signals = exercise_template_health_signal_service
 
     async def validate_structured_session(
         self,
@@ -42,6 +44,8 @@ class ContentQualityGateService:
             await uow.commit()
         if self._health_signals is not None:
             await self._health_signals.evaluate_scope("global")
+        if self._exercise_template_health_signals is not None:
+            await self._exercise_template_health_signals.evaluate_scope("global")
         return {
             "status": "rejected" if rejected else "passed",
             "score": score,

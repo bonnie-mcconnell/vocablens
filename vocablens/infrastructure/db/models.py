@@ -804,6 +804,23 @@ class ExerciseTemplateAuditORM(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class ExerciseTemplateHealthStateORM(Base):
+    __tablename__ = "exercise_template_health_states"
+    __table_args__ = (
+        CheckConstraint(
+            "current_status IN ('healthy', 'warning', 'critical')",
+            name="ck_exercise_template_health_states_status_valid",
+        ),
+        Index("idx_exercise_template_health_states_status", "current_status", "last_evaluated_at"),
+    )
+
+    scope_key = Column(String, primary_key=True)
+    current_status = Column(String, nullable=False)
+    latest_alert_codes = Column(JSON, nullable=False, default=list)
+    metrics = Column(JSON, nullable=False, default=dict)
+    last_evaluated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class MonetizationOfferEventORM(Base):
     __tablename__ = "monetization_offer_events"
     __table_args__ = (

@@ -380,6 +380,19 @@ class ExerciseTemplateAuditRepository(Protocol):
     async def latest_for_template(self, template_key: str) -> Optional[Any]: ...
 
 
+class ExerciseTemplateHealthStateRepository(Protocol):
+    async def get(self, scope_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        scope_key: str,
+        current_status: str,
+        latest_alert_codes: List[str],
+        metrics: Dict[str, Any],
+    ) -> Any: ...
+
+
 class NotificationDeliveryRepository(Protocol):
     async def create_attempt(
         self,

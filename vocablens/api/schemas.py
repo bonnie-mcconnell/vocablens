@@ -1492,6 +1492,10 @@ class ExerciseTemplateRegistryHealthTemplateResponse(BaseModel):
     latest_failed_fixture_count: int = 0
     latest_audit_at: datetime | None = None
     latest_change_note: str | None = None
+    health_status: str = "healthy"
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
 
 
 class ExerciseTemplateRegistryHealthSummaryResponse(BaseModel):
@@ -1501,6 +1505,10 @@ class ExerciseTemplateRegistryHealthSummaryResponse(BaseModel):
     templates_with_runtime_rejections: int = 0
     recent_audit_count_7d: int = 0
     latest_audit_at: datetime | None = None
+    counts_by_health_status: dict[str, int] = Field(default_factory=dict)
+    templates_with_alerts: int = 0
+    alert_counts_by_code: dict[str, int] = Field(default_factory=dict)
+    latest_evaluated_at: datetime | None = None
 
 
 class ExerciseTemplateRegistryHealthDataResponse(BaseModel):

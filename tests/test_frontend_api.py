@@ -8,6 +8,7 @@ from vocablens.api.dependencies import (
     get_current_user,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
+    get_exercise_template_health_signal_service,
     get_exercise_template_registry_admin_service,
     get_learning_health_signal_service,
     get_monetization_health_signal_service,
@@ -1075,6 +1076,83 @@ class FakeExerciseTemplateRegistryAdminService:
                     "created_at": None,
                 }
             ][:limit]
+        }
+
+
+class FakeExerciseTemplateHealthSignalService:
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_templates": 3,
+                "counts_by_status": {"active": 1, "archived": 1, "draft": 1},
+                "templates_with_failed_fixtures": 1,
+                "templates_with_runtime_rejections": 2,
+                "recent_audit_count_7d": 2,
+                "latest_audit_at": "2026-03-25T19:20:00",
+                "counts_by_health_status": {"critical": 2, "warning": 1},
+                "templates_with_alerts": 3,
+                "alert_counts_by_code": {
+                    "fixture_regression_detected": 1,
+                    "inactive_template_overuse": 1,
+                    "template_runtime_rejection_rate_high": 1,
+                },
+                "latest_evaluated_at": "2026-03-25T19:25:00",
+            },
+            "attention": [
+                {
+                    "template_key": "discrimination_choice_v1",
+                    "exercise_type": "multiple_choice",
+                    "objective": "discrimination",
+                    "difficulty": "medium",
+                    "status": "draft",
+                    "runtime_usage_count_7d": 1,
+                    "runtime_rejection_count_7d": 1,
+                    "latest_fixture_status": "rejected",
+                    "latest_failed_fixture_count": 1,
+                    "latest_audit_at": "2026-03-25T19:20:00",
+                    "latest_change_note": "Left in draft after fixture failure.",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["fixture_regression_detected"],
+                    "metrics": {"runtime_usage_count_7d": 1, "runtime_rejection_count_7d": 1},
+                    "last_evaluated_at": "2026-03-25T19:25:00",
+                }
+            ],
+            "templates": [
+                {
+                    "template_key": "discrimination_choice_v1",
+                    "exercise_type": "multiple_choice",
+                    "objective": "discrimination",
+                    "difficulty": "medium",
+                    "status": "draft",
+                    "runtime_usage_count_7d": 1,
+                    "runtime_rejection_count_7d": 1,
+                    "latest_fixture_status": "rejected",
+                    "latest_failed_fixture_count": 1,
+                    "latest_audit_at": "2026-03-25T19:20:00",
+                    "latest_change_note": "Left in draft after fixture failure.",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["fixture_regression_detected"],
+                    "metrics": {"runtime_usage_count_7d": 1, "runtime_rejection_count_7d": 1},
+                    "last_evaluated_at": "2026-03-25T19:25:00",
+                },
+                {
+                    "template_key": "recall_fill_blank_v1",
+                    "exercise_type": "fill_blank",
+                    "objective": "recall",
+                    "difficulty": "medium",
+                    "status": "active",
+                    "runtime_usage_count_7d": 2,
+                    "runtime_rejection_count_7d": 1,
+                    "latest_fixture_status": "passed",
+                    "latest_failed_fixture_count": 0,
+                    "latest_audit_at": "2026-03-24T19:20:00",
+                    "latest_change_note": "Promoted recall template after fixture review.",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["template_runtime_rejection_rate_high"],
+                    "metrics": {"runtime_usage_count_7d": 2, "runtime_rejection_count_7d": 1},
+                    "last_evaluated_at": "2026-03-25T19:25:00",
+                },
+            ][:limit],
         }
 
 
@@ -2154,6 +2232,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_monetization_health_signal_service] = lambda: FakeMonetizationHealthSignalService()
     app.dependency_overrides[get_daily_loop_health_signal_service] = lambda: FakeDailyLoopHealthSignalService()
     app.dependency_overrides[get_content_quality_health_signal_service] = lambda: FakeContentQualityHealthSignalService()
+    app.dependency_overrides[get_exercise_template_health_signal_service] = lambda: FakeExerciseTemplateHealthSignalService()
     app.dependency_overrides[get_exercise_template_registry_admin_service] = lambda: FakeExerciseTemplateRegistryAdminService()
     app.dependency_overrides[get_session_health_signal_service] = lambda: FakeSessionHealthSignalService()
     app.dependency_overrides[get_learning_health_signal_service] = lambda: FakeLearningHealthSignalService()
@@ -2428,7 +2507,9 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert content_template_health.status_code == 200
     assert content_template_health.json()["meta"]["source"] == "admin.content.templates.health_report"
     assert content_template_health.json()["data"]["summary"]["templates_with_failed_fixtures"] == 1
+    assert content_template_health.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 2
     assert content_template_health.json()["data"]["attention"][0]["template_key"] == "discrimination_choice_v1"
+    assert content_template_health.json()["data"]["templates"][0]["health_status"] == "critical"
     assert content_template_detail.status_code == 200
     assert content_template_detail.json()["meta"]["source"] == "admin.content.templates.detail"
     assert content_template_detail.json()["data"]["template"]["audit_entries"][0]["fixture_report"]["fixture_count"] == 2

@@ -61,6 +61,9 @@ from vocablens.infrastructure.postgres_exercise_template_repository import (
 from vocablens.infrastructure.postgres_exercise_template_audit_repository import (
     PostgresExerciseTemplateAuditRepository,
 )
+from vocablens.infrastructure.postgres_exercise_template_health_state_repository import (
+    PostgresExerciseTemplateHealthStateRepository,
+)
 from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
@@ -144,6 +147,7 @@ class UnitOfWork:
         self._content_quality_health_states: Optional[PostgresContentQualityHealthStateRepository] = None
         self._exercise_templates: Optional[PostgresExerciseTemplateRepository] = None
         self._exercise_template_audits: Optional[PostgresExerciseTemplateAuditRepository] = None
+        self._exercise_template_health_states: Optional[PostgresExerciseTemplateHealthStateRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
         self._experiment_outcome_attributions: Optional[PostgresExperimentOutcomeAttributionRepository] = None
@@ -419,6 +423,14 @@ class UnitOfWork:
         if self._exercise_template_audits is None:
             self._exercise_template_audits = PostgresExerciseTemplateAuditRepository(self.session)
         return self._exercise_template_audits
+
+    @property
+    def exercise_template_health_states(self) -> PostgresExerciseTemplateHealthStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._exercise_template_health_states is None:
+            self._exercise_template_health_states = PostgresExerciseTemplateHealthStateRepository(self.session)
+        return self._exercise_template_health_states
 
     @property
     def experiment_assignments(self) -> PostgresExperimentAssignmentRepository:

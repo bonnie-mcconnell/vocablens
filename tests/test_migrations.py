@@ -59,6 +59,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "content_quality_health_states" in tables
     assert "exercise_templates" in tables
     assert "exercise_template_audits" in tables
+    assert "exercise_template_health_states" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -574,6 +575,17 @@ def test_upgrade_downgrade_upgrade_round_trip():
         "created_at",
     } <= exercise_template_audit_columns
 
+    exercise_template_health_indexes = {idx["name"] for idx in inspector.get_indexes("exercise_template_health_states")}
+    assert "idx_exercise_template_health_states_status" in exercise_template_health_indexes
+    exercise_template_health_columns = {col["name"] for col in inspector.get_columns("exercise_template_health_states")}
+    assert {
+        "scope_key",
+        "current_status",
+        "latest_alert_codes",
+        "metrics",
+        "last_evaluated_at",
+    } <= exercise_template_health_columns
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -760,6 +772,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "content_quality_health_states" not in tables
     assert "exercise_templates" not in tables
     assert "exercise_template_audits" not in tables
+    assert "exercise_template_health_states" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -792,6 +805,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "content_quality_health_states" in tables
     assert "exercise_templates" in tables
     assert "exercise_template_audits" in tables
+    assert "exercise_template_health_states" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

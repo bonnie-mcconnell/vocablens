@@ -35,9 +35,15 @@ class ExerciseTemplateRegistryUpsert:
 
 
 class ExerciseTemplateRegistryAdminService:
-    def __init__(self, uow_factory: type[UnitOfWork], content_quality_gate: ContentQualityGateService):
+    def __init__(
+        self,
+        uow_factory: type[UnitOfWork],
+        content_quality_gate: ContentQualityGateService,
+        health_signal_service=None,
+    ):
         self._uow_factory = uow_factory
         self._content_quality_gate = content_quality_gate
+        self._health_signals = health_signal_service
 
     async def list_templates(self) -> dict[str, Any]:
         async with self._uow_factory() as uow:
@@ -105,6 +111,8 @@ class ExerciseTemplateRegistryAdminService:
                 fixture_report=fixture_report,
             )
             await uow.commit()
+        if self._health_signals is not None:
+            await self._health_signals.evaluate_scope("global")
         return {"template": self._detail_payload(saved, [audit])}
 
     async def list_audit_history(self, template_key: str, *, limit: int = 50) -> dict[str, Any]:

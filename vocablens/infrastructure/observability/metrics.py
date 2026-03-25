@@ -354,3 +354,39 @@ CONTENT_QUALITY_ACTIVE_ALERTS = Gauge(
     "Current active content quality alerts by scope and severity",
     ["scope_key", "severity"],
 )
+
+EXERCISE_TEMPLATE_HEALTH_STATUS = Gauge(
+    "vocablens_exercise_template_health_status",
+    "Current exercise template health state as a one-hot gauge",
+    ["scope_key", "status"],
+)
+
+EXERCISE_TEMPLATE_HEALTH_RATE = Gauge(
+    "vocablens_exercise_template_health_metric",
+    "Current evaluated exercise template health metrics",
+    ["scope_key", "metric"],
+)
+
+EXERCISE_TEMPLATE_HEALTH_TRANSITIONS = Counter(
+    "vocablens_exercise_template_health_transitions_total",
+    "Exercise template health state transitions",
+    ["scope_key", "from_status", "to_status"],
+)
+
+EXERCISE_TEMPLATE_HEALTH_ALERTS = Counter(
+    "vocablens_exercise_template_health_alerts_total",
+    "Exercise template health alerts emitted",
+    ["scope_key", "code", "severity"],
+)
+
+EXERCISE_TEMPLATE_HEALTH_SCOPES = Gauge(
+    "vocablens_exercise_template_health_scopes",
+    "Current count of exercise template scopes by health status",
+    ["status"],
+)
+
+EXERCISE_TEMPLATE_ACTIVE_ALERTS = Gauge(
+    "vocablens_exercise_template_active_alerts",
+    "Current active exercise template alerts by scope and severity",
+    ["scope_key", "severity"],
+)
