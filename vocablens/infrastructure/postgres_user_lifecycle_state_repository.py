@@ -11,6 +11,12 @@ class PostgresUserLifecycleStateRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def list_all(self):
+        result = await self.session.execute(
+            select(UserLifecycleStateORM).order_by(UserLifecycleStateORM.user_id.asc())
+        )
+        return result.scalars().all()
+
     async def get(self, user_id: int):
         result = await self.session.execute(
             select(UserLifecycleStateORM).where(UserLifecycleStateORM.user_id == user_id)

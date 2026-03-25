@@ -13,6 +13,7 @@ from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.business_metrics_service import BusinessMetricsService
 from vocablens.services.conversion_funnel_service import ConversionFunnelService
 from vocablens.services.daily_loop_service import DailyLoopService
+from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
 from vocablens.services.decision_trace_service import DecisionTraceService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
@@ -30,6 +31,7 @@ from vocablens.services.knowledge_graph_service import KnowledgeGraphService
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.lifecycle_service import LifecycleService
+from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
 from vocablens.services.lifecycle_state_service import LifecycleStateService
 from vocablens.services.monetization_engine import MonetizationEngine
 from vocablens.services.monetization_health_signal_service import MonetizationHealthSignalService
@@ -120,6 +122,14 @@ def get_monetization_health_signal_service(uow_factory=Depends(get_uow_factory))
 
 def get_lifecycle_state_service(uow_factory=Depends(get_uow_factory)) -> LifecycleStateService:
     return LifecycleStateService(uow_factory)
+
+
+def get_lifecycle_health_signal_service(uow_factory=Depends(get_uow_factory)) -> LifecycleHealthSignalService:
+    return LifecycleHealthSignalService(uow_factory)
+
+
+def get_daily_loop_health_signal_service(uow_factory=Depends(get_uow_factory)) -> DailyLoopHealthSignalService:
+    return DailyLoopHealthSignalService(uow_factory)
 
 
 def get_notification_state_service(uow_factory=Depends(get_uow_factory)) -> NotificationStateService:
@@ -267,6 +277,7 @@ def get_lifecycle_service(
     onboarding_service=Depends(get_onboarding_service),
     lifecycle_state_service=Depends(get_lifecycle_state_service),
     notification_state_service=Depends(get_notification_state_service),
+    lifecycle_health_signal_service=Depends(get_lifecycle_health_signal_service),
 ) -> LifecycleService:
     return LifecycleService(
         uow_factory,
@@ -278,6 +289,7 @@ def get_lifecycle_service(
         onboarding_service,
         lifecycle_state_service,
         notification_state_service,
+        lifecycle_health_signal_service,
     )
 
 
@@ -364,6 +376,7 @@ def get_daily_loop_service(
     notification_decision_engine=Depends(get_notification_decision_engine),
     retention_engine=Depends(get_retention_engine),
     event_service=Depends(get_event_service),
+    daily_loop_health_signal_service=Depends(get_daily_loop_health_signal_service),
 ) -> DailyLoopService:
     return DailyLoopService(
         uow_factory,
@@ -372,4 +385,5 @@ def get_daily_loop_service(
         notification_decision_engine,
         retention_engine,
         event_service,
+        daily_loop_health_signal_service,
     )

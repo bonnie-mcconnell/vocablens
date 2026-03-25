@@ -257,6 +257,32 @@ class MonetizationHealthStateRepository(Protocol):
     ) -> Any: ...
 
 
+class LifecycleHealthStateRepository(Protocol):
+    async def get(self, scope_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        scope_key: str,
+        current_status: str,
+        latest_alert_codes: List[str],
+        metrics: Dict[str, Any],
+    ) -> Any: ...
+
+
+class DailyLoopHealthStateRepository(Protocol):
+    async def get(self, scope_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        scope_key: str,
+        current_status: str,
+        latest_alert_codes: List[str],
+        metrics: Dict[str, Any],
+    ) -> Any: ...
+
+
 class NotificationDeliveryRepository(Protocol):
     async def create_attempt(
         self,
@@ -297,6 +323,7 @@ class MonetizationOfferEventRepository(Protocol):
 
 class DailyMissionRepository(Protocol):
     async def get_by_user_date(self, user_id: int, mission_date: str) -> Optional[Any]: ...
+    async def list_all(self, limit: int | None = None) -> List[Any]: ...
     async def create(
         self,
         *,
@@ -315,6 +342,7 @@ class DailyMissionRepository(Protocol):
 
 class RewardChestRepository(Protocol):
     async def get_by_mission_id(self, mission_id: int) -> Optional[Any]: ...
+    async def list_all(self, limit: int | None = None) -> List[Any]: ...
     async def create(
         self,
         *,
@@ -329,6 +357,7 @@ class RewardChestRepository(Protocol):
 
 class UserLifecycleStateRepository(Protocol):
     async def get(self, user_id: int) -> Any | None: ...
+    async def list_all(self) -> List[Any]: ...
     async def create(
         self,
         *,
@@ -359,6 +388,7 @@ class LifecycleTransitionRepository(Protocol):
         created_at: datetime,
     ) -> Any: ...
     async def list_by_user(self, user_id: int, limit: int = 50) -> List[Any]: ...
+    async def list_all(self, limit: int | None = None) -> List[Any]: ...
 
 
 class UserLearningStateRepository(Protocol):
@@ -377,6 +407,7 @@ class UserLearningStateRepository(Protocol):
 
 class UserEngagementStateRepository(Protocol):
     async def get_or_create(self, user_id: int) -> UserEngagementState: ...
+    async def list_all(self) -> List[UserEngagementState]: ...
     async def update(
         self,
         user_id: int,

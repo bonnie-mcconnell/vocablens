@@ -1289,6 +1289,68 @@ class MonetizationHealthDashboardResponse(BaseModel):
     meta: MonetizationHealthDashboardMetaResponse
 
 
+class LifecycleHealthScopeResponse(BaseModel):
+    scope_key: str
+    health_status: str
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
+
+
+class LifecycleHealthDashboardSummaryResponse(BaseModel):
+    total_scopes: int = 0
+    counts_by_health_status: dict[str, int] = Field(default_factory=dict)
+    scopes_with_alerts: int = 0
+    alert_counts_by_code: dict[str, int] = Field(default_factory=dict)
+    latest_evaluated_at: datetime | None = None
+
+
+class LifecycleHealthDashboardDataResponse(BaseModel):
+    summary: LifecycleHealthDashboardSummaryResponse
+    attention: list[LifecycleHealthScopeResponse] = Field(default_factory=list)
+    scopes: list[LifecycleHealthScopeResponse] = Field(default_factory=list)
+
+
+class LifecycleHealthDashboardMetaResponse(BaseModel):
+    source: Literal["admin.lifecycle.health_report"]
+
+
+class LifecycleHealthDashboardResponse(BaseModel):
+    data: LifecycleHealthDashboardDataResponse
+    meta: LifecycleHealthDashboardMetaResponse
+
+
+class DailyLoopHealthScopeResponse(BaseModel):
+    scope_key: str
+    health_status: str
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
+
+
+class DailyLoopHealthDashboardSummaryResponse(BaseModel):
+    total_scopes: int = 0
+    counts_by_health_status: dict[str, int] = Field(default_factory=dict)
+    scopes_with_alerts: int = 0
+    alert_counts_by_code: dict[str, int] = Field(default_factory=dict)
+    latest_evaluated_at: datetime | None = None
+
+
+class DailyLoopHealthDashboardDataResponse(BaseModel):
+    summary: DailyLoopHealthDashboardSummaryResponse
+    attention: list[DailyLoopHealthScopeResponse] = Field(default_factory=list)
+    scopes: list[DailyLoopHealthScopeResponse] = Field(default_factory=list)
+
+
+class DailyLoopHealthDashboardMetaResponse(BaseModel):
+    source: Literal["admin.daily_loop.health_report"]
+
+
+class DailyLoopHealthDashboardResponse(BaseModel):
+    data: DailyLoopHealthDashboardDataResponse
+    meta: DailyLoopHealthDashboardMetaResponse
+
+
 class DailyMissionDiagnosticsResponse(BaseModel):
     id: int
     user_id: int

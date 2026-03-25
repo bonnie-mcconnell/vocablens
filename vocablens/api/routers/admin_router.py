@@ -6,15 +6,18 @@ from fastapi import HTTPException
 from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
+    get_daily_loop_health_signal_service,
     get_decision_trace_service,
     get_experiment_registry_service,
     get_experiment_results_service,
+    get_lifecycle_health_signal_service,
     get_monetization_health_signal_service,
     get_notification_policy_registry_service,
     get_subscription_service,
 )
 from vocablens.api.schemas import (
     ConversionMetricsResponse,
+    DailyLoopHealthDashboardResponse,
     DailyLoopOperatorReportResponse,
     DecisionTraceDetailResponse,
     DecisionTraceListResponse,
@@ -26,6 +29,7 @@ from vocablens.api.schemas import (
     ExperimentRegistryUpsertRequest,
     ExperimentResultsResponse,
     LifecycleDiagnosticsResponse,
+    LifecycleHealthDashboardResponse,
     LifecycleOperatorReportResponse,
     MonetizationDiagnosticsResponse,
     MonetizationHealthDashboardResponse,
@@ -51,6 +55,8 @@ from vocablens.services.experiment_registry_service import (
 )
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.experiment_health_signal_service import ExperimentHealthSignalService
+from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
+from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
 from vocablens.services.notification_policy_registry_service import (
     NotificationPolicyRegistryService,
     NotificationPolicyRegistryUpsert,
@@ -269,6 +275,30 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.monetization.health_report"},
+        }
+
+    @router.get("/lifecycle/health/report", response_model=LifecycleHealthDashboardResponse)
+    async def lifecycle_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: LifecycleHealthSignalService = Depends(get_lifecycle_health_signal_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.lifecycle.health_report"},
+        }
+
+    @router.get("/daily-loop/health/report", response_model=DailyLoopHealthDashboardResponse)
+    async def daily_loop_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: DailyLoopHealthSignalService = Depends(get_daily_loop_health_signal_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.daily_loop.health_report"},
         }
 
     @router.get("/notifications/policies/{policy_key}", response_model=NotificationPolicyDetailResponse)

@@ -11,6 +11,16 @@ class PostgresRewardChestRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def list_all(self, limit: int | None = None):
+        query = select(RewardChestORM).order_by(
+            RewardChestORM.created_at.desc(),
+            RewardChestORM.id.desc(),
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
     async def get_by_mission_id(self, mission_id: int):
         result = await self.session.execute(
             select(RewardChestORM).where(RewardChestORM.mission_id == mission_id)

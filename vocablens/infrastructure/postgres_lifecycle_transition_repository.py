@@ -46,3 +46,13 @@ class PostgresLifecycleTransitionRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    async def list_all(self, limit: int | None = None):
+        query = select(LifecycleTransitionORM).order_by(
+            desc(LifecycleTransitionORM.created_at),
+            desc(LifecycleTransitionORM.id),
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        result = await self.session.execute(query)
+        return result.scalars().all()

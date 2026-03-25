@@ -139,6 +139,28 @@ class FakePaywallService:
         return self.decision
 
 
+class FakeLifecycleHealthSignalService:
+    async def evaluate_scope(self, scope_key: str = "global"):
+        return {"scope_key": scope_key}
+
+
+class FakeLifecycleNotificationStateService:
+    async def apply_lifecycle_policy(
+        self,
+        *,
+        user_id: int,
+        lifecycle_stage: str,
+        source: str,
+        reference_id: str | None,
+    ):
+        return SimpleNamespace(
+            user_id=user_id,
+            lifecycle_stage=lifecycle_stage,
+            lifecycle_policy={"lifecycle_notifications_enabled": True},
+            suppression_reason=None,
+        )
+
+
 def _progress(accuracy: float, *, words: int = 0, reviews: int = 0) -> dict:
     return {
         "metrics": {
@@ -304,6 +326,8 @@ def test_lifecycle_service_includes_onboarding_actions_for_new_users():
             )
         ),
         onboarding,
+        notification_state_service=FakeLifecycleNotificationStateService(),
+        lifecycle_health_signal_service=FakeLifecycleHealthSignalService(),
     )
 
     plan = run_async(lifecycle.evaluate(9))

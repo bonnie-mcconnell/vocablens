@@ -174,3 +174,75 @@ MONETIZATION_ACTIVE_ALERTS = Gauge(
     "Current active monetization alerts by scope and severity",
     ["scope_key", "severity"],
 )
+
+LIFECYCLE_HEALTH_STATUS = Gauge(
+    "vocablens_lifecycle_health_status",
+    "Current lifecycle health state as a one-hot gauge",
+    ["scope_key", "status"],
+)
+
+LIFECYCLE_HEALTH_RATE = Gauge(
+    "vocablens_lifecycle_health_metric",
+    "Current evaluated lifecycle health metrics",
+    ["scope_key", "metric"],
+)
+
+LIFECYCLE_HEALTH_TRANSITIONS = Counter(
+    "vocablens_lifecycle_health_transitions_total",
+    "Lifecycle health state transitions",
+    ["scope_key", "from_status", "to_status"],
+)
+
+LIFECYCLE_HEALTH_ALERTS = Counter(
+    "vocablens_lifecycle_health_alerts_total",
+    "Lifecycle health alerts emitted",
+    ["scope_key", "code", "severity"],
+)
+
+LIFECYCLE_HEALTH_SCOPES = Gauge(
+    "vocablens_lifecycle_health_scopes",
+    "Current count of lifecycle scopes by health status",
+    ["status"],
+)
+
+LIFECYCLE_ACTIVE_ALERTS = Gauge(
+    "vocablens_lifecycle_active_alerts",
+    "Current active lifecycle alerts by scope and severity",
+    ["scope_key", "severity"],
+)
+
+DAILY_LOOP_HEALTH_STATUS = Gauge(
+    "vocablens_daily_loop_health_status",
+    "Current daily loop health state as a one-hot gauge",
+    ["scope_key", "status"],
+)
+
+DAILY_LOOP_HEALTH_RATE = Gauge(
+    "vocablens_daily_loop_health_metric",
+    "Current evaluated daily loop health metrics",
+    ["scope_key", "metric"],
+)
+
+DAILY_LOOP_HEALTH_TRANSITIONS = Counter(
+    "vocablens_daily_loop_health_transitions_total",
+    "Daily loop health state transitions",
+    ["scope_key", "from_status", "to_status"],
+)
+
+DAILY_LOOP_HEALTH_ALERTS = Counter(
+    "vocablens_daily_loop_health_alerts_total",
+    "Daily loop health alerts emitted",
+    ["scope_key", "code", "severity"],
+)
+
+DAILY_LOOP_HEALTH_SCOPES = Gauge(
+    "vocablens_daily_loop_health_scopes",
+    "Current count of daily loop scopes by health status",
+    ["status"],
+)
+
+DAILY_LOOP_ACTIVE_ALERTS = Gauge(
+    "vocablens_daily_loop_active_alerts",
+    "Current active daily loop alerts by scope and severity",
+    ["scope_key", "severity"],
+)

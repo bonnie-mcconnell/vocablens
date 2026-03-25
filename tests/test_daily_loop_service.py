@@ -164,6 +164,15 @@ class FakeEventService:
         self.calls.append((user_id, event_type, payload or {}))
 
 
+class FakeDailyLoopHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_scope(self, scope_key: str = "global"):
+        self.calls.append(scope_key)
+        return {"scope_key": scope_key}
+
+
 def _factory_for(uow):
     return lambda: uow
 
@@ -183,6 +192,7 @@ def test_daily_loop_service_always_generates_a_mission():
         lesson_difficulty="medium",
         skill_focus="vocabulary",
     )
+    health_signals = FakeDailyLoopHealthSignalService()
     service = DailyLoopService(
         _factory_for(
             FakeUOW(
@@ -195,6 +205,7 @@ def test_daily_loop_service_always_generates_a_mission():
         FakeNotificationEngine(),
         FakeRetentionEngine(drop_off_risk=0.2),
         FakeEventService(),
+        health_signals,
     )
 
     plan = run_async(service.build_daily_loop(1))
@@ -208,6 +219,7 @@ def test_daily_loop_service_always_generates_a_mission():
     assert service._uow_factory()._daily_mission is not None
     assert service._uow_factory()._reward_chest is not None
     assert service._uow_factory()._decision_traces[0]["trace_type"] == "daily_mission_generation"
+    assert health_signals.calls == ["global"]
 
 
 def test_daily_loop_service_skip_shield_updates_correctly():
@@ -219,6 +231,7 @@ def test_daily_loop_service_skip_shield_updates_correctly():
         skill_focus="vocabulary",
     )
     event_service = FakeEventService()
+    health_signals = FakeDailyLoopHealthSignalService()
     service = DailyLoopService(
         _factory_for(FakeUOW()),
         FakeLearningEngine(recommendation),
@@ -226,6 +239,7 @@ def test_daily_loop_service_skip_shield_updates_correctly():
         FakeNotificationEngine(),
         FakeRetentionEngine(streak=5),
         event_service,
+        health_signals,
     )
 
     result = run_async(service.use_skip_shield(1))
@@ -234,6 +248,7 @@ def test_daily_loop_service_skip_shield_updates_correctly():
     assert result.streak_preserved is True
     assert result.shields_remaining_this_week == 0
     assert event_service.calls[-1][1] == "skip_shield_used"
+    assert health_signals.calls == ["global"]
 
 
 def test_daily_loop_service_rewards_trigger_after_completion():
@@ -246,6 +261,7 @@ def test_daily_loop_service_rewards_trigger_after_completion():
     )
     retention = FakeRetentionEngine(streak=6)
     event_service = FakeEventService()
+    health_signals = FakeDailyLoopHealthSignalService()
     service = DailyLoopService(
         _factory_for(FakeUOW()),
         FakeLearningEngine(recommendation),
@@ -253,6 +269,7 @@ def test_daily_loop_service_rewards_trigger_after_completion():
         FakeNotificationEngine(),
         retention,
         event_service,
+        health_signals,
     )
 
     run_async(service.build_daily_loop(1))
@@ -266,6 +283,7 @@ def test_daily_loop_service_rewards_trigger_after_completion():
     assert "reward_chest_unlocked" in emitted_types
     assert retention.recorded[0][0] == 1
     assert service._uow_factory()._decision_traces[-1]["trace_type"] == "reward_chest_resolution"
+    assert health_signals.calls == ["global", "global"]
 
 
 def test_daily_loop_service_reuses_existing_mission_for_same_day():
@@ -280,6 +298,7 @@ def test_daily_loop_service_reuses_existing_mission_for_same_day():
         due_items=[SimpleNamespace(source_text="hola")],
         learning_state=SimpleNamespace(weak_areas=["travel"]),
     )
+    health_signals = FakeDailyLoopHealthSignalService()
     service = DailyLoopService(
         _factory_for(uow),
         FakeLearningEngine(recommendation),
@@ -287,6 +306,7 @@ def test_daily_loop_service_reuses_existing_mission_for_same_day():
         FakeNotificationEngine(),
         FakeRetentionEngine(drop_off_risk=0.2),
         FakeEventService(),
+        health_signals,
     )
 
     first = run_async(service.build_daily_loop(1))
@@ -295,6 +315,7 @@ def test_daily_loop_service_reuses_existing_mission_for_same_day():
     assert first.date == second.date
     assert first.mission[0].target == second.mission[0].target
     assert uow._daily_mission.id == 1
+    assert health_signals.calls == ["global"]
 
 
 def test_daily_loop_completion_is_idempotent_after_first_unlock():
@@ -307,6 +328,7 @@ def test_daily_loop_completion_is_idempotent_after_first_unlock():
     )
     retention = FakeRetentionEngine(streak=6)
     uow = FakeUOW()
+    health_signals = FakeDailyLoopHealthSignalService()
     service = DailyLoopService(
         _factory_for(uow),
         FakeLearningEngine(recommendation),
@@ -314,6 +336,7 @@ def test_daily_loop_completion_is_idempotent_after_first_unlock():
         FakeNotificationEngine(),
         retention,
         FakeEventService(),
+        health_signals,
     )
 
     run_async(service.build_daily_loop(1))
@@ -323,3 +346,4 @@ def test_daily_loop_completion_is_idempotent_after_first_unlock():
     assert first.reward_chest_unlocked is True
     assert second.reward_chest_unlocked is True
     assert second.completed is True
+    assert health_signals.calls == ["global", "global"]

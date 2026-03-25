@@ -9,6 +9,7 @@ from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.gamification_service import GamificationService
+from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.retention_engine import RetentionEngine
@@ -63,6 +64,7 @@ class DailyLoopService:
         notification_engine: NotificationDecisionEngine,
         retention_engine: RetentionEngine,
         event_service: EventService | None = None,
+        daily_loop_health_signal_service: DailyLoopHealthSignalService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning = learning_engine
@@ -70,6 +72,7 @@ class DailyLoopService:
         self._notifications = notification_engine
         self._retention = retention_engine
         self._events = event_service
+        self._health_signals = daily_loop_health_signal_service or DailyLoopHealthSignalService(uow_factory)
 
     async def build_daily_loop(self, user_id: int) -> DailyLoopPlan:
         mission_date = utc_now().date().isoformat()
@@ -175,6 +178,7 @@ class DailyLoopService:
                     "momentum_score": momentum_score,
                 },
             )
+        await self._health_signals.evaluate_scope("global")
         return self._plan_from_rows(mission_row, chest_row, streak_shield_available=shield_available)
 
     async def complete_daily_mission(self, user_id: int) -> DailyLoopCompletion:
@@ -255,6 +259,7 @@ class DailyLoopService:
                     "badge_hint": reward_preview["badge_hint"],
                 },
             )
+        await self._health_signals.evaluate_scope("global")
         return self._completion_from_rows(
             mission,
             chest,
@@ -292,6 +297,7 @@ class DailyLoopService:
                     "used_at": utc_now().isoformat(),
                 },
             )
+        await self._health_signals.evaluate_scope("global")
 
         return SkipShieldResult(
             applied=True,

@@ -6,6 +6,7 @@ from typing import Literal
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.lifecycle_stage_policy import LifecycleSnapshot, classify_lifecycle_stage
+from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
 from vocablens.services.lifecycle_state_service import LifecycleStateService
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.notification_state_service import NotificationStateService
@@ -43,6 +44,7 @@ class LifecycleService:
         onboarding_service: OnboardingService | None = None,
         lifecycle_state_service: LifecycleStateService | None = None,
         notification_state_service: NotificationStateService | None = None,
+        lifecycle_health_signal_service: LifecycleHealthSignalService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine
@@ -53,6 +55,7 @@ class LifecycleService:
         self._onboarding = onboarding_service
         self._lifecycle_states = lifecycle_state_service or LifecycleStateService(uow_factory)
         self._notification_states = notification_state_service or NotificationStateService(uow_factory)
+        self._health_signals = lifecycle_health_signal_service or LifecycleHealthSignalService(uow_factory)
 
     async def evaluate(self, user_id: int) -> LifecyclePlan:
         if self._global_decision:
@@ -116,6 +119,7 @@ class LifecycleService:
             paywall=paywall,
             source="lifecycle_service.evaluate",
         )
+        await self._evaluate_health(stage)
         return plan
 
     async def _state_snapshot(self, user_id: int):
@@ -225,7 +229,12 @@ class LifecycleService:
             source="lifecycle_service.global_decision",
             global_reason=decision.reason,
         )
+        await self._evaluate_health(stage)
         return plan
+
+    async def _evaluate_health(self, stage: LifecycleStage) -> None:
+        await self._health_signals.evaluate_scope("global")
+        await self._health_signals.evaluate_scope(stage)
 
     async def _onboarding_actions(self, user_id: int, stage: LifecycleStage) -> list[LifecycleAction]:
         if not self._onboarding or stage not in {"new_user", "activating"}:

@@ -11,6 +11,16 @@ class PostgresDailyMissionRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def list_all(self, limit: int | None = None):
+        query = select(DailyMissionORM).order_by(
+            DailyMissionORM.mission_date.desc(),
+            DailyMissionORM.id.desc(),
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
     async def get_by_user_date(self, user_id: int, mission_date: str):
         result = await self.session.execute(
             select(DailyMissionORM).where(

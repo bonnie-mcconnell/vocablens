@@ -148,6 +148,28 @@ class FakeGlobalDecisionEngine:
         return self.decision
 
 
+class FakeLifecycleHealthSignalService:
+    async def evaluate_scope(self, scope_key: str = "global"):
+        return {"scope_key": scope_key}
+
+
+class FakeLifecycleNotificationStateService:
+    async def apply_lifecycle_policy(
+        self,
+        *,
+        user_id: int,
+        lifecycle_stage: str,
+        source: str,
+        reference_id: str | None,
+    ):
+        return SimpleNamespace(
+            user_id=user_id,
+            lifecycle_stage=lifecycle_stage,
+            lifecycle_policy={"lifecycle_notifications_enabled": True},
+            suppression_reason=None,
+        )
+
+
 class FakeLearningAdapterUOW:
     def __init__(self):
         self.decision_traces = SimpleNamespace(
@@ -371,6 +393,8 @@ def test_learning_lifecycle_and_habit_services_use_global_decision_engine():
         notification,
         paywall,
         global_engine,
+        notification_state_service=FakeLifecycleNotificationStateService(),
+        lifecycle_health_signal_service=FakeLifecycleHealthSignalService(),
     )
     habit = HabitEngine(
         retention,

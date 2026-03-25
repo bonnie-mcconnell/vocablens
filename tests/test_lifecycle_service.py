@@ -206,6 +206,56 @@ class FakePaywallService:
         return self.decision
 
 
+class FakeLifecycleHealthSignalService:
+    def __init__(self):
+        self.calls = []
+
+    async def evaluate_scope(self, scope_key: str = "global"):
+        self.calls.append(scope_key)
+        return {"scope_key": scope_key}
+
+
+class FakeLifecycleNotificationStateService:
+    def __init__(self, uow):
+        self._uow = uow
+
+    async def apply_lifecycle_policy(
+        self,
+        *,
+        user_id: int,
+        lifecycle_stage: str,
+        source: str,
+        reference_id: str | None,
+    ):
+        row = await self._uow.notification_states.get_or_create(user_id)
+        stage_policies = (
+            await self._uow.notification_policy_registries.get("default")
+        ).policy["stage_policies"]
+        stage_policy = dict(stage_policies[lifecycle_stage])
+        updated = await self._uow.notification_states.update(
+            user_id,
+            lifecycle_stage=lifecycle_stage,
+            lifecycle_policy={
+                "lifecycle_notifications_enabled": stage_policy["lifecycle_notifications_enabled"],
+                "recovery_window_hours": stage_policy["recovery_window_hours"],
+            },
+            suppression_reason=stage_policy["suppression_reason"],
+        )
+        await self._uow.notification_suppression_events.create(
+            user_id=user_id,
+            event_type="lifecycle_policy_updated",
+            source=source,
+            reference_id=reference_id,
+            policy_key="default",
+            policy_version="v1",
+            lifecycle_stage=lifecycle_stage,
+            suppression_reason=stage_policy["suppression_reason"],
+            suppressed_until=None,
+            payload=dict(updated.lifecycle_policy or {}),
+        )
+        return updated
+
+
 def _progress(*, accuracy: float, mastery: float, fluency: float) -> dict:
     return {
         "metrics": {
@@ -253,14 +303,17 @@ def _service(
     )
     engagement_state = SimpleNamespace(total_sessions=sessions)
     uow = FakeUOW(learning_state, engagement_state)
+    health_signals = FakeLifecycleHealthSignalService()
     service = LifecycleService(
         lambda: uow,
         FakeRetentionEngine(assessment),
         FakeProgressService(progress),
         notifier,
         FakePaywallService(paywall),
+        notification_state_service=FakeLifecycleNotificationStateService(uow),
+        lifecycle_health_signal_service=health_signals,
     )
-    return service, notifier, uow
+    return service, notifier, uow, health_signals
 
 
 @pytest.mark.parametrize(
@@ -274,7 +327,7 @@ def _service(
     ],
 )
 def test_lifecycle_service_classifies_users_correctly(sessions, assessment, progress, expected_stage):
-    service, _, _ = _service(
+    service, _, _, health_signals = _service(
         sessions=sessions,
         assessment=assessment,
         progress=progress,
@@ -284,15 +337,16 @@ def test_lifecycle_service_classifies_users_correctly(sessions, assessment, prog
 
     assert plan.stage == expected_stage
     assert plan.reasons
+    assert health_signals.calls == ["global", expected_stage]
 
 
 def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
-    new_user_service, new_user_notifier, new_user_uow = _service(
+    new_user_service, new_user_notifier, new_user_uow, new_user_health = _service(
         sessions=1,
         assessment=_assessment(),
         progress=_progress(accuracy=82.0, mastery=15.0, fluency=64.0),
     )
-    activating_service, activating_notifier, activating_uow = _service(
+    activating_service, activating_notifier, activating_uow, activating_health = _service(
         sessions=3,
         assessment=_assessment(),
         progress=_progress(accuracy=63.0, mastery=25.0, fluency=57.0),
@@ -309,12 +363,14 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
     assert new_user_uow.lifecycle_states.row.current_stage == "new_user"
     assert new_user_uow.lifecycle_transitions.created[0]["to_stage"] == "new_user"
     assert new_user_uow.notification_states.row.lifecycle_policy["lifecycle_notifications_enabled"] is True
+    assert new_user_health.calls == ["global", "new_user"]
     assert activating_plan.actions[0].type == "wow_moment_push"
     assert "mastery at 25.0%" in activating_plan.actions[1].message
     assert activating_notifier.calls == [(2, "active")]
     assert activating_uow.decision_traces.created[0]["outputs"]["action_types"] == ["wow_moment_push", "progress_visibility"]
     assert activating_uow.decision_traces.created[1]["outputs"]["stage"] == "activating"
     assert activating_uow.lifecycle_states.row.current_stage == "activating"
+    assert activating_health.calls == ["global", "activating"]
 
 
 def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
@@ -326,7 +382,7 @@ def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
             RetentionAction(kind="streak_nudge", reason="Keep the streak alive"),
         ],
     )
-    service, notifier, uow = _service(
+    service, notifier, uow, health_signals = _service(
         sessions=5,
         assessment=assessment,
         progress=_progress(accuracy=78.0, mastery=42.0, fluency=71.0),
@@ -348,6 +404,7 @@ def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
         "quick_session",
         "streak_nudge",
     ]
+    assert health_signals.calls == ["global", "at_risk"]
 
 
 def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_notification():
@@ -358,7 +415,7 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
         usage_percent=82,
         allow_access=True,
     )
-    service, notifier, uow = _service(
+    service, notifier, uow, health_signals = _service(
         sessions=7,
         assessment=_assessment(is_high_engagement=True),
         progress=_progress(accuracy=91.0, mastery=68.0, fluency=84.0),
@@ -377,3 +434,4 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
     assert uow.decision_traces.created[1]["reason"] == "user shows strong engagement and progress"
     assert uow.notification_states.row.lifecycle_policy["lifecycle_notifications_enabled"] is False
     assert uow.notification_suppression_events.created[0]["event_type"] == "lifecycle_policy_updated"
+    assert health_signals.calls == ["global", "engaged"]

@@ -5,11 +5,13 @@ from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
     get_current_user,
+    get_daily_loop_health_signal_service,
     get_decision_trace_service,
     get_monetization_health_signal_service,
     get_experiment_registry_service,
     get_experiment_results_service,
     get_frontend_service,
+    get_lifecycle_health_signal_service,
     get_notification_policy_registry_service,
     get_onboarding_flow_service,
     get_subscription_service,
@@ -777,6 +779,97 @@ class FakeMonetizationHealthSignalService:
                         "dismissal_rate_percent": 57.14,
                     },
                     "last_evaluated_at": "2026-03-24T13:20:00",
+                }
+            ],
+        }
+
+
+class FakeLifecycleHealthSignalService:
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_scopes": 3,
+                "counts_by_health_status": {"critical": 1, "healthy": 1, "warning": 1},
+                "scopes_with_alerts": 2,
+                "alert_counts_by_code": {
+                    "at_risk_share_high": 1,
+                    "recovery_messaging_blocked": 1,
+                },
+                "latest_evaluated_at": "2026-03-25T08:10:00",
+            },
+            "attention": [
+                {
+                    "scope_key": "global",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["recovery_messaging_blocked"],
+                    "metrics": {
+                        "scope_user_count": 42,
+                        "at_risk_share_percent": 38.1,
+                        "churned_share_percent": 9.5,
+                    },
+                    "last_evaluated_at": "2026-03-25T08:10:00",
+                }
+            ],
+            "scopes": [
+                {
+                    "scope_key": "global",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["recovery_messaging_blocked"],
+                    "metrics": {
+                        "scope_user_count": 42,
+                        "at_risk_share_percent": 38.1,
+                        "churned_share_percent": 9.5,
+                    },
+                    "last_evaluated_at": "2026-03-25T08:10:00",
+                },
+                {
+                    "scope_key": "at_risk",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["at_risk_share_high"],
+                    "metrics": {
+                        "scope_user_count": 16,
+                        "recent_transition_count_7d": 4,
+                    },
+                    "last_evaluated_at": "2026-03-25T08:10:00",
+                },
+            ],
+        }
+
+
+class FakeDailyLoopHealthSignalService:
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_scopes": 1,
+                "counts_by_health_status": {"warning": 1},
+                "scopes_with_alerts": 1,
+                "alert_counts_by_code": {"mission_issue_coverage_low": 1},
+                "latest_evaluated_at": "2026-03-25T08:12:00",
+            },
+            "attention": [
+                {
+                    "scope_key": "global",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["mission_issue_coverage_low"],
+                    "metrics": {
+                        "active_users_last_3_days": 24,
+                        "mission_issue_coverage_percent": 83.3,
+                        "mission_completion_rate_percent": 61.0,
+                    },
+                    "last_evaluated_at": "2026-03-25T08:12:00",
+                }
+            ],
+            "scopes": [
+                {
+                    "scope_key": "global",
+                    "health_status": "warning",
+                    "latest_alert_codes": ["mission_issue_coverage_low"],
+                    "metrics": {
+                        "active_users_last_3_days": 24,
+                        "mission_issue_coverage_percent": 83.3,
+                        "mission_completion_rate_percent": 61.0,
+                    },
+                    "last_evaluated_at": "2026-03-25T08:12:00",
                 }
             ],
         }
@@ -1776,7 +1869,9 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
     app.dependency_overrides[get_experiment_results_service] = lambda: FakeExperimentResultsService()
     app.dependency_overrides[get_experiment_registry_service] = lambda: FakeExperimentRegistryService()
+    app.dependency_overrides[get_lifecycle_health_signal_service] = lambda: FakeLifecycleHealthSignalService()
     app.dependency_overrides[get_monetization_health_signal_service] = lambda: FakeMonetizationHealthSignalService()
+    app.dependency_overrides[get_daily_loop_health_signal_service] = lambda: FakeDailyLoopHealthSignalService()
     app.dependency_overrides[get_notification_policy_registry_service] = lambda: FakeNotificationPolicyRegistryService()
     app.dependency_overrides[get_decision_trace_service] = lambda: FakeDecisionTraceService()
     client = TestClient(app)
@@ -1862,8 +1957,16 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/monetization/health/report?limit=10",
         headers={"X-Admin-Token": "secret"},
     )
+    lifecycle_health_report = client.get(
+        "/admin/lifecycle/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
     daily_loop_report = client.get(
         "/admin/daily-loop/1/report",
+        headers={"X-Admin-Token": "secret"},
+    )
+    daily_loop_health_report = client.get(
+        "/admin/daily-loop/health/report?limit=10",
         headers={"X-Admin-Token": "secret"},
     )
     notification_report = client.get(
@@ -1973,11 +2076,19 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert monetization_health_report.json()["meta"]["source"] == "admin.monetization.health_report"
     assert monetization_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
     assert monetization_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert lifecycle_health_report.status_code == 200
+    assert lifecycle_health_report.json()["meta"]["source"] == "admin.lifecycle.health_report"
+    assert lifecycle_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
+    assert lifecycle_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
     assert daily_loop_report.status_code == 200
     assert daily_loop_report.json()["meta"]["source"] == "admin.daily_loop.report"
     assert daily_loop_report.json()["data"]["latest_decisions"]["daily_mission_generation"]["trace_type"] == "daily_mission_generation"
     assert daily_loop_report.json()["data"]["latest_decisions"]["latest_reward_chest"]["status"] == "unlocked"
     assert daily_loop_report.json()["data"]["mission_summary"]["counts_by_status"]["completed"] == 1
+    assert daily_loop_health_report.status_code == 200
+    assert daily_loop_health_report.json()["meta"]["source"] == "admin.daily_loop.health_report"
+    assert daily_loop_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
+    assert daily_loop_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
     assert notification_report.status_code == 200
     assert notification_report.json()["meta"]["source"] == "admin.notifications.report"
     assert notification_report.json()["meta"]["policy_key"] == "default"

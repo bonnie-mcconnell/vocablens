@@ -37,6 +37,12 @@ from vocablens.infrastructure.postgres_experiment_health_state_repository import
 from vocablens.infrastructure.postgres_monetization_health_state_repository import (
     PostgresMonetizationHealthStateRepository,
 )
+from vocablens.infrastructure.postgres_lifecycle_health_state_repository import (
+    PostgresLifecycleHealthStateRepository,
+)
+from vocablens.infrastructure.postgres_daily_loop_health_state_repository import (
+    PostgresDailyLoopHealthStateRepository,
+)
 from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
@@ -112,6 +118,8 @@ class UnitOfWork:
         self._notification_policy_health_states: Optional[PostgresNotificationPolicyHealthStateRepository] = None
         self._experiment_health_states: Optional[PostgresExperimentHealthStateRepository] = None
         self._monetization_health_states: Optional[PostgresMonetizationHealthStateRepository] = None
+        self._lifecycle_health_states: Optional[PostgresLifecycleHealthStateRepository] = None
+        self._daily_loop_health_states: Optional[PostgresDailyLoopHealthStateRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
         self._experiment_outcome_attributions: Optional[PostgresExperimentOutcomeAttributionRepository] = None
@@ -323,6 +331,22 @@ class UnitOfWork:
         if self._monetization_health_states is None:
             self._monetization_health_states = PostgresMonetizationHealthStateRepository(self.session)
         return self._monetization_health_states
+
+    @property
+    def lifecycle_health_states(self) -> PostgresLifecycleHealthStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._lifecycle_health_states is None:
+            self._lifecycle_health_states = PostgresLifecycleHealthStateRepository(self.session)
+        return self._lifecycle_health_states
+
+    @property
+    def daily_loop_health_states(self) -> PostgresDailyLoopHealthStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._daily_loop_health_states is None:
+            self._daily_loop_health_states = PostgresDailyLoopHealthStateRepository(self.session)
+        return self._daily_loop_health_states
 
     @property
     def experiment_assignments(self) -> PostgresExperimentAssignmentRepository:

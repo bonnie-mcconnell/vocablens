@@ -28,6 +28,12 @@ class PostgresUserEngagementStateRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def list_all(self) -> list[UserEngagementState]:
+        result = await self.session.execute(
+            select(UserEngagementStateORM).order_by(UserEngagementStateORM.user_id.asc())
+        )
+        return [_map_row(row) for row in result.scalars().all()]
+
     async def get_or_create(self, user_id: int) -> UserEngagementState:
         result = await self.session.execute(
             select(UserEngagementStateORM).where(UserEngagementStateORM.user_id == user_id)
