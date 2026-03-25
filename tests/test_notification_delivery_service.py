@@ -129,6 +129,9 @@ def test_notification_delivery_service_retries_with_backoff_until_success():
     assert result.attempts == 2
     assert len(backend.calls) == 2
     assert len(uow.notification_deliveries.created) == 2
+    assert uow.notification_deliveries.created[0]["policy_key"] == "default"
+    assert uow.notification_deliveries.created[0]["policy_version"] == "v1"
+    assert uow.notification_deliveries.created[0]["source_context"] == "notification_delivery_service.send"
     assert uow.notification_deliveries.status_updates[0]["status"] == "failed"
     assert uow.notification_deliveries.status_updates[-1]["status"] == "sent"
     assert uow.notification_states.row.sent_count_today == 1
@@ -161,6 +164,7 @@ def test_notification_delivery_service_records_final_failure():
     assert result.attempts == 2
     assert "temporary delivery failure" in result.error
     assert len(uow.notification_deliveries.created) == 2
+    assert uow.notification_deliveries.created[-1]["policy_key"] == "default"
     assert uow.notification_deliveries.status_updates[-1]["status"] == "failed"
     assert uow.notification_states.row.last_delivery_status == "failed"
 

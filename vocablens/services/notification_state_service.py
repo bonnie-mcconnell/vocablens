@@ -91,6 +91,8 @@ class NotificationStateService:
                     event_type="lifecycle_policy_updated",
                     source=source,
                     reference_id=reference_id,
+                    policy_key=runtime_policy.policy_key,
+                    policy_version=runtime_policy.policy_version,
                     lifecycle_stage=lifecycle_stage,
                     suppression_reason=stage_policy.suppression_reason,
                     suppressed_until=suppressed_until,
@@ -106,6 +108,8 @@ class NotificationStateService:
         category: str,
         channel: str,
         status: str,
+        policy_key: str | None,
+        policy_version: str | None,
         reference_id: str | None = None,
         delivered_at: datetime | None = None,
     ):
@@ -132,6 +136,7 @@ class NotificationStateService:
                 last_delivery_status=status,
                 last_delivery_category=category,
                 last_reference_id=reference_id,
+                lifecycle_policy_version=policy_version or getattr(state, "lifecycle_policy_version", None),
             )
             await uow.commit()
         return updated
@@ -145,6 +150,7 @@ class NotificationStateService:
         source_context: str,
     ):
         now = utc_now()
+        runtime_policy = await self._policy_service.current_policy()
         async with self._uow_factory() as uow:
             state = await uow.notification_states.update(
                 user_id,
@@ -160,6 +166,8 @@ class NotificationStateService:
                         event_type="lifecycle_notification_suppressed",
                         source=source_context,
                         reference_id=reference_id,
+                        policy_key=runtime_policy.policy_key,
+                        policy_version=runtime_policy.policy_version,
                         lifecycle_stage=getattr(state, "lifecycle_stage", None),
                         suppression_reason=reason,
                         suppressed_until=getattr(state, "suppressed_until", None),

@@ -796,6 +796,8 @@ class NotificationSuppressionEventDiagnosticsResponse(BaseModel):
     event_type: str
     source: str
     reference_id: str | None = None
+    policy_key: str | None = None
+    policy_version: str | None = None
     lifecycle_stage: str | None = None
     suppression_reason: str | None = None
     suppressed_until: datetime | None = None
@@ -1131,6 +1133,10 @@ class NotificationDeliveryDiagnosticsResponse(BaseModel):
     category: str
     provider: str
     status: str
+    policy_key: str | None = None
+    policy_version: str | None = None
+    source_context: str | None = None
+    reference_id: str | None = None
     title: str
     body: str
     payload: dict[str, Any] = Field(default_factory=dict)

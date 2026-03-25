@@ -7,6 +7,7 @@ from typing import Protocol
 from vocablens.config.settings import settings
 from vocablens.infrastructure.notifications.base import NotificationMessage, NotificationSink
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.notification_policy_service import NotificationPolicyService
 from vocablens.services.notification_state_service import NotificationStateService
 
 
@@ -68,15 +69,27 @@ class NotificationDeliveryService:
         self._backoff_base = backoff_base
         self._sleep = sleeper or asyncio.sleep
         self._batch_size = max(1, int(batch_size))
+        self._policy_service = NotificationPolicyService(uow_factory)
         self._notification_states = NotificationStateService(uow_factory)
 
     async def send(self, message: NotificationMessage) -> DeliveryResult:
         channel = self._channel_for(message)
         backend = self._backend_for(channel)
         last_error: str | None = None
+        runtime_policy = await self._policy_service.current_policy()
+        source_context = str((message.metadata or {}).get("source_context") or "notification_delivery_service.send")
+        reference_id = (message.metadata or {}).get("reference_id")
 
         for attempt in range(1, self._max_attempts + 1):
-            delivery_id = await self._create_attempt(message, backend, attempt)
+            delivery_id = await self._create_attempt(
+                message,
+                backend,
+                attempt,
+                policy_key=runtime_policy.policy_key,
+                policy_version=runtime_policy.policy_version,
+                source_context=source_context,
+                reference_id=reference_id,
+            )
             try:
                 await backend.send(message)
             except Exception as exc:
@@ -87,7 +100,9 @@ class NotificationDeliveryService:
                     category=message.category,
                     channel=channel,
                     status="failed",
-                    reference_id=(message.metadata or {}).get("reference_id"),
+                    policy_key=runtime_policy.policy_key,
+                    policy_version=runtime_policy.policy_version,
+                    reference_id=reference_id,
                 )
                 if attempt < self._max_attempts:
                     await self._sleep(self._backoff_base * (2 ** (attempt - 1)))
@@ -107,7 +122,9 @@ class NotificationDeliveryService:
                 category=message.category,
                 channel=channel,
                 status="sent",
-                reference_id=(message.metadata or {}).get("reference_id"),
+                policy_key=runtime_policy.policy_key,
+                policy_version=runtime_policy.policy_version,
+                reference_id=reference_id,
             )
             return DeliveryResult(
                 user_id=message.user_id,
@@ -151,12 +168,26 @@ class NotificationDeliveryService:
         except KeyError as exc:
             raise ValueError(f"Unsupported notification channel '{channel}'") from exc
 
-    async def _create_attempt(self, message: NotificationMessage, backend: DeliveryBackend, attempt: int) -> int:
+    async def _create_attempt(
+        self,
+        message: NotificationMessage,
+        backend: DeliveryBackend,
+        attempt: int,
+        *,
+        policy_key: str,
+        policy_version: str,
+        source_context: str,
+        reference_id: str | None,
+    ) -> int:
         async with self._uow_factory() as uow:
             delivery = await uow.notification_deliveries.create_attempt(
                 user_id=message.user_id,
                 category=message.category,
                 provider=self._provider_name(backend),
+                policy_key=policy_key,
+                policy_version=policy_version,
+                source_context=source_context,
+                reference_id=reference_id,
                 title=message.title,
                 body=message.body,
                 payload={

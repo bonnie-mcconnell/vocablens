@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from dataclasses import replace
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.notifications.base import NotificationMessage
@@ -127,6 +128,7 @@ class NotificationDecisionEngine:
                 predicted_hour=None,
                 reference_id=reference_id,
                 source_context=source_context,
+                runtime_policy=runtime_policy,
             )
             return decision
         if frequency_limit == 0:
@@ -151,6 +153,7 @@ class NotificationDecisionEngine:
                 predicted_hour=None,
                 reference_id=reference_id,
                 source_context=source_context,
+                runtime_policy=runtime_policy,
             )
             return decision
         if sent_today_count >= frequency_limit:
@@ -175,6 +178,7 @@ class NotificationDecisionEngine:
                 predicted_hour=None,
                 reference_id=reference_id,
                 source_context=source_context,
+                runtime_policy=runtime_policy,
             )
             return decision
 
@@ -201,6 +205,7 @@ class NotificationDecisionEngine:
                 predicted_hour=None,
                 reference_id=reference_id,
                 source_context=source_context,
+                runtime_policy=runtime_policy,
             )
             return decision
 
@@ -227,6 +232,7 @@ class NotificationDecisionEngine:
                 predicted_hour=None,
                 reference_id=reference_id,
                 source_context=source_context,
+                runtime_policy=runtime_policy,
             )
             return decision
 
@@ -239,6 +245,16 @@ class NotificationDecisionEngine:
             channel=profile.preferred_channel,
             weak_clusters=weak_clusters,
             mistakes=mistakes,
+        )
+        message = replace(
+            message,
+            metadata={
+                **(message.metadata or {}),
+                "source_context": source_context,
+                "reference_id": reference_id,
+                "policy_key": runtime_policy.policy_key,
+                "policy_version": runtime_policy.policy_version,
+            },
         )
         decision = NotificationDecision(
             should_send=True,
@@ -268,6 +284,7 @@ class NotificationDecisionEngine:
             predicted_hour=predicted_hour,
             reference_id=reference_id,
             source_context=source_context,
+            runtime_policy=runtime_policy,
         )
         return decision
 
@@ -357,6 +374,7 @@ class NotificationDecisionEngine:
         predicted_hour: int | None,
         reference_id: str | None,
         source_context: str,
+        runtime_policy,
     ) -> None:
         resolved_reference = reference_id or f"notification:{user_id}"
         async with self._uow_factory() as uow:
@@ -365,8 +383,12 @@ class NotificationDecisionEngine:
                 trace_type="notification_selection",
                 source=source_context,
                 reference_id=resolved_reference,
-                policy_version="v1",
+                policy_version=runtime_policy.policy_version,
                 inputs={
+                    "policy": {
+                        "policy_key": runtime_policy.policy_key,
+                        "policy_version": runtime_policy.policy_version,
+                    },
                     "retention": {
                         "state": assessment.state,
                         "drop_off_risk": round(float(assessment.drop_off_risk or 0.0), 3),

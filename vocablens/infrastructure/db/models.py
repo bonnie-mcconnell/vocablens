@@ -264,6 +264,7 @@ class NotificationDeliveryORM(Base):
     __table_args__ = (
         Index("idx_notification_delivery_user", "user_id", "created_at"),
         Index("idx_notification_delivery_status", "status", "created_at"),
+        Index("idx_notification_delivery_policy", "policy_key", "policy_version", "created_at"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -271,6 +272,10 @@ class NotificationDeliveryORM(Base):
     category = Column(String, nullable=False)
     provider = Column(String, nullable=False)
     status = Column(String, nullable=False)
+    policy_key = Column(String)
+    policy_version = Column(String)
+    source_context = Column(String)
+    reference_id = Column(String)
     title = Column(String, nullable=False)
     body = Column(Text, nullable=False)
     payload_json = Column(Text)
@@ -336,6 +341,7 @@ class NotificationSuppressionEventORM(Base):
         Index("idx_notification_suppression_events_user", "user_id", "created_at"),
         Index("idx_notification_suppression_events_source", "source", "created_at"),
         Index("idx_notification_suppression_events_stage", "lifecycle_stage", "created_at"),
+        Index("idx_notification_suppression_events_policy", "policy_key", "policy_version", "created_at"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -343,6 +349,8 @@ class NotificationSuppressionEventORM(Base):
     event_type = Column(String, nullable=False)
     source = Column(String, nullable=False)
     reference_id = Column(String)
+    policy_key = Column(String)
+    policy_version = Column(String)
     lifecycle_stage = Column(String)
     suppression_reason = Column(Text)
     suppressed_until = Column(DateTime)

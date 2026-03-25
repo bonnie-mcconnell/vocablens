@@ -106,6 +106,14 @@ def test_upgrade_downgrade_upgrade_round_trip():
     notification_indexes = {idx["name"] for idx in inspector.get_indexes("notification_deliveries")}
     assert "idx_notification_delivery_user" in notification_indexes
     assert "idx_notification_delivery_status" in notification_indexes
+    assert "idx_notification_delivery_policy" in notification_indexes
+    notification_columns = {col["name"] for col in inspector.get_columns("notification_deliveries")}
+    assert {
+        "policy_key",
+        "policy_version",
+        "source_context",
+        "reference_id",
+    } <= notification_columns
 
     subscription_event_indexes = {idx["name"] for idx in inspector.get_indexes("subscription_events")}
     assert "idx_subscription_events_user" in subscription_event_indexes
@@ -359,12 +367,15 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "idx_notification_suppression_events_user" in suppression_indexes
     assert "idx_notification_suppression_events_source" in suppression_indexes
     assert "idx_notification_suppression_events_stage" in suppression_indexes
+    assert "idx_notification_suppression_events_policy" in suppression_indexes
     suppression_columns = {col["name"] for col in inspector.get_columns("notification_suppression_events")}
     assert {
         "user_id",
         "event_type",
         "source",
         "reference_id",
+        "policy_key",
+        "policy_version",
         "lifecycle_stage",
         "suppression_reason",
         "suppressed_until",

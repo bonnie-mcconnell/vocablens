@@ -177,6 +177,8 @@ class NotificationSuppressionEventRepository(Protocol):
         event_type: str,
         source: str,
         reference_id: str | None,
+        policy_key: str | None,
+        policy_version: str | None,
         lifecycle_stage: str | None,
         suppression_reason: str | None,
         suppressed_until: datetime | None,

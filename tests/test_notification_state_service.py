@@ -113,6 +113,8 @@ def test_notification_state_service_applies_engaged_lifecycle_suppression():
     assert state.lifecycle_policy["lifecycle_notifications_enabled"] is False
     assert state.suppression_reason == "engaged stage suppresses proactive lifecycle messaging"
     assert uow.notification_suppression_events.created[0]["event_type"] == "lifecycle_policy_updated"
+    assert uow.notification_suppression_events.created[0]["policy_key"] == "default"
+    assert uow.notification_suppression_events.created[0]["policy_version"] == "v1"
 
 
 def test_notification_state_service_records_sent_delivery_cadence():
@@ -125,6 +127,8 @@ def test_notification_state_service_records_sent_delivery_cadence():
             category="retention:review_reminder",
             channel="email",
             status="sent",
+            policy_key="default",
+            policy_version="v1",
             reference_id="lifecycle:5",
         )
     )
