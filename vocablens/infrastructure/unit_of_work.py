@@ -49,6 +49,12 @@ from vocablens.infrastructure.postgres_session_health_state_repository import (
 from vocablens.infrastructure.postgres_learning_health_state_repository import (
     PostgresLearningHealthStateRepository,
 )
+from vocablens.infrastructure.postgres_content_quality_check_repository import (
+    PostgresContentQualityCheckRepository,
+)
+from vocablens.infrastructure.postgres_content_quality_health_state_repository import (
+    PostgresContentQualityHealthStateRepository,
+)
 from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
@@ -128,6 +134,8 @@ class UnitOfWork:
         self._daily_loop_health_states: Optional[PostgresDailyLoopHealthStateRepository] = None
         self._session_health_states: Optional[PostgresSessionHealthStateRepository] = None
         self._learning_health_states: Optional[PostgresLearningHealthStateRepository] = None
+        self._content_quality_checks: Optional[PostgresContentQualityCheckRepository] = None
+        self._content_quality_health_states: Optional[PostgresContentQualityHealthStateRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
         self._experiment_exposures: Optional[PostgresExperimentExposureRepository] = None
         self._experiment_outcome_attributions: Optional[PostgresExperimentOutcomeAttributionRepository] = None
@@ -371,6 +379,22 @@ class UnitOfWork:
         if self._learning_health_states is None:
             self._learning_health_states = PostgresLearningHealthStateRepository(self.session)
         return self._learning_health_states
+
+    @property
+    def content_quality_checks(self) -> PostgresContentQualityCheckRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._content_quality_checks is None:
+            self._content_quality_checks = PostgresContentQualityCheckRepository(self.session)
+        return self._content_quality_checks
+
+    @property
+    def content_quality_health_states(self) -> PostgresContentQualityHealthStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._content_quality_health_states is None:
+            self._content_quality_health_states = PostgresContentQualityHealthStateRepository(self.session)
+        return self._content_quality_health_states
 
     @property
     def experiment_assignments(self) -> PostgresExperimentAssignmentRepository:

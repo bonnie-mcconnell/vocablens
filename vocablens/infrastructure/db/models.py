@@ -713,6 +713,47 @@ class LearningHealthStateORM(Base):
     last_evaluated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+class ContentQualityCheckORM(Base):
+    __tablename__ = "content_quality_checks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('passed', 'rejected')",
+            name="ck_content_quality_checks_status_valid",
+        ),
+        Index("idx_content_quality_checks_source_checked", "source", "checked_at"),
+        Index("idx_content_quality_checks_status_checked", "status", "checked_at"),
+        Index("idx_content_quality_checks_reference", "reference_id", "checked_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    source = Column(String, nullable=False)
+    artifact_type = Column(String, nullable=False)
+    reference_id = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    score = Column(Float, nullable=False, default=1.0)
+    violations = Column(JSON, nullable=False, default=list)
+    artifact_summary = Column(JSON, nullable=False, default=dict)
+    checked_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class ContentQualityHealthStateORM(Base):
+    __tablename__ = "content_quality_health_states"
+    __table_args__ = (
+        CheckConstraint(
+            "current_status IN ('healthy', 'warning', 'critical')",
+            name="ck_content_quality_health_states_status_valid",
+        ),
+        Index("idx_content_quality_health_states_status", "current_status", "last_evaluated_at"),
+    )
+
+    scope_key = Column(String, primary_key=True)
+    current_status = Column(String, nullable=False)
+    latest_alert_codes = Column(JSON, nullable=False, default=list)
+    metrics = Column(JSON, nullable=False, default=dict)
+    last_evaluated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class MonetizationOfferEventORM(Base):
     __tablename__ = "monetization_offer_events"
     __table_args__ = (

@@ -309,6 +309,36 @@ class LearningHealthStateRepository(Protocol):
     ) -> Any: ...
 
 
+class ContentQualityCheckRepository(Protocol):
+    async def create(
+        self,
+        *,
+        user_id: int,
+        source: str,
+        artifact_type: str,
+        reference_id: str,
+        status: str,
+        score: float,
+        violations: List[Dict[str, Any]],
+        artifact_summary: Dict[str, Any],
+    ) -> Any: ...
+    async def list_recent(self, limit: int = 100) -> List[Any]: ...
+    async def list_since(self, since: datetime, limit: int = 1000) -> List[Any]: ...
+
+
+class ContentQualityHealthStateRepository(Protocol):
+    async def get(self, scope_key: str) -> Optional[Any]: ...
+    async def list_all(self) -> List[Any]: ...
+    async def upsert(
+        self,
+        *,
+        scope_key: str,
+        current_status: str,
+        latest_alert_codes: List[str],
+        metrics: Dict[str, Any],
+    ) -> Any: ...
+
+
 class NotificationDeliveryRepository(Protocol):
     async def create_attempt(
         self,

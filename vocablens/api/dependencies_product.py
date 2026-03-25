@@ -11,6 +11,8 @@ from vocablens.services.addiction_engine import AddictionEngine
 from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
 from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.business_metrics_service import BusinessMetricsService
+from vocablens.services.content_quality_gate_service import ContentQualityGateService
+from vocablens.services.content_quality_health_signal_service import ContentQualityHealthSignalService
 from vocablens.services.conversion_funnel_service import ConversionFunnelService
 from vocablens.services.daily_loop_service import DailyLoopService
 from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
@@ -132,6 +134,17 @@ def get_lifecycle_health_signal_service(uow_factory=Depends(get_uow_factory)) ->
 
 def get_daily_loop_health_signal_service(uow_factory=Depends(get_uow_factory)) -> DailyLoopHealthSignalService:
     return DailyLoopHealthSignalService(uow_factory)
+
+
+def get_content_quality_health_signal_service(uow_factory=Depends(get_uow_factory)) -> ContentQualityHealthSignalService:
+    return ContentQualityHealthSignalService(uow_factory)
+
+
+def get_content_quality_gate_service(
+    uow_factory=Depends(get_uow_factory),
+    health_signal_service=Depends(get_content_quality_health_signal_service),
+) -> ContentQualityGateService:
+    return ContentQualityGateService(uow_factory, health_signal_service)
 
 
 def get_session_health_signal_service(uow_factory=Depends(get_uow_factory)) -> SessionHealthSignalService:
@@ -370,6 +383,7 @@ def get_session_engine(
     gamification_service=Depends(get_gamification_service),
     event_service=Depends(get_event_service),
     health_signal_service=Depends(get_session_health_signal_service),
+    content_quality_gate_service=Depends(get_content_quality_gate_service),
 ) -> SessionEngine:
     attribution = ExperimentAttributionService(uow_factory)
     return SessionEngine(
@@ -380,6 +394,7 @@ def get_session_engine(
         event_service,
         attribution,
         health_signal_service,
+        content_quality_gate_service,
     )
 
 

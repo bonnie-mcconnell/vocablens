@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from tests.conftest import run_async
 from vocablens.core.time import utc_now
+from vocablens.domain.errors import ConflictError
 from vocablens.services.session_engine import SessionEngine
 
 
@@ -162,6 +163,25 @@ class FakeSessionHealthSignalService:
     async def evaluate_scope(self, scope_key: str = "global"):
         self.calls.append(scope_key)
         return {"scope_key": scope_key, "health": {"status": "healthy", "metrics": {}, "alerts": []}}
+
+
+class FakeContentQualityGateService:
+    def __init__(self, *, reject: bool = False):
+        self.reject = reject
+        self.calls = []
+
+    async def validate_structured_session(self, *, user_id: int, reference_id: str, session, source: str = "session_engine"):
+        self.calls.append((user_id, reference_id, source))
+        return {
+            "status": "rejected" if self.reject else "passed",
+            "score": 0.2 if self.reject else 1.0,
+            "violations": [{"code": "target_contract_invalid", "severity": "critical"}] if self.reject else [],
+            "artifact_summary": {"mode": session.mode},
+        }
+
+    def ensure_passed(self, report: dict):
+        if report["status"] == "rejected":
+            raise ConflictError("Session content failed quality validation")
 
 
 def _factory_for(uow):
@@ -433,3 +453,34 @@ def test_session_engine_records_health_after_expired_submission():
     assert started["session_id"] in uow.expired_sessions
     assert event_service.events[-1][2]["reason"] == "session_expired"
     assert health_signals.calls == ["global", "global"]
+
+
+def test_session_engine_blocks_rejected_content_before_persisting_session():
+    recommendation = SimpleNamespace(
+        action="practice_grammar",
+        target="grammar",
+        reason="Grammar skill below threshold",
+        skill_focus="grammar",
+    )
+    uow = FakeUOW()
+    event_service = FakeEventService()
+    content_gate = FakeContentQualityGateService(reject=True)
+    engine = SessionEngine(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeWowEngine(),
+        FakeGamificationService(),
+        event_service=event_service,
+        content_quality_gate_service=content_gate,
+    )
+
+    try:
+        run_async(engine.start_session(5))
+        assert False, "expected content quality conflict"
+    except ConflictError as exc:
+        assert "quality validation" in str(exc)
+
+    assert content_gate.calls
+    assert uow.created_sessions == {}
+    assert event_service.events[0][1] == "session_generation_rejected"
+    assert event_service.events[0][2]["reason"] == "quality_validation_failed"

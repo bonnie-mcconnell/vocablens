@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
+    get_content_quality_health_signal_service,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
     get_experiment_registry_service,
@@ -19,6 +20,7 @@ from vocablens.api.dependencies import (
 )
 from vocablens.api.schemas import (
     ConversionMetricsResponse,
+    ContentQualityHealthDashboardResponse,
     DailyLoopHealthDashboardResponse,
     DailyLoopOperatorReportResponse,
     DecisionTraceDetailResponse,
@@ -61,6 +63,7 @@ from vocablens.services.experiment_results_service import ExperimentResultsServi
 from vocablens.services.experiment_health_signal_service import ExperimentHealthSignalService
 from vocablens.services.learning_health_signal_service import LearningHealthSignalService
 from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
+from vocablens.services.content_quality_health_signal_service import ContentQualityHealthSignalService
 from vocablens.services.lifecycle_health_signal_service import LifecycleHealthSignalService
 from vocablens.services.notification_policy_registry_service import (
     NotificationPolicyRegistryService,
@@ -305,6 +308,18 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.daily_loop.health_report"},
+        }
+
+    @router.get("/content/health/report", response_model=ContentQualityHealthDashboardResponse)
+    async def content_quality_health_report(
+        limit: int = Query(default=50, ge=1, le=200),
+        _: str = Depends(get_admin_token),
+        service: ContentQualityHealthSignalService = Depends(get_content_quality_health_signal_service),
+    ):
+        report = await service.get_health_dashboard(limit=limit)
+        return {
+            "data": report,
+            "meta": {"source": "admin.content.health_report"},
         }
 
     @router.get("/sessions/health/report", response_model=SessionHealthDashboardResponse)

@@ -55,6 +55,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "daily_loop_health_states" in tables
     assert "session_health_states" in tables
     assert "learning_health_states" in tables
+    assert "content_quality_checks" in tables
+    assert "content_quality_health_states" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -504,6 +506,37 @@ def test_upgrade_downgrade_upgrade_round_trip():
         "last_evaluated_at",
     } <= learning_health_columns
 
+    content_quality_check_indexes = {idx["name"] for idx in inspector.get_indexes("content_quality_checks")}
+    assert "idx_content_quality_checks_source_checked" in content_quality_check_indexes
+    assert "idx_content_quality_checks_status_checked" in content_quality_check_indexes
+    assert "idx_content_quality_checks_reference" in content_quality_check_indexes
+    content_quality_check_columns = {col["name"] for col in inspector.get_columns("content_quality_checks")}
+    assert {
+        "id",
+        "user_id",
+        "source",
+        "artifact_type",
+        "reference_id",
+        "status",
+        "score",
+        "violations",
+        "artifact_summary",
+        "checked_at",
+    } <= content_quality_check_columns
+    content_quality_check_fks = inspector.get_foreign_keys("content_quality_checks")
+    assert any(fk["referred_table"] == "users" for fk in content_quality_check_fks)
+
+    content_quality_health_indexes = {idx["name"] for idx in inspector.get_indexes("content_quality_health_states")}
+    assert "idx_content_quality_health_states_status" in content_quality_health_indexes
+    content_quality_health_columns = {col["name"] for col in inspector.get_columns("content_quality_health_states")}
+    assert {
+        "scope_key",
+        "current_status",
+        "latest_alert_codes",
+        "metrics",
+        "last_evaluated_at",
+    } <= content_quality_health_columns
+
     event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
     assert "idx_events_user" in event_indexes
     assert "idx_events_type" in event_indexes
@@ -686,6 +719,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "daily_loop_health_states" not in tables
     assert "session_health_states" not in tables
     assert "learning_health_states" not in tables
+    assert "content_quality_checks" not in tables
+    assert "content_quality_health_states" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -714,6 +749,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "daily_loop_health_states" in tables
     assert "session_health_states" in tables
     assert "learning_health_states" in tables
+    assert "content_quality_checks" in tables
+    assert "content_quality_health_states" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

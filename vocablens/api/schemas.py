@@ -1351,6 +1351,37 @@ class DailyLoopHealthDashboardResponse(BaseModel):
     meta: DailyLoopHealthDashboardMetaResponse
 
 
+class ContentQualityHealthScopeResponse(BaseModel):
+    scope_key: str
+    health_status: str
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
+
+
+class ContentQualityHealthDashboardSummaryResponse(BaseModel):
+    total_scopes: int = 0
+    counts_by_health_status: dict[str, int] = Field(default_factory=dict)
+    scopes_with_alerts: int = 0
+    alert_counts_by_code: dict[str, int] = Field(default_factory=dict)
+    latest_evaluated_at: datetime | None = None
+
+
+class ContentQualityHealthDashboardDataResponse(BaseModel):
+    summary: ContentQualityHealthDashboardSummaryResponse
+    attention: list[ContentQualityHealthScopeResponse] = Field(default_factory=list)
+    scopes: list[ContentQualityHealthScopeResponse] = Field(default_factory=list)
+
+
+class ContentQualityHealthDashboardMetaResponse(BaseModel):
+    source: Literal["admin.content.health_report"]
+
+
+class ContentQualityHealthDashboardResponse(BaseModel):
+    data: ContentQualityHealthDashboardDataResponse
+    meta: ContentQualityHealthDashboardMetaResponse
+
+
 class SessionHealthScopeResponse(BaseModel):
     scope_key: str
     health_status: str

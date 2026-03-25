@@ -41,6 +41,8 @@ from vocablens.api.dependencies_product import (
     get_addiction_engine,
     get_analytics_service,
     get_business_metrics_service,
+    get_content_quality_gate_service,
+    get_content_quality_health_signal_service,
     get_conversion_funnel_service,
     get_daily_loop_service,
     get_daily_loop_health_signal_service,

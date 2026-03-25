@@ -4,6 +4,7 @@ from tests.conftest import make_user
 from vocablens.api.dependencies import (
     get_admin_token,
     get_analytics_service,
+    get_content_quality_health_signal_service,
     get_current_user,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
@@ -872,6 +873,48 @@ class FakeDailyLoopHealthSignalService:
                         "mission_completion_rate_percent": 61.0,
                     },
                     "last_evaluated_at": "2026-03-25T08:12:00",
+                }
+            ],
+        }
+
+
+class FakeContentQualityHealthSignalService:
+    async def get_health_dashboard(self, *, limit: int = 50):
+        return {
+            "summary": {
+                "total_scopes": 1,
+                "counts_by_health_status": {"critical": 1},
+                "scopes_with_alerts": 1,
+                "alert_counts_by_code": {
+                    "target_contract_failures_detected": 1,
+                    "content_rejection_rate_high": 1,
+                },
+                "latest_evaluated_at": "2026-03-25T20:20:00",
+            },
+            "attention": [
+                {
+                    "scope_key": "global",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["target_contract_failures_detected"],
+                    "metrics": {
+                        "checks_7d": 28,
+                        "rejected_checks_7d": 4,
+                        "rejection_rate_percent": 14.29,
+                    },
+                    "last_evaluated_at": "2026-03-25T20:20:00",
+                }
+            ],
+            "scopes": [
+                {
+                    "scope_key": "global",
+                    "health_status": "critical",
+                    "latest_alert_codes": ["target_contract_failures_detected"],
+                    "metrics": {
+                        "checks_7d": 28,
+                        "rejected_checks_7d": 4,
+                        "rejection_rate_percent": 14.29,
+                    },
+                    "last_evaluated_at": "2026-03-25T20:20:00",
                 }
             ],
         }
@@ -1952,6 +1995,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_lifecycle_health_signal_service] = lambda: FakeLifecycleHealthSignalService()
     app.dependency_overrides[get_monetization_health_signal_service] = lambda: FakeMonetizationHealthSignalService()
     app.dependency_overrides[get_daily_loop_health_signal_service] = lambda: FakeDailyLoopHealthSignalService()
+    app.dependency_overrides[get_content_quality_health_signal_service] = lambda: FakeContentQualityHealthSignalService()
     app.dependency_overrides[get_session_health_signal_service] = lambda: FakeSessionHealthSignalService()
     app.dependency_overrides[get_learning_health_signal_service] = lambda: FakeLearningHealthSignalService()
     app.dependency_overrides[get_notification_policy_registry_service] = lambda: FakeNotificationPolicyRegistryService()
@@ -2049,6 +2093,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     )
     daily_loop_health_report = client.get(
         "/admin/daily-loop/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
+    content_health_report = client.get(
+        "/admin/content/health/report?limit=10",
         headers={"X-Admin-Token": "secret"},
     )
     session_health_report = client.get(
@@ -2179,6 +2227,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert daily_loop_health_report.json()["meta"]["source"] == "admin.daily_loop.health_report"
     assert daily_loop_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
     assert daily_loop_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert content_health_report.status_code == 200
+    assert content_health_report.json()["meta"]["source"] == "admin.content.health_report"
+    assert content_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
+    assert content_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
     assert session_health_report.status_code == 200
     assert session_health_report.json()["meta"]["source"] == "admin.sessions.health_report"
     assert session_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1

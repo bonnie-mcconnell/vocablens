@@ -318,3 +318,39 @@ LEARNING_ACTIVE_ALERTS = Gauge(
     "Current active learning alerts by scope and severity",
     ["scope_key", "severity"],
 )
+
+CONTENT_QUALITY_HEALTH_STATUS = Gauge(
+    "vocablens_content_quality_health_status",
+    "Current content quality health state as a one-hot gauge",
+    ["scope_key", "status"],
+)
+
+CONTENT_QUALITY_HEALTH_RATE = Gauge(
+    "vocablens_content_quality_health_metric",
+    "Current evaluated content quality health metrics",
+    ["scope_key", "metric"],
+)
+
+CONTENT_QUALITY_HEALTH_TRANSITIONS = Counter(
+    "vocablens_content_quality_health_transitions_total",
+    "Content quality health state transitions",
+    ["scope_key", "from_status", "to_status"],
+)
+
+CONTENT_QUALITY_HEALTH_ALERTS = Counter(
+    "vocablens_content_quality_health_alerts_total",
+    "Content quality health alerts emitted",
+    ["scope_key", "code", "severity"],
+)
+
+CONTENT_QUALITY_HEALTH_SCOPES = Gauge(
+    "vocablens_content_quality_health_scopes",
+    "Current count of content quality scopes by health status",
+    ["status"],
+)
+
+CONTENT_QUALITY_ACTIVE_ALERTS = Gauge(
+    "vocablens_content_quality_active_alerts",
+    "Current active content quality alerts by scope and severity",
+    ["scope_key", "severity"],
+)

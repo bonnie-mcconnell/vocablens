@@ -9,6 +9,7 @@ from uuid import uuid4
 from vocablens.core.time import utc_now
 from vocablens.domain.errors import ConflictError, NotFoundError
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.content_quality_gate_service import ContentQualityGateService
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.gamification_service import GamificationService
@@ -94,6 +95,7 @@ class SessionEngine:
         event_service: EventService | None = None,
         experiment_attribution_service: ExperimentAttributionService | None = None,
         health_signal_service: SessionHealthSignalService | None = None,
+        content_quality_gate_service: ContentQualityGateService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning_engine = learning_engine
@@ -102,20 +104,22 @@ class SessionEngine:
         self._event_service = event_service
         self._attribution = experiment_attribution_service
         self._health_signals = health_signal_service
+        self._content_quality_gate = content_quality_gate_service
 
     async def start_session(self, user_id: int) -> dict[str, Any]:
+        session_id = uuid4().hex
         session = await self.build_session(user_id)
         try:
-            self._assert_session_quality(session)
+            await self._validate_content_quality(user_id=user_id, session_id=session_id, session=session)
         except ConflictError:
             await self._track_rejection(
                 user_id=user_id,
                 event_type="session_generation_rejected",
                 reason="quality_validation_failed",
+                session_id=session_id,
             )
             raise
         payload = self.to_payload(session)
-        session_id = uuid4().hex
         created_at = utc_now()
         expires_at = created_at + timedelta(minutes=max(5, session.review_window_minutes))
 
@@ -424,6 +428,17 @@ class SessionEngine:
         if self._health_signals is None:
             return
         await self._health_signals.evaluate_scope("global")
+
+    async def _validate_content_quality(self, *, user_id: int, session_id: str, session: StructuredSession) -> None:
+        if self._content_quality_gate is not None:
+            report = await self._content_quality_gate.validate_structured_session(
+                user_id=user_id,
+                reference_id=session_id,
+                session=session,
+            )
+            self._content_quality_gate.ensure_passed(report)
+            return
+        self._assert_session_quality(session)
 
     def _submission_rejection_reason(self, message: str) -> str:
         normalized = message.strip().lower()
