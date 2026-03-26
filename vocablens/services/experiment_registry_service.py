@@ -6,6 +6,7 @@ from datetime import datetime
 import math
 import re
 
+from vocablens.core.time import utc_now
 from vocablens.domain.errors import NotFoundError, ValidationError
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 
@@ -223,6 +224,7 @@ class ExperimentRegistryService:
             exposures = await uow.experiment_exposures.list_all(normalized_key)
             audits = await uow.experiment_registry_audits.list_by_experiment(normalized_key, limit=20)
             attributions = await uow.experiment_outcome_attributions.list_all(normalized_key)
+            health_states = await uow.experiment_health_states.list_all()
             traces = await uow.decision_traces.list_recent(
                 trace_type="experiment_assignment",
                 reference_id=normalized_key,
@@ -232,6 +234,10 @@ class ExperimentRegistryService:
 
         assignment_counts = self._variant_counts(assignments).get(normalized_key, Counter())
         exposure_counts = self._variant_counts(exposures).get(normalized_key, Counter())
+        health_state = next(
+            (item for item in health_states if str(getattr(item, "experiment_key", "")) == normalized_key),
+            None,
+        )
         return {
             "experiment": {
                 **self._registry_detail_payload(
@@ -240,9 +246,13 @@ class ExperimentRegistryService:
                     exposure_counts=exposure_counts,
                     audits=audits,
                 ),
+                "health_state": self._health_state_payload(health_state),
                 "results": self._results_payload(registry=registry, attributions=attributions),
                 "attribution_summary": self._attribution_summary_payload(attributions),
-                "recent_exposures": self._recent_attributions_payload(attributions, limit=normalized_limit),
+                "attribution_window_summary": self._attribution_window_summary_payload(attributions),
+                "recent_assignments": self._recent_assignments_payload(assignments, limit=normalized_limit),
+                "recent_exposures": self._recent_exposures_payload(exposures, limit=normalized_limit),
+                "recent_attributions": self._recent_attributions_payload(attributions, limit=normalized_limit),
                 "latest_assignment_trace": self._trace_payload(traces[0]) if traces else None,
                 "assignment_traces": [self._trace_payload(item) for item in traces],
             }
@@ -586,6 +596,42 @@ class ExperimentRegistryService:
         )
         return [self._attribution_payload(item) for item in rows[:limit]]
 
+    def _recent_assignments_payload(self, assignments: list, *, limit: int) -> list[dict]:
+        rows = sorted(
+            assignments,
+            key=lambda item: (
+                self._timestamp(getattr(item, "assigned_at", None)) or "",
+                int(getattr(item, "user_id", 0) or 0),
+            ),
+            reverse=True,
+        )
+        return [self._assignment_payload(item) for item in rows[:limit]]
+
+    def _assignment_payload(self, assignment) -> dict:
+        return {
+            "user_id": int(assignment.user_id),
+            "variant": str(assignment.variant),
+            "assigned_at": self._timestamp(getattr(assignment, "assigned_at", None)),
+        }
+
+    def _recent_exposures_payload(self, exposures: list, *, limit: int) -> list[dict]:
+        rows = sorted(
+            exposures,
+            key=lambda item: (
+                self._timestamp(getattr(item, "exposed_at", None)) or "",
+                int(getattr(item, "user_id", 0) or 0),
+            ),
+            reverse=True,
+        )
+        return [self._exposure_payload(item) for item in rows[:limit]]
+
+    def _exposure_payload(self, exposure) -> dict:
+        return {
+            "user_id": int(exposure.user_id),
+            "variant": str(exposure.variant),
+            "exposed_at": self._timestamp(getattr(exposure, "exposed_at", None)),
+        }
+
     def _attribution_payload(self, attribution) -> dict:
         return {
             "user_id": int(attribution.user_id),
@@ -603,6 +649,35 @@ class ExperimentRegistryService:
             "learning_action_count": int(getattr(attribution, "learning_action_count", 0) or 0),
             "upgrade_click_count": int(getattr(attribution, "upgrade_click_count", 0) or 0),
             "last_event_at": self._timestamp(getattr(attribution, "last_event_at", None)),
+        }
+
+    def _attribution_window_summary_payload(self, attributions: list) -> dict:
+        now = utc_now()
+        open_windows = 0
+        closed_windows = 0
+        latest_exposed_at = None
+        latest_window_end_at = None
+        converted_users = 0
+        for row in attributions:
+            exposed_at = getattr(row, "exposed_at", None)
+            window_end_at = getattr(row, "window_end_at", None)
+            if exposed_at is not None and (latest_exposed_at is None or exposed_at > latest_exposed_at):
+                latest_exposed_at = exposed_at
+            if window_end_at is not None and (latest_window_end_at is None or window_end_at > latest_window_end_at):
+                latest_window_end_at = window_end_at
+            if bool(getattr(row, "converted", False)):
+                converted_users += 1
+            if window_end_at is not None and window_end_at > now:
+                open_windows += 1
+            else:
+                closed_windows += 1
+        return {
+            "total_attributions": len(attributions),
+            "open_windows": open_windows,
+            "closed_windows": closed_windows,
+            "converted_users": converted_users,
+            "latest_exposed_at": self._timestamp(latest_exposed_at),
+            "latest_window_end_at": self._timestamp(latest_window_end_at),
         }
 
     def _trace_payload(self, trace) -> dict:
@@ -629,6 +704,21 @@ class ExperimentRegistryService:
             "exposure_coverage_percent": round((exposure_count / assignment_count) * 100, 2) if assignment_count else 100.0,
             "assignment_variants": dict(sorted(assignment_counts.items())),
             "exposure_variants": dict(sorted(exposure_counts.items())),
+        }
+
+    def _health_state_payload(self, health_state) -> dict:
+        if health_state is None:
+            return {
+                "current_status": "unevaluated",
+                "latest_alert_codes": [],
+                "metrics": {},
+                "last_evaluated_at": None,
+            }
+        return {
+            "current_status": str(getattr(health_state, "current_status", "unevaluated") or "unevaluated"),
+            "latest_alert_codes": list(getattr(health_state, "latest_alert_codes", []) or []),
+            "metrics": dict(getattr(health_state, "metrics", {}) or {}),
+            "last_evaluated_at": self._timestamp(getattr(health_state, "last_evaluated_at", None)),
         }
 
     def _variant_counts(self, rows: list) -> dict[str, Counter]:

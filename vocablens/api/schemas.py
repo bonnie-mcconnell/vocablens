@@ -676,7 +676,19 @@ class ExperimentAttributionSummaryResponse(BaseModel):
     upgrade_clicks: int = 0
 
 
+class ExperimentAssignmentDiagnosticsResponse(BaseModel):
+    user_id: int
+    variant: str
+    assigned_at: datetime | None = None
+
+
 class ExperimentExposureDiagnosticsResponse(BaseModel):
+    user_id: int
+    variant: str
+    exposed_at: datetime | None = None
+
+
+class ExperimentAttributionDiagnosticsResponse(BaseModel):
     user_id: int
     variant: str
     assignment_reason: str
@@ -694,6 +706,22 @@ class ExperimentExposureDiagnosticsResponse(BaseModel):
     last_event_at: datetime | None = None
 
 
+class ExperimentAttributionWindowSummaryResponse(BaseModel):
+    total_attributions: int = 0
+    open_windows: int = 0
+    closed_windows: int = 0
+    converted_users: int = 0
+    latest_exposed_at: datetime | None = None
+    latest_window_end_at: datetime | None = None
+
+
+class ExperimentOperatorHealthStateResponse(BaseModel):
+    current_status: str = "unevaluated"
+    latest_alert_codes: list[str] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    last_evaluated_at: datetime | None = None
+
+
 class ExperimentOperatorReportResponseModel(BaseModel):
     experiment_key: str
     status: str
@@ -709,10 +737,14 @@ class ExperimentOperatorReportResponseModel(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     health: ExperimentRegistryHealthResponse
+    health_state: ExperimentOperatorHealthStateResponse
     audit_entries: list[ExperimentRegistryAuditEntryResponse] = Field(default_factory=list)
     results: ExperimentResultItemResponse
     attribution_summary: ExperimentAttributionSummaryResponse
+    attribution_window_summary: ExperimentAttributionWindowSummaryResponse
+    recent_assignments: list[ExperimentAssignmentDiagnosticsResponse] = Field(default_factory=list)
     recent_exposures: list[ExperimentExposureDiagnosticsResponse] = Field(default_factory=list)
+    recent_attributions: list[ExperimentAttributionDiagnosticsResponse] = Field(default_factory=list)
     latest_assignment_trace: DecisionTraceRecordResponse | None = None
     assignment_traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from datetime import timedelta
 
 import pytest
 
 from tests.conftest import run_async
 from vocablens.domain.errors import NotFoundError, ValidationError
+from vocablens.core.time import utc_now
 from vocablens.services.experiment_registry_service import (
     ExperimentRegistryService,
     ExperimentRegistryUpsert,
@@ -62,10 +64,11 @@ class FakeExperimentRegistryRepo:
 
 class FakeAssignmentRepo:
     async def list_all(self, experiment_key: str | None = None):
+        now = utc_now()
         rows = [
-            SimpleNamespace(experiment_key="paywall_offer", variant="control"),
-            SimpleNamespace(experiment_key="paywall_offer", variant="control"),
-            SimpleNamespace(experiment_key="paywall_offer", variant="annual_anchor"),
+            SimpleNamespace(user_id=1, experiment_key="paywall_offer", variant="control", assigned_at=now - timedelta(hours=3)),
+            SimpleNamespace(user_id=2, experiment_key="paywall_offer", variant="control", assigned_at=now - timedelta(hours=2)),
+            SimpleNamespace(user_id=3, experiment_key="paywall_offer", variant="annual_anchor", assigned_at=now - timedelta(hours=1)),
         ]
         if experiment_key is None:
             return rows
@@ -74,9 +77,10 @@ class FakeAssignmentRepo:
 
 class FakeExposureRepo:
     async def list_all(self, experiment_key: str | None = None):
+        now = utc_now()
         rows = [
-            SimpleNamespace(experiment_key="paywall_offer", variant="control"),
-            SimpleNamespace(experiment_key="paywall_offer", variant="annual_anchor"),
+            SimpleNamespace(user_id=1, experiment_key="paywall_offer", variant="control", exposed_at=now - timedelta(hours=3)),
+            SimpleNamespace(user_id=3, experiment_key="paywall_offer", variant="annual_anchor", exposed_at=now - timedelta(hours=1)),
         ]
         if experiment_key is None:
             return rows
@@ -85,6 +89,7 @@ class FakeExposureRepo:
 
 class FakeOutcomeAttributionRepo:
     async def list_all(self, experiment_key: str | None = None):
+        now = utc_now()
         rows = [
             SimpleNamespace(
                 user_id=1,
@@ -92,8 +97,8 @@ class FakeOutcomeAttributionRepo:
                 variant="control",
                 assignment_reason="rollout",
                 attribution_version="v1",
-                exposed_at=None,
-                window_end_at=None,
+                exposed_at=now - timedelta(hours=3),
+                window_end_at=now + timedelta(days=29),
                 retained_d1=True,
                 retained_d7=False,
                 converted=False,
@@ -110,8 +115,8 @@ class FakeOutcomeAttributionRepo:
                 variant="annual_anchor",
                 assignment_reason="rollout",
                 attribution_version="v1",
-                exposed_at=None,
-                window_end_at=None,
+                exposed_at=now - timedelta(hours=1),
+                window_end_at=now + timedelta(days=30),
                 retained_d1=True,
                 retained_d7=True,
                 converted=True,
@@ -224,9 +229,13 @@ def test_experiment_registry_service_returns_operator_report():
     payload = run_async(service.get_operator_report("paywall_offer", limit=10))
 
     assert payload["experiment"]["results"]["experiment_key"] == "paywall_offer"
+    assert payload["experiment"]["health_state"]["current_status"] == "warning"
     assert payload["experiment"]["attribution_summary"]["users"] == 2
     assert payload["experiment"]["attribution_summary"]["converted_users"] == 1
+    assert payload["experiment"]["attribution_window_summary"]["open_windows"] == 2
+    assert payload["experiment"]["recent_assignments"][0]["variant"] == "annual_anchor"
     assert payload["experiment"]["recent_exposures"][0]["variant"] == "annual_anchor"
+    assert payload["experiment"]["recent_attributions"][0]["variant"] == "annual_anchor"
     assert payload["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
 
 

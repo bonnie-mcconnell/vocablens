@@ -359,6 +359,12 @@ class FakeExperimentRegistryService:
                     "assignment_variants": {"annual_anchor": 36, "control": 84},
                     "exposure_variants": {"annual_anchor": 35, "control": 83},
                 },
+                "health_state": {
+                    "current_status": "healthy",
+                    "latest_alert_codes": [],
+                    "metrics": {"exposure_coverage_percent": 98.33},
+                    "last_evaluated_at": "2026-03-24T10:20:00",
+                },
                 "audit_entries": [],
                 "results": {
                     "experiment_key": experiment_key,
@@ -388,14 +394,36 @@ class FakeExperimentRegistryService:
                     "learning_actions": 71,
                     "upgrade_clicks": 19,
                 },
+                "attribution_window_summary": {
+                    "total_attributions": 118,
+                    "open_windows": 118,
+                    "closed_windows": 0,
+                    "converted_users": 12,
+                    "latest_exposed_at": "2026-03-24T10:15:00",
+                    "latest_window_end_at": "2026-04-23T10:15:00",
+                },
+                "recent_assignments": [
+                    {
+                        "user_id": 91,
+                        "variant": "annual_anchor",
+                        "assigned_at": "2026-03-24T10:15:00",
+                    }
+                ],
                 "recent_exposures": [
+                    {
+                        "user_id": 91,
+                        "variant": "annual_anchor",
+                        "exposed_at": "2026-03-24T10:15:05",
+                    }
+                ],
+                "recent_attributions": [
                     {
                         "user_id": 91,
                         "variant": "annual_anchor",
                         "assignment_reason": "rollout",
                         "attribution_version": "v1",
-                        "exposed_at": None,
-                        "window_end_at": None,
+                        "exposed_at": "2026-03-24T10:15:05",
+                        "window_end_at": "2026-04-23T10:15:05",
                         "retained_d1": True,
                         "retained_d7": False,
                         "converted": False,
@@ -2562,6 +2590,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert registry_report.status_code == 200
     assert registry_report.json()["meta"]["source"] == "admin.experiments.registry.report"
     assert registry_report.json()["data"]["experiment"]["attribution_summary"]["users"] == 118
+    assert registry_report.json()["data"]["experiment"]["health_state"]["current_status"] == "healthy"
+    assert registry_report.json()["data"]["experiment"]["recent_assignments"][0]["variant"] == "annual_anchor"
+    assert registry_report.json()["data"]["experiment"]["recent_exposures"][0]["variant"] == "annual_anchor"
+    assert registry_report.json()["data"]["experiment"]["recent_attributions"][0]["assignment_reason"] == "rollout"
     assert registry_report.json()["data"]["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
     assert experiment_health_report.status_code == 200
     assert experiment_health_report.json()["meta"]["source"] == "admin.experiments.health_report"
