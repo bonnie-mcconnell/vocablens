@@ -14,14 +14,14 @@ class FakeUOW:
         self.progress_states = SimpleNamespace(get_or_create=self._get_progress_state, update=self._update_progress_state)
         self.daily_missions = SimpleNamespace(
             get_by_user_date=self._get_daily_mission_by_user_date,
-            create=self._create_daily_mission,
-            mark_completed=self._mark_daily_mission_completed,
+            create_once=self._create_daily_mission_once,
+            mark_completed_once=self._mark_daily_mission_completed_once,
         )
         self.reward_chests = SimpleNamespace(
             get_by_mission_id=self._get_reward_chest_by_mission_id,
-            create=self._create_reward_chest,
-            mark_unlocked=self._mark_reward_chest_unlocked,
-            mark_claimed=self._mark_reward_chest_claimed,
+            create_once=self._create_reward_chest_once,
+            mark_unlocked_once=self._mark_reward_chest_unlocked_once,
+            mark_claimed_once=self._mark_reward_chest_claimed_once,
         )
         self.decision_traces = SimpleNamespace(create=self._create_decision_trace)
         self._due_items = due_items or []
@@ -81,31 +81,41 @@ class FakeUOW:
             return self._daily_mission
         return None
 
-    async def _create_daily_mission(self, **kwargs):
+    async def _create_daily_mission_once(self, **kwargs):
+        if self._daily_mission is not None:
+            return self._daily_mission, False
         self._daily_mission = SimpleNamespace(id=1, status="issued", completed_at=None, created_at=utc_now(), updated_at=utc_now(), **kwargs)
-        return self._daily_mission
+        return self._daily_mission, True
 
-    async def _mark_daily_mission_completed(self, mission_id: int, *, completed_at):
+    async def _mark_daily_mission_completed_once(self, mission_id: int, *, completed_at):
+        if self._daily_mission.status != "issued":
+            return self._daily_mission, False
         self._daily_mission.status = "completed"
         self._daily_mission.completed_at = completed_at
-        return self._daily_mission
+        return self._daily_mission, True
 
     async def _get_reward_chest_by_mission_id(self, mission_id: int):
         return self._reward_chest
 
-    async def _create_reward_chest(self, **kwargs):
+    async def _create_reward_chest_once(self, **kwargs):
+        if self._reward_chest is not None:
+            return self._reward_chest, False
         self._reward_chest = SimpleNamespace(id=1, status="locked", unlocked_at=None, created_at=utc_now(), updated_at=utc_now(), **kwargs)
-        return self._reward_chest
+        return self._reward_chest, True
 
-    async def _mark_reward_chest_unlocked(self, chest_id: int, *, unlocked_at):
+    async def _mark_reward_chest_unlocked_once(self, chest_id: int, *, unlocked_at):
+        if self._reward_chest.status != "locked":
+            return self._reward_chest, False
         self._reward_chest.status = "unlocked"
         self._reward_chest.unlocked_at = unlocked_at
-        return self._reward_chest
+        return self._reward_chest, True
 
-    async def _mark_reward_chest_claimed(self, chest_id: int, *, claimed_at):
+    async def _mark_reward_chest_claimed_once(self, chest_id: int, *, claimed_at):
+        if self._reward_chest.status != "unlocked":
+            return self._reward_chest, False
         self._reward_chest.status = "claimed"
         self._reward_chest.claimed_at = claimed_at
-        return self._reward_chest
+        return self._reward_chest, True
 
     async def _create_decision_trace(self, **kwargs):
         self._decision_traces.append(kwargs)

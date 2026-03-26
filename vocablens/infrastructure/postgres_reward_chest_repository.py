@@ -28,7 +28,7 @@ class PostgresRewardChestRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -52,40 +52,54 @@ class PostgresRewardChestRepository:
                 )
                 .returning(RewardChestORM)
             )
-            return result.scalar_one()
+            return result.scalar_one(), True
         except IntegrityError:
             await self.session.rollback()
             existing = await self.get_by_mission_id(mission_id)
             if existing is None:
                 raise
-            return existing
+            return existing, False
 
-    async def mark_unlocked(self, chest_id: int, *, unlocked_at):
-        await self.session.execute(
+    async def mark_unlocked_once(self, chest_id: int, *, unlocked_at):
+        result = await self.session.execute(
             update(RewardChestORM)
-            .where(RewardChestORM.id == chest_id)
+            .where(
+                RewardChestORM.id == chest_id,
+                RewardChestORM.status == "locked",
+            )
             .values(
                 status="unlocked",
                 unlocked_at=unlocked_at,
                 updated_at=utc_now(),
             )
+            .returning(RewardChestORM)
         )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            return row, True
         result = await self.session.execute(
             select(RewardChestORM).where(RewardChestORM.id == chest_id)
         )
-        return result.scalar_one()
+        return result.scalar_one(), False
 
-    async def mark_claimed(self, chest_id: int, *, claimed_at):
-        await self.session.execute(
+    async def mark_claimed_once(self, chest_id: int, *, claimed_at):
+        result = await self.session.execute(
             update(RewardChestORM)
-            .where(RewardChestORM.id == chest_id)
+            .where(
+                RewardChestORM.id == chest_id,
+                RewardChestORM.status == "unlocked",
+            )
             .values(
                 status="claimed",
                 claimed_at=claimed_at,
                 updated_at=utc_now(),
             )
+            .returning(RewardChestORM)
         )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            return row, True
         result = await self.session.execute(
             select(RewardChestORM).where(RewardChestORM.id == chest_id)
         )
-        return result.scalar_one()
+        return result.scalar_one(), False

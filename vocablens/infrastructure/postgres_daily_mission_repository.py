@@ -31,7 +31,7 @@ class PostgresDailyMissionRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -63,25 +63,32 @@ class PostgresDailyMissionRepository:
                 )
                 .returning(DailyMissionORM)
             )
-            return result.scalar_one()
+            return result.scalar_one(), True
         except IntegrityError:
             await self.session.rollback()
             existing = await self.get_by_user_date(user_id, mission_date)
             if existing is None:
                 raise
-            return existing
+            return existing, False
 
-    async def mark_completed(self, mission_id: int, *, completed_at):
-        await self.session.execute(
+    async def mark_completed_once(self, mission_id: int, *, completed_at):
+        result = await self.session.execute(
             update(DailyMissionORM)
-            .where(DailyMissionORM.id == mission_id)
+            .where(
+                DailyMissionORM.id == mission_id,
+                DailyMissionORM.status == "issued",
+            )
             .values(
                 status="completed",
                 completed_at=completed_at,
                 updated_at=utc_now(),
             )
+            .returning(DailyMissionORM)
         )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            return row, True
         result = await self.session.execute(
             select(DailyMissionORM).where(DailyMissionORM.id == mission_id)
         )
-        return result.scalar_one()
+        return result.scalar_one(), False

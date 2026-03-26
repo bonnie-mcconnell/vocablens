@@ -117,7 +117,7 @@ class DailyLoopService:
         }
 
         async with self._uow_factory() as uow:
-            mission_row = await uow.daily_missions.create(
+            mission_row, mission_created = await uow.daily_missions.create_once(
                 user_id=user_id,
                 mission_date=mission_date,
                 weak_area=weak_area,
@@ -128,13 +128,16 @@ class DailyLoopService:
                 momentum_score=momentum_score,
                 notification_preview=notification_preview,
             )
-            chest_row = await uow.reward_chests.create(
+            chest_row, _ = await uow.reward_chests.create_once(
                 user_id=user_id,
                 mission_id=mission_row.id,
                 xp_reward=int(reward_preview["xp_reward"]),
                 badge_hint=str(reward_preview["badge_hint"]),
                 payload=dict(reward_preview),
             )
+            if not mission_created:
+                await uow.commit()
+                return self._plan_from_rows(mission_row, chest_row)
             await uow.decision_traces.create(
                 user_id=user_id,
                 trace_type="daily_mission_generation",
@@ -203,6 +206,11 @@ class DailyLoopService:
             if mission.status == "completed":
                 await uow.commit()
                 return self._completion_from_rows(mission, chest, current_streak=None, momentum_score=mission.momentum_score)
+            mission, completed_now = await uow.daily_missions.mark_completed_once(mission.id, completed_at=now)
+            if not completed_now:
+                chest = await uow.reward_chests.get_by_mission_id(mission.id)
+                await uow.commit()
+                return self._completion_from_rows(mission, chest, current_streak=None, momentum_score=mission.momentum_score)
             engagement_state = await uow.engagement_states.get_or_create(user_id)
             progress_state = await uow.progress_states.get_or_create(user_id)
             previous_momentum_score = round(float(engagement_state.momentum_score or 0.0), 3)
@@ -223,9 +231,8 @@ class DailyLoopService:
                 level=level,
                 milestones=milestones,
             )
-            mission = await uow.daily_missions.mark_completed(mission.id, completed_at=now)
             if chest is not None and getattr(chest, "status", "") == "locked":
-                chest = await uow.reward_chests.mark_unlocked(chest.id, unlocked_at=now)
+                chest, _ = await uow.reward_chests.mark_unlocked_once(chest.id, unlocked_at=now)
             await uow.decision_traces.create(
                 user_id=user_id,
                 trace_type="reward_chest_resolution",
@@ -299,7 +306,14 @@ class DailyLoopService:
                     already_claimed=True,
                     reward_preview=self._reward_preview_from_chest(chest),
                 )
-            chest = await uow.reward_chests.mark_claimed(chest.id, claimed_at=now)
+            chest, claimed_now = await uow.reward_chests.mark_claimed_once(chest.id, claimed_at=now)
+            if not claimed_now:
+                await uow.commit()
+                return RewardChestClaim(
+                    claimed=True,
+                    already_claimed=True,
+                    reward_preview=self._reward_preview_from_chest(chest),
+                )
             await uow.decision_traces.create(
                 user_id=user_id,
                 trace_type="reward_chest_resolution",
