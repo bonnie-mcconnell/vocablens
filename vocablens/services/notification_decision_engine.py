@@ -410,6 +410,17 @@ class NotificationDecisionEngine:
                         "lifecycle_policy": dict(getattr(notification_state, "lifecycle_policy", {}) or {}),
                         "suppression_reason": getattr(notification_state, "suppression_reason", None),
                     },
+                    "evaluated_constraints": {
+                        "frequency_limit": int(getattr(profile, "frequency_limit", 0) or 0),
+                        "cooldown_active": bool(
+                            getattr(notification_state, "cooldown_until", None)
+                            and getattr(notification_state, "cooldown_until", None) > utc_now()
+                        ),
+                        "lifecycle_notifications_enabled": dict(
+                            getattr(notification_state, "lifecycle_policy", {}) or {}
+                        ).get("lifecycle_notifications_enabled"),
+                        "source_context": source_context,
+                    },
                     "delivery_context": {
                         "recent_delivery_count": len(recent_deliveries),
                         "sent_today_count": len(
@@ -436,6 +447,9 @@ class NotificationDecisionEngine:
                     "channel": decision.channel,
                     "send_at": decision.send_at.isoformat(),
                     "cooldown_until": decision.cooldown_until.isoformat() if decision.cooldown_until else None,
+                    "suppressed_until": getattr(notification_state, "suppressed_until", None).isoformat()
+                    if getattr(notification_state, "suppressed_until", None)
+                    else None,
                     "message_category": decision.message.category if decision.message else None,
                     "message_title": decision.message.title if decision.message else None,
                     "reason": decision.reason,

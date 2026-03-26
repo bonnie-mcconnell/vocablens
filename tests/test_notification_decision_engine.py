@@ -21,6 +21,9 @@ class FakeNotificationDeliveryRepo:
     async def list_recent(self, user_id: int, limit: int = 50):
         return self.deliveries[:limit]
 
+    async def list_by_policy(self, policy_key: str, limit: int = 100):
+        return []
+
 
 class FakeLearningEventsRepo:
     def __init__(self, events=None):
@@ -84,6 +87,38 @@ class FakeNotificationSuppressionEventsRepo:
         self.created.append(kwargs)
         return SimpleNamespace(**kwargs)
 
+    async def list_by_policy(self, policy_key: str, limit: int = 100):
+        return []
+
+
+class FakeNotificationPolicyAuditsRepo:
+    async def list_by_policy(self, policy_key: str, limit: int = 50):
+        return []
+
+    async def latest_for_policy(self, policy_key: str):
+        return None
+
+
+class FakeNotificationPolicyHealthStatesRepo:
+    def __init__(self):
+        self.rows = {}
+
+    async def get(self, policy_key: str):
+        return self.rows.get(policy_key)
+
+    async def list_all(self):
+        return list(self.rows.values())
+
+    async def upsert(self, *, policy_key: str, current_status: str, latest_alert_codes: list[str], metrics: dict):
+        row = SimpleNamespace(
+            policy_key=policy_key,
+            current_status=current_status,
+            latest_alert_codes=list(latest_alert_codes),
+            metrics=dict(metrics),
+        )
+        self.rows[policy_key] = row
+        return row
+
 
 class FakeNotificationPolicyRegistryRepo:
     async def get(self, policy_key: str):
@@ -91,6 +126,9 @@ class FakeNotificationPolicyRegistryRepo:
             policy_key=policy_key,
             status="active",
             is_killed=False,
+            description="Default notification policy.",
+            created_at=None,
+            updated_at=None,
             policy={
                 "cooldown_hours": 4,
                 "default_frequency_limit": 2,
@@ -114,6 +152,9 @@ class FakeNotificationPolicyRegistryRepo:
             },
         )
 
+    async def list_all(self):
+        return [await self.get("default")]
+
 
 class FakeUOW:
     def __init__(self, profile, deliveries=None, events=None, weak_clusters=None, mistakes=None, notification_state=None):
@@ -122,6 +163,8 @@ class FakeUOW:
         self.notification_states = FakeNotificationStatesRepo(notification_state)
         self.notification_suppression_events = FakeNotificationSuppressionEventsRepo()
         self.notification_policy_registries = FakeNotificationPolicyRegistryRepo()
+        self.notification_policy_audits = FakeNotificationPolicyAuditsRepo()
+        self.notification_policy_health_states = FakeNotificationPolicyHealthStatesRepo()
         self.learning_events = FakeLearningEventsRepo(events)
         self.knowledge_graph = FakeKnowledgeGraphRepo(weak_clusters)
         self.mistake_patterns = FakeMistakePatternsRepo(mistakes)
@@ -145,18 +188,42 @@ class FakeDecisionTraces:
         self.created.append(kwargs)
         return SimpleNamespace(**kwargs)
 
+    async def list_recent(self, *, user_id=None, trace_type: str | None = None, reference_id: str | None = None, limit: int = 100):
+        rows = list(self.created)
+        if trace_type is not None:
+            rows = [row for row in rows if row.get("trace_type") == trace_type]
+        if reference_id is not None:
+            rows = [row for row in rows if row.get("reference_id") == reference_id]
+        if user_id is not None:
+            rows = [row for row in rows if row.get("user_id") == user_id]
+        return [SimpleNamespace(**row) for row in rows[:limit]]
+
 
 def test_notification_decision_engine_respects_daily_limit_and_prevents_spam():
     now = utc_now()
     profile = SimpleNamespace(preferred_channel="push", preferred_time_of_day=18, frequency_limit=1)
-    deliveries = [SimpleNamespace(created_at=now - timedelta(hours=2))]
+    notification_state = SimpleNamespace(
+        user_id=1,
+        preferred_channel="push",
+        preferred_time_of_day=18,
+        frequency_limit=1,
+        lifecycle_policy={},
+        suppression_reason=None,
+        suppressed_until=None,
+        cooldown_until=None,
+        sent_count_day=now.date().isoformat(),
+        sent_count_today=1,
+        last_decision_at=None,
+        last_decision_reason=None,
+        last_reference_id=None,
+    )
     assessment = SimpleNamespace(
         state="at-risk",
         drop_off_risk=0.7,
         current_streak=3,
         suggested_actions=[SimpleNamespace(kind="streak_nudge", reason="Keep it going", target=None)],
     )
-    uow = FakeUOW(profile, deliveries=deliveries)
+    uow = FakeUOW(profile, deliveries=[], notification_state=notification_state)
     engine = NotificationDecisionEngine(lambda: uow)
 
     decision = run_async(engine.decide(1, assessment))
@@ -258,3 +325,5 @@ def test_notification_decision_engine_respects_canonical_lifecycle_suppression()
     assert decision.should_send is False
     assert decision.reason == "engaged stage suppresses proactive lifecycle messaging"
     assert uow.decision_traces.created[0]["inputs"]["notification_state"]["lifecycle_policy"]["lifecycle_notifications_enabled"] is False
+    assert uow.decision_traces.created[0]["inputs"]["evaluated_constraints"]["source_context"] == "lifecycle_service.notification"
+    assert uow.decision_traces.created[0]["outputs"]["suppressed_until"] is None

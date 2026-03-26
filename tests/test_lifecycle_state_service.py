@@ -34,10 +34,21 @@ class FakeLifecycleTransitions:
         return row
 
 
+class FakeDecisionTraces:
+    def __init__(self):
+        self.rows = []
+
+    async def create(self, **kwargs):
+        row = SimpleNamespace(id=len(self.rows) + 1, **kwargs)
+        self.rows.append(row)
+        return row
+
+
 class FakeUOW:
     def __init__(self, states, transitions):
         self.lifecycle_states = states
         self.lifecycle_transitions = transitions
+        self.decision_traces = FakeDecisionTraces()
 
     async def __aenter__(self):
         return self
@@ -52,7 +63,8 @@ class FakeUOW:
 def test_lifecycle_state_service_creates_initial_state_and_transition():
     states = FakeLifecycleStates()
     transitions = FakeLifecycleTransitions()
-    service = LifecycleStateService(lambda: FakeUOW(states, transitions))
+    uow = FakeUOW(states, transitions)
+    service = LifecycleStateService(lambda: uow)
 
     result = run_async(
         service.record_stage(
@@ -70,12 +82,14 @@ def test_lifecycle_state_service_creates_initial_state_and_transition():
     assert result.state.transition_count == 1
     assert transitions.rows[0].from_stage is None
     assert transitions.rows[0].to_stage == "new_user"
+    assert uow.decision_traces.rows[0].trace_type == "lifecycle_transition"
 
 
 def test_lifecycle_state_service_only_logs_transition_when_stage_changes():
     states = FakeLifecycleStates()
     transitions = FakeLifecycleTransitions()
-    service = LifecycleStateService(lambda: FakeUOW(states, transitions))
+    uow = FakeUOW(states, transitions)
+    service = LifecycleStateService(lambda: uow)
 
     first = run_async(
         service.record_stage(
@@ -112,3 +126,4 @@ def test_lifecycle_state_service_only_logs_transition_when_stage_changes():
     assert states.row.previous_stage == "activating"
     assert states.row.current_stage == "engaged"
     assert states.row.transition_count == 2
+    assert len(uow.decision_traces.rows) == 2

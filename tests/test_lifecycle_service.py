@@ -358,8 +358,9 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
     assert [action.type for action in new_user_plan.actions] == ["onboarding_nudge", "quick_start_path"]
     assert new_user_notifier.calls == [(1, "active")]
     assert new_user_uow.decision_traces.created[0]["trace_type"] == "lifecycle_action_plan"
-    assert new_user_uow.decision_traces.created[1]["trace_type"] == "lifecycle_decision"
-    assert new_user_uow.decision_traces.created[1]["reference_id"] == "lifecycle:1"
+    assert new_user_uow.decision_traces.created[1]["trace_type"] == "lifecycle_transition"
+    assert new_user_uow.decision_traces.created[2]["trace_type"] == "lifecycle_decision"
+    assert new_user_uow.decision_traces.created[2]["reference_id"] == "lifecycle:1"
     assert new_user_uow.lifecycle_states.row.current_stage == "new_user"
     assert new_user_uow.lifecycle_transitions.created[0]["to_stage"] == "new_user"
     assert new_user_uow.notification_states.row.lifecycle_policy["lifecycle_notifications_enabled"] is True
@@ -368,7 +369,8 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
     assert "mastery at 25.0%" in activating_plan.actions[1].message
     assert activating_notifier.calls == [(2, "active")]
     assert activating_uow.decision_traces.created[0]["outputs"]["action_types"] == ["wow_moment_push", "progress_visibility"]
-    assert activating_uow.decision_traces.created[1]["outputs"]["stage"] == "activating"
+    assert activating_uow.decision_traces.created[1]["outputs"]["current_stage"] == "activating"
+    assert activating_uow.decision_traces.created[2]["outputs"]["stage"] == "activating"
     assert activating_uow.lifecycle_states.row.current_stage == "activating"
     assert activating_health.calls == ["global", "activating"]
 
@@ -399,11 +401,13 @@ def test_lifecycle_service_triggers_reengagement_and_limits_retention_actions():
     assert plan.notification.should_send is True
     assert plan.notification.category == "retention:review_reminder"
     assert notifier.calls == [(7, "at-risk")]
-    assert uow.decision_traces.created[1]["inputs"]["retention"]["suggested_action_types"] == [
+    assert uow.decision_traces.created[2]["inputs"]["retention"]["suggested_action_types"] == [
         "review_reminder",
         "quick_session",
         "streak_nudge",
     ]
+    assert uow.decision_traces.created[1]["trace_type"] == "lifecycle_transition"
+    assert uow.decision_traces.created[2]["trace_type"] == "lifecycle_decision"
     assert health_signals.calls == ["global", "at_risk"]
 
 
@@ -430,8 +434,9 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
     assert plan.notification.should_send is False
     assert notifier.calls == []
     assert uow.decision_traces.created[0]["trace_type"] == "lifecycle_action_plan"
-    assert uow.decision_traces.created[1]["outputs"]["paywall"]["type"] == "soft_paywall"
-    assert uow.decision_traces.created[1]["reason"] == "user shows strong engagement and progress"
+    assert uow.decision_traces.created[1]["trace_type"] == "lifecycle_transition"
+    assert uow.decision_traces.created[2]["outputs"]["paywall"]["type"] == "soft_paywall"
+    assert uow.decision_traces.created[2]["reason"] == "user shows strong engagement and progress"
     assert uow.notification_states.row.lifecycle_policy["lifecycle_notifications_enabled"] is False
     assert uow.notification_suppression_events.created[0]["event_type"] == "lifecycle_policy_updated"
     assert health_signals.calls == ["global", "engaged"]

@@ -92,6 +92,28 @@ class LifecycleStateService:
                     last_transition_reference_id=reference_id,
                 )
 
+            if changed and transition is not None and hasattr(uow, "decision_traces"):
+                await uow.decision_traces.create(
+                    user_id=user_id,
+                    trace_type="lifecycle_transition",
+                    source=source,
+                    reference_id=reference_id,
+                    policy_version="v1",
+                    inputs={
+                        "from_stage": getattr(transition, "from_stage", None),
+                        "to_stage": getattr(transition, "to_stage", stage),
+                        "reasons": list(normalized_reasons),
+                        "payload": dict(transition_payload),
+                    },
+                    outputs={
+                        "current_stage": str(getattr(state, "current_stage", stage) or stage),
+                        "previous_stage": getattr(state, "previous_stage", None),
+                        "transition_count": int(getattr(state, "transition_count", 0) or 0),
+                        "transition_id": getattr(transition, "id", None),
+                    },
+                    reason=normalized_reasons[0] if normalized_reasons else None,
+                )
+
             await uow.commit()
 
         return LifecycleStateWriteResult(

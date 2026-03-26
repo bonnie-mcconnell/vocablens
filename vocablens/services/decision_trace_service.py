@@ -223,6 +223,7 @@ class DecisionTraceService:
             "latest_decisions": {
                 "lifecycle_decision": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_decision"),
                 "lifecycle_action_plan": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_action_plan"),
+                "lifecycle_transition": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_transition"),
                 "notification_selection": self._latest_trace_payload_from_dicts(traces, trace_type="notification_selection"),
                 "latest_transition": transitions[0] if transitions else None,
                 "latest_notification_suppression": notification_suppression_events[0] if notification_suppression_events else None,

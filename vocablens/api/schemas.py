@@ -1193,6 +1193,7 @@ class DiagnosticsTraceSummaryResponse(BaseModel):
 class LifecycleOperatorLatestDecisionsResponse(BaseModel):
     lifecycle_decision: DecisionTraceRecordResponse | None = None
     lifecycle_action_plan: DecisionTraceRecordResponse | None = None
+    lifecycle_transition: DecisionTraceRecordResponse | None = None
     notification_selection: DecisionTraceRecordResponse | None = None
     latest_transition: LifecycleTransitionDiagnosticsResponse | None = None
     latest_notification_suppression: NotificationSuppressionEventDiagnosticsResponse | None = None
