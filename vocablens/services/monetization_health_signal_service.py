@@ -95,6 +95,7 @@ class MonetizationHealthSignalService:
         geography = None if scope_key == "global" else scope_key
         async with self._uow_factory() as uow:
             states = await uow.monetization_states.list_all()
+            lifecycle_states = await uow.lifecycle_states.list_all()
             events = await uow.monetization_offer_events.list_all(geography=geography)
             await uow.commit()
         filtered_states = [
@@ -102,11 +103,24 @@ class MonetizationHealthSignalService:
             for state in states
             if geography is None or str(getattr(state, "current_geography", "") or "") == geography
         ]
+        lifecycle_by_user = {
+            int(getattr(item, "user_id", 0) or 0): item
+            for item in lifecycle_states
+            if int(getattr(item, "user_id", 0) or 0) > 0
+        }
         tracked_users = len(filtered_states)
         impressions = sum(int(getattr(state, "paywall_impressions", 0) or 0) for state in filtered_states)
         dismissals = sum(int(getattr(state, "paywall_dismissals", 0) or 0) for state in filtered_states)
         acceptances = sum(int(getattr(state, "paywall_acceptances", 0) or 0) for state in filtered_states)
         skips = sum(int(getattr(state, "paywall_skips", 0) or 0) for state in filtered_states)
+        lifecycle_stage_mismatches = 0
+        for state in filtered_states:
+            user_id = int(getattr(state, "user_id", 0) or 0)
+            lifecycle_state = lifecycle_by_user.get(user_id)
+            if lifecycle_state is None:
+                continue
+            if str(getattr(state, "lifecycle_stage", "") or "") != str(getattr(lifecycle_state, "current_stage", "") or ""):
+                lifecycle_stage_mismatches += 1
         average_fatigue = round(
             sum(float(getattr(state, "fatigue_score", 0) or 0.0) for state in filtered_states) / tracked_users,
             2,
@@ -129,6 +143,7 @@ class MonetizationHealthSignalService:
             "dismissal_rate_percent": dismissal_rate,
             "skip_rate_percent": skip_rate,
             "average_fatigue_score": average_fatigue,
+            "lifecycle_stage_mismatches": lifecycle_stage_mismatches,
             "last_event_at": last_event_at,
         }
 
@@ -138,7 +153,16 @@ class MonetizationHealthSignalService:
         conversion_rate = float(metrics.get("conversion_rate_percent", 0.0) or 0.0)
         dismissal_rate = float(metrics.get("dismissal_rate_percent", 0.0) or 0.0)
         fatigue = float(metrics.get("average_fatigue_score", 0.0) or 0.0)
+        lifecycle_stage_mismatches = int(metrics.get("lifecycle_stage_mismatches", 0) or 0)
         alerts: list[dict[str, Any]] = []
+        if lifecycle_stage_mismatches > 0:
+            alerts.append(
+                {
+                    "code": "monetization_lifecycle_stage_mismatch_detected",
+                    "severity": "critical",
+                    "message": "Monetization state no longer matches canonical lifecycle state for one or more users.",
+                }
+            )
         if impressions >= 25 and conversion_rate < 3.0:
             alerts.append(
                 {
@@ -206,6 +230,7 @@ class MonetizationHealthSignalService:
             "dismissal_rate_percent",
             "skip_rate_percent",
             "average_fatigue_score",
+            "lifecycle_stage_mismatches",
         ):
             MONETIZATION_HEALTH_RATE.labels(scope_key=scope_key, metric=metric_name).set(
                 float(metrics.get(metric_name, 0.0) or 0.0)

@@ -193,3 +193,36 @@ def test_daily_loop_health_signal_service_dashboard_orders_attention():
     assert report["summary"]["counts_by_health_status"]["warning"] == 1
     assert report["summary"]["alert_counts_by_code"]["mission_issue_coverage_low"] == 1
     assert report["attention"][0]["scope_key"] == "global"
+
+
+def test_daily_loop_health_signal_service_detects_reward_mission_drift(monkeypatch):
+    status_metric = FakeMetric()
+    rate_metric = FakeMetric()
+    transition_metric = FakeMetric()
+    alert_metric = FakeMetric()
+    scope_count_metric = FakeMetric()
+    active_alert_metric = FakeMetric()
+    logger = FakeLogger()
+    alert_sink = FakeAlertSink()
+
+    monkeypatch.setattr(daily_loop_health_module, "DAILY_LOOP_HEALTH_STATUS", status_metric)
+    monkeypatch.setattr(daily_loop_health_module, "DAILY_LOOP_HEALTH_RATE", rate_metric)
+    monkeypatch.setattr(daily_loop_health_module, "DAILY_LOOP_HEALTH_TRANSITIONS", transition_metric)
+    monkeypatch.setattr(daily_loop_health_module, "DAILY_LOOP_HEALTH_ALERTS", alert_metric)
+    monkeypatch.setattr(daily_loop_health_module, "DAILY_LOOP_HEALTH_SCOPES", scope_count_metric)
+    monkeypatch.setattr(daily_loop_health_module, "DAILY_LOOP_ACTIVE_ALERTS", active_alert_metric)
+    monkeypatch.setattr(daily_loop_health_module, "logger", logger)
+
+    now = daily_loop_health_module.utc_now()
+    uow = FakeUOW(
+        engagement_states=[SimpleNamespace(user_id=1, sessions_last_3_days=1, shields_used_this_week=0)],
+        daily_missions=[SimpleNamespace(id=11, user_id=1, mission_date=now.date().isoformat(), status="completed", created_at=now)],
+        reward_chests=[SimpleNamespace(user_id=2, mission_id=11, unlocked_at=now)],
+    )
+    service = DailyLoopHealthSignalService(lambda: uow, alert_sink=alert_sink)
+
+    report = run_async(service.evaluate_scope("global"))
+
+    assert report["health"]["status"] == "critical"
+    assert report["health"]["metrics"]["reward_mission_mismatches"] == 1
+    assert "reward_mission_reference_mismatch_detected" in uow.daily_loop_health_states.rows["global"].latest_alert_codes

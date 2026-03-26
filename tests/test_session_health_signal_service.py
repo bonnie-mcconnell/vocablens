@@ -56,8 +56,8 @@ class FakeExecuteResult:
 
 
 class FakeSession:
-    def __init__(self, sessions, events):
-        self._responses = [list(sessions), list(events)]
+    def __init__(self, sessions, attempts, traces, events):
+        self._responses = [list(sessions), list(attempts), list(traces), list(events)]
         self._index = 0
 
     async def execute(self, query):
@@ -67,9 +67,9 @@ class FakeSession:
 
 
 class FakeUOW:
-    def __init__(self, *, sessions, events):
+    def __init__(self, *, sessions, attempts, traces, events):
         self.session_health_states = FakeSessionHealthStatesRepo()
-        self.session = FakeSession(sessions, events)
+        self.session = FakeSession(sessions, attempts, traces, events)
         self.commit_count = 0
 
     async def __aenter__(self):
@@ -137,10 +137,11 @@ def test_session_health_signal_service_persists_critical_state(monkeypatch):
     monkeypatch.setattr(session_health_module, "logger", logger)
 
     sessions = [
-        SimpleNamespace(status="completed", created_at=SimpleNamespace()),
-        SimpleNamespace(status="expired", created_at=SimpleNamespace()),
+        SimpleNamespace(session_id="sess_completed", user_id=1, status="completed", created_at=SimpleNamespace()),
+        SimpleNamespace(session_id="sess_expired", user_id=2, status="expired", created_at=SimpleNamespace()),
     ] + [
-        SimpleNamespace(status="active", created_at=SimpleNamespace()) for _ in range(22)
+        SimpleNamespace(session_id=f"sess_active_{idx}", user_id=idx + 3, status="active", created_at=SimpleNamespace())
+        for idx in range(22)
     ]
     events = [
         SimpleNamespace(event_type="session_generation_rejected", payload={}),
@@ -149,7 +150,7 @@ def test_session_health_signal_service_persists_critical_state(monkeypatch):
             for _ in range(5)
         ],
     ]
-    uow = FakeUOW(sessions=sessions, events=events)
+    uow = FakeUOW(sessions=sessions, attempts=[], traces=[], events=events)
     service = SessionHealthSignalService(lambda: uow, alert_sink=alert_sink)
 
     report = run_async(service.evaluate_scope("global"))
@@ -172,7 +173,7 @@ def test_session_health_signal_service_persists_critical_state(monkeypatch):
 
 
 def test_session_health_signal_service_dashboard_orders_attention():
-    uow = FakeUOW(sessions=[], events=[])
+    uow = FakeUOW(sessions=[], attempts=[], traces=[], events=[])
     uow.session_health_states.rows = {
         "global": SimpleNamespace(
             scope_key="global",
@@ -196,3 +197,35 @@ def test_session_health_signal_service_dashboard_orders_attention():
     assert report["summary"]["counts_by_health_status"]["critical"] == 1
     assert report["summary"]["alert_counts_by_code"]["session_completion_rate_low"] == 1
     assert report["attention"][0]["scope_key"] == "global"
+
+
+def test_session_health_signal_service_detects_reference_drift(monkeypatch):
+    status_metric = FakeMetric()
+    rate_metric = FakeMetric()
+    transition_metric = FakeMetric()
+    alert_metric = FakeMetric()
+    scope_count_metric = FakeMetric()
+    active_alert_metric = FakeMetric()
+    logger = FakeLogger()
+    alert_sink = FakeAlertSink()
+
+    monkeypatch.setattr(session_health_module, "SESSION_HEALTH_STATUS", status_metric)
+    monkeypatch.setattr(session_health_module, "SESSION_HEALTH_RATE", rate_metric)
+    monkeypatch.setattr(session_health_module, "SESSION_HEALTH_TRANSITIONS", transition_metric)
+    monkeypatch.setattr(session_health_module, "SESSION_HEALTH_ALERTS", alert_metric)
+    monkeypatch.setattr(session_health_module, "SESSION_HEALTH_SCOPES", scope_count_metric)
+    monkeypatch.setattr(session_health_module, "SESSION_ACTIVE_ALERTS", active_alert_metric)
+    monkeypatch.setattr(session_health_module, "logger", logger)
+
+    sessions = [SimpleNamespace(session_id="sess_1", user_id=1, status="completed", created_at=SimpleNamespace())]
+    attempts = [SimpleNamespace(session_id="sess_missing", user_id=1, created_at=SimpleNamespace())]
+    traces = [SimpleNamespace(reference_id="sess_missing", user_id=1, created_at=SimpleNamespace())]
+    uow = FakeUOW(sessions=sessions, attempts=attempts, traces=traces, events=[])
+    service = SessionHealthSignalService(lambda: uow, alert_sink=alert_sink)
+
+    report = run_async(service.evaluate_scope("global"))
+
+    assert report["health"]["status"] == "critical"
+    assert report["health"]["metrics"]["attempt_reference_mismatches_7d"] == 1
+    assert report["health"]["metrics"]["evaluation_reference_mismatches_7d"] == 1
+    assert "session_reference_drift_detected" in uow.session_health_states.rows["global"].latest_alert_codes

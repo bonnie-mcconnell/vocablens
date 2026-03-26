@@ -124,11 +124,21 @@ class DailyLoopHealthSignalService:
             for item in recent_missions
             if str(getattr(item, "status", "") or "") == "completed"
         ]
+        missions_by_id = {
+            int(getattr(item, "id", 0) or 0): item
+            for item in missions
+            if int(getattr(item, "id", 0) or 0) > 0
+        }
         unlocked_chests = [
             item
             for item in reward_chests
             if getattr(item, "unlocked_at", None) and item.unlocked_at >= window_start
         ]
+        reward_mission_mismatches = 0
+        for chest in reward_chests:
+            mission = missions_by_id.get(int(getattr(chest, "mission_id", 0) or 0))
+            if mission is None or int(getattr(mission, "user_id", 0) or 0) != int(getattr(chest, "user_id", 0) or 0):
+                reward_mission_mismatches += 1
         shield_violation_users = sum(
             1 for item in engagement_states if int(getattr(item, "shields_used_this_week", 0) or 0) > 1
         )
@@ -145,6 +155,7 @@ class DailyLoopHealthSignalService:
             "mission_issue_coverage_percent": mission_issue_coverage,
             "mission_completion_rate_percent": mission_completion_rate,
             "reward_unlock_gap": max(0, len(completed_missions) - len(unlocked_chests)),
+            "reward_mission_mismatches": reward_mission_mismatches,
             "shield_violation_users": shield_violation_users,
         }
 
@@ -154,9 +165,18 @@ class DailyLoopHealthSignalService:
         mission_issue_coverage = float(metrics.get("mission_issue_coverage_percent", 100.0) or 100.0)
         mission_completion_rate = float(metrics.get("mission_completion_rate_percent", 100.0) or 100.0)
         reward_unlock_gap = int(metrics.get("reward_unlock_gap", 0) or 0)
+        reward_mission_mismatches = int(metrics.get("reward_mission_mismatches", 0) or 0)
         shield_violation_users = int(metrics.get("shield_violation_users", 0) or 0)
 
         alerts: list[dict[str, Any]] = []
+        if reward_mission_mismatches > 0:
+            alerts.append(
+                {
+                    "code": "reward_mission_reference_mismatch_detected",
+                    "severity": "critical",
+                    "message": "Reward chests no longer line up with canonical mission ownership.",
+                }
+            )
         if active_users >= 10 and mission_issue_coverage < 75.0:
             alerts.append(
                 {
@@ -249,6 +269,7 @@ class DailyLoopHealthSignalService:
             "mission_issue_coverage_percent",
             "mission_completion_rate_percent",
             "reward_unlock_gap",
+            "reward_mission_mismatches",
             "shield_violation_users",
         ):
             DAILY_LOOP_HEALTH_RATE.labels(scope_key=scope_key, metric=metric_name).set(

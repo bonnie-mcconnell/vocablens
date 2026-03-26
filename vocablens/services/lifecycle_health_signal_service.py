@@ -129,6 +129,11 @@ class LifecycleHealthSignalService:
             ]
 
         total_users = len(scoped_states)
+        lifecycle_by_user = {
+            int(getattr(item, "user_id", 0) or 0): item
+            for item in scoped_states
+            if int(getattr(item, "user_id", 0) or 0) > 0
+        }
         counts_by_stage: dict[str, int] = {}
         for state in scoped_states:
             stage = str(getattr(state, "current_stage", "") or "")
@@ -143,8 +148,13 @@ class LifecycleHealthSignalService:
 
         recovery_notification_suppressed_users = 0
         suppressed_recovery_users = 0
+        notification_stage_mismatches = 0
         for item in notification_states:
             stage = str(getattr(item, "lifecycle_stage", "") or "")
+            user_id = int(getattr(item, "user_id", 0) or 0)
+            lifecycle_state = lifecycle_by_user.get(user_id)
+            if lifecycle_state is not None and stage and stage != str(getattr(lifecycle_state, "current_stage", "") or ""):
+                notification_stage_mismatches += 1
             if stage not in {"at_risk", "churned"}:
                 continue
             if scope_key != "global" and stage != scope_key:
@@ -155,6 +165,20 @@ class LifecycleHealthSignalService:
             suppressed_until = getattr(item, "suppressed_until", None)
             if suppressed_until is not None and suppressed_until > utc_now():
                 suppressed_recovery_users += 1
+
+        latest_transition_by_user: dict[int, Any] = {}
+        for transition in scoped_transitions:
+            user_id = int(getattr(transition, "user_id", 0) or 0)
+            previous = latest_transition_by_user.get(user_id)
+            if previous is None or getattr(transition, "created_at", None) > getattr(previous, "created_at", None):
+                latest_transition_by_user[user_id] = transition
+        transition_stage_mismatches = 0
+        for user_id, transition in latest_transition_by_user.items():
+            lifecycle_state = lifecycle_by_user.get(user_id)
+            if lifecycle_state is None:
+                continue
+            if str(getattr(transition, "to_stage", "") or "") != str(getattr(lifecycle_state, "current_stage", "") or ""):
+                transition_stage_mismatches += 1
 
         at_risk_share = round((at_risk_users / total_users) * 100.0, 2) if total_users else 0.0
         churned_share = round((churned_users / total_users) * 100.0, 2) if total_users else 0.0
@@ -169,6 +193,8 @@ class LifecycleHealthSignalService:
             "recent_transition_count_7d": len(scoped_transitions),
             "recovery_notification_suppressed_users": recovery_notification_suppressed_users,
             "suppressed_recovery_users": suppressed_recovery_users,
+            "notification_stage_mismatches": notification_stage_mismatches,
+            "transition_stage_mismatches": transition_stage_mismatches,
         }
 
     def _evaluate_health(self, scope_key: str, metrics: dict[str, Any]):
@@ -178,8 +204,18 @@ class LifecycleHealthSignalService:
         recent_transition_count = int(metrics.get("recent_transition_count_7d", 0) or 0)
         recovery_notification_suppressed_users = int(metrics.get("recovery_notification_suppressed_users", 0) or 0)
         suppressed_recovery_users = int(metrics.get("suppressed_recovery_users", 0) or 0)
+        notification_stage_mismatches = int(metrics.get("notification_stage_mismatches", 0) or 0)
+        transition_stage_mismatches = int(metrics.get("transition_stage_mismatches", 0) or 0)
 
         alerts: list[dict[str, Any]] = []
+        if notification_stage_mismatches > 0 or transition_stage_mismatches > 0:
+            alerts.append(
+                {
+                    "code": "lifecycle_state_drift_detected",
+                    "severity": "critical",
+                    "message": "Lifecycle state, transitions, or notification state no longer agree on the user stage.",
+                }
+            )
         if scope_key == "global":
             if total_users >= 20 and churned_share >= 20.0:
                 alerts.append(
@@ -275,6 +311,8 @@ class LifecycleHealthSignalService:
             "recent_transition_count_7d",
             "recovery_notification_suppressed_users",
             "suppressed_recovery_users",
+            "notification_stage_mismatches",
+            "transition_stage_mismatches",
         ):
             LIFECYCLE_HEALTH_RATE.labels(scope_key=scope_key, metric=metric_name).set(
                 float(metrics.get(metric_name, 0.0) or 0.0)

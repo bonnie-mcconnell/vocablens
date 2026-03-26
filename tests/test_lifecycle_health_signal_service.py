@@ -215,3 +215,44 @@ def test_lifecycle_health_signal_service_dashboard_orders_attention():
     assert report["summary"]["counts_by_health_status"]["critical"] == 1
     assert report["summary"]["alert_counts_by_code"]["recovery_messaging_blocked"] == 1
     assert report["attention"][0]["scope_key"] == "global"
+
+
+def test_lifecycle_health_signal_service_detects_cross_domain_stage_drift(monkeypatch):
+    status_metric = FakeMetric()
+    rate_metric = FakeMetric()
+    transition_metric = FakeMetric()
+    alert_metric = FakeMetric()
+    scope_count_metric = FakeMetric()
+    active_alert_metric = FakeMetric()
+    logger = FakeLogger()
+    alert_sink = FakeAlertSink()
+
+    monkeypatch.setattr(lifecycle_health_module, "LIFECYCLE_HEALTH_STATUS", status_metric)
+    monkeypatch.setattr(lifecycle_health_module, "LIFECYCLE_HEALTH_RATE", rate_metric)
+    monkeypatch.setattr(lifecycle_health_module, "LIFECYCLE_HEALTH_TRANSITIONS", transition_metric)
+    monkeypatch.setattr(lifecycle_health_module, "LIFECYCLE_HEALTH_ALERTS", alert_metric)
+    monkeypatch.setattr(lifecycle_health_module, "LIFECYCLE_HEALTH_SCOPES", scope_count_metric)
+    monkeypatch.setattr(lifecycle_health_module, "LIFECYCLE_ACTIVE_ALERTS", active_alert_metric)
+    monkeypatch.setattr(lifecycle_health_module, "logger", logger)
+
+    now = lifecycle_health_module.utc_now()
+    uow = FakeUOW(
+        lifecycle_states=[SimpleNamespace(user_id=7, current_stage="at_risk")],
+        lifecycle_transitions=[SimpleNamespace(user_id=7, to_stage="engaged", created_at=now)],
+        notification_states=[
+            SimpleNamespace(
+                user_id=7,
+                lifecycle_stage="engaged",
+                lifecycle_policy={"lifecycle_notifications_enabled": True},
+                suppressed_until=None,
+            )
+        ],
+    )
+    service = LifecycleHealthSignalService(lambda: uow, alert_sink=alert_sink)
+
+    report = run_async(service.evaluate_scope("global"))
+
+    assert report["health"]["status"] == "critical"
+    assert report["health"]["metrics"]["notification_stage_mismatches"] == 1
+    assert report["health"]["metrics"]["transition_stage_mismatches"] == 1
+    assert "lifecycle_state_drift_detected" in uow.lifecycle_health_states.rows["global"].latest_alert_codes

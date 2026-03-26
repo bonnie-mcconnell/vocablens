@@ -7,7 +7,12 @@ from typing import Any
 from sqlalchemy import select
 
 from vocablens.core.time import utc_now
-from vocablens.infrastructure.db.models import EventORM, LearningSessionORM
+from vocablens.infrastructure.db.models import (
+    DecisionTraceORM,
+    EventORM,
+    LearningSessionAttemptORM,
+    LearningSessionORM,
+)
 from vocablens.infrastructure.logging.logger import get_logger
 from vocablens.infrastructure.observability.metrics import (
     SESSION_ACTIVE_ALERTS,
@@ -108,6 +113,19 @@ class SessionHealthSignalService:
                     select(LearningSessionORM).where(LearningSessionORM.created_at >= window_start)
                 )
             ).scalars().all()
+            attempts = (
+                await uow.session.execute(
+                    select(LearningSessionAttemptORM).where(LearningSessionAttemptORM.created_at >= window_start)
+                )
+            ).scalars().all()
+            traces = (
+                await uow.session.execute(
+                    select(DecisionTraceORM).where(
+                        DecisionTraceORM.created_at >= window_start,
+                        DecisionTraceORM.trace_type == "session_evaluation",
+                    )
+                )
+            ).scalars().all()
             events = (
                 await uow.session.execute(
                     select(EventORM).where(
@@ -124,11 +142,22 @@ class SessionHealthSignalService:
             await uow.commit()
 
         sessions_started = len(sessions)
+        sessions_by_id = {str(item.session_id): item for item in sessions}
         sessions_completed = sum(1 for item in sessions if str(getattr(item, "status", "") or "") == "completed")
         expired_sessions = sum(1 for item in sessions if str(getattr(item, "status", "") or "") == "expired")
+        attempt_reference_mismatches = 0
+        evaluation_reference_mismatches = 0
         generation_rejections = 0
         stale_contract_rejections = 0
         submission_rejections = 0
+        for attempt in attempts:
+            session = sessions_by_id.get(str(getattr(attempt, "session_id", "") or ""))
+            if session is None or int(getattr(session, "user_id", 0) or 0) != int(getattr(attempt, "user_id", 0) or 0):
+                attempt_reference_mismatches += 1
+        for trace in traces:
+            session = sessions_by_id.get(str(getattr(trace, "reference_id", "") or ""))
+            if session is None or int(getattr(session, "user_id", 0) or 0) != int(getattr(trace, "user_id", 0) or 0):
+                evaluation_reference_mismatches += 1
         for event in events:
             event_type = str(getattr(event, "event_type", "") or "")
             payload = dict(getattr(event, "payload", {}) or {})
@@ -146,6 +175,8 @@ class SessionHealthSignalService:
             "generation_rejections_7d": generation_rejections,
             "submission_rejections_7d": submission_rejections,
             "stale_contract_rejections_7d": stale_contract_rejections,
+            "attempt_reference_mismatches_7d": attempt_reference_mismatches,
+            "evaluation_reference_mismatches_7d": evaluation_reference_mismatches,
             "session_completion_rate_percent": round((sessions_completed / sessions_started) * 100.0, 2) if sessions_started else 100.0,
             "expired_session_rate_percent": round((expired_sessions / sessions_started) * 100.0, 2) if sessions_started else 0.0,
             "submission_rejection_rate_percent": round((submission_rejections / sessions_started) * 100.0, 2) if sessions_started else 0.0,
@@ -157,8 +188,18 @@ class SessionHealthSignalService:
         expired_rate = float(metrics.get("expired_session_rate_percent", 0.0) or 0.0)
         stale_contract_rejections = int(metrics.get("stale_contract_rejections_7d", 0) or 0)
         generation_rejections = int(metrics.get("generation_rejections_7d", 0) or 0)
+        attempt_reference_mismatches = int(metrics.get("attempt_reference_mismatches_7d", 0) or 0)
+        evaluation_reference_mismatches = int(metrics.get("evaluation_reference_mismatches_7d", 0) or 0)
 
         alerts: list[dict[str, Any]] = []
+        if attempt_reference_mismatches > 0 or evaluation_reference_mismatches > 0:
+            alerts.append(
+                {
+                    "code": "session_reference_drift_detected",
+                    "severity": "critical",
+                    "message": "Session attempts or evaluation traces no longer align with canonical session records.",
+                }
+            )
         if generation_rejections > 0:
             alerts.append(
                 {
@@ -251,6 +292,8 @@ class SessionHealthSignalService:
             "expired_session_rate_percent",
             "submission_rejection_rate_percent",
             "stale_contract_rejections_7d",
+            "attempt_reference_mismatches_7d",
+            "evaluation_reference_mismatches_7d",
         ):
             SESSION_HEALTH_RATE.labels(scope_key=scope_key, metric=metric_name).set(
                 float(metrics.get(metric_name, 0.0) or 0.0)
