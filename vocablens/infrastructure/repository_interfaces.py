@@ -573,14 +573,14 @@ class LearningSessionRepository(Protocol):
         user_id: int,
         submission_id: str,
     ) -> Optional[LearningSessionAttempt]: ...
-    async def mark_completed(
+    async def mark_completed_once(
         self,
         *,
         user_id: int,
         session_id: str,
         completed_at: datetime,
-    ) -> LearningSession: ...
-    async def record_attempt(
+    ) -> tuple[LearningSession, bool]: ...
+    async def create_attempt_once(
         self,
         *,
         session_id: str,
@@ -593,7 +593,8 @@ class LearningSessionRepository(Protocol):
         improvement_score: float,
         validation_payload: Dict[str, Any],
         feedback_payload: Dict[str, Any],
-    ) -> LearningSessionAttempt: ...
+    ) -> tuple[LearningSessionAttempt, bool]: ...
+    async def update_attempt_feedback(self, attempt_id: int, *, feedback_payload: Dict[str, Any]) -> LearningSessionAttempt: ...
 
 
 class DecisionTraceRepository(Protocol):

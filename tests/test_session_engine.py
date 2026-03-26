@@ -16,8 +16,9 @@ class FakeUOW:
             create=self._create_session,
             get=self._get_session,
             get_attempt_by_submission=self._get_attempt_by_submission,
-            record_attempt=self._record_attempt,
-            mark_completed=self._mark_completed,
+            create_attempt_once=self._create_attempt_once,
+            update_attempt_feedback=self._update_attempt_feedback,
+            mark_completed_once=self._mark_completed_once,
             mark_expired=self._mark_expired,
         )
         self.events = SimpleNamespace(record=self._record_event, records=[])
@@ -63,9 +64,24 @@ class FakeUOW:
             return None
         return session
 
-    async def _record_attempt(self, **kwargs):
-        self.attempts.append(kwargs)
-        return SimpleNamespace(id=len(self.attempts), created_at=None, **kwargs)
+    async def _create_attempt_once(self, **kwargs):
+        existing = await self._get_attempt_by_submission(
+            session_id=kwargs["session_id"],
+            user_id=kwargs["user_id"],
+            submission_id=kwargs["submission_id"],
+        )
+        if existing is not None:
+            return existing, False
+        attempt = {"id": len(self.attempts) + 1, **kwargs}
+        self.attempts.append(attempt)
+        return SimpleNamespace(created_at=None, **attempt), True
+
+    async def _update_attempt_feedback(self, attempt_id: int, *, feedback_payload: dict):
+        for attempt in self.attempts:
+            if attempt["id"] == attempt_id:
+                attempt["feedback_payload"] = dict(feedback_payload)
+                return SimpleNamespace(created_at=None, **attempt)
+        raise AssertionError(f"missing attempt {attempt_id}")
 
     async def _get_attempt_by_submission(self, *, session_id: str, user_id: int, submission_id: str):
         for attempt in self.attempts:
@@ -74,17 +90,19 @@ class FakeUOW:
                 and attempt["user_id"] == user_id
                 and attempt["submission_id"] == submission_id
             ):
-                return SimpleNamespace(id=1, created_at=None, **attempt)
+                return SimpleNamespace(created_at=None, **attempt)
         return None
 
-    async def _mark_completed(self, *, user_id: int, session_id: str, completed_at):
+    async def _mark_completed_once(self, *, user_id: int, session_id: str, completed_at):
         session = self.created_sessions[session_id]
+        if session.status != "active":
+            return session, False
         session.status = "completed"
         session.completed_at = completed_at
         session.last_evaluated_at = completed_at
         session.evaluation_count += 1
         self.completed_sessions.append(session_id)
-        return session
+        return session, True
 
     async def _mark_expired(self, *, user_id: int, session_id: str, expired_at):
         session = self.created_sessions[session_id]
@@ -314,6 +332,7 @@ def test_session_engine_persists_server_owned_session_and_evaluates_by_session_i
     assert uow.created_sessions[started["session_id"]].contract_version == "v2"
     assert uow.attempts[0]["session_id"] == started["session_id"]
     assert uow.attempts[0]["submission_id"] == "submit_12345678"
+    assert uow.attempts[0]["feedback_payload"]["knowledge_update"]["reviewed_count"] == 1
     assert started["session_id"] in uow.completed_sessions
     assert uow.events.records[-1][1] == "lesson_completed"
     assert uow.decision_traces.records[-1]["trace_type"] == "session_evaluation"
@@ -358,6 +377,52 @@ def test_session_engine_replays_same_submission_idempotently():
 
     assert len(uow.attempts) == 1
     assert first.corrected_response == second.corrected_response
+
+
+def test_session_engine_rejects_distinct_submission_after_completion():
+    recommendation = SimpleNamespace(
+        action="practice_grammar",
+        target="grammar",
+        reason="Grammar skill below threshold",
+        skill_focus="grammar",
+    )
+    uow = FakeUOW()
+    event_service = FakeEventService()
+    engine = SessionEngine(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeWowEngine(),
+        FakeGamificationService(),
+        event_service=event_service,
+    )
+
+    started = run_async(engine.start_session(7))
+    run_async(
+        engine.evaluate_session(
+            7,
+            started["session_id"],
+            "I goed there yesterday",
+            submission_id="submit_original",
+            contract_version=started["contract_version"],
+        )
+    )
+
+    try:
+        run_async(
+            engine.evaluate_session(
+                7,
+                started["session_id"],
+                "I went there yesterday",
+                submission_id="submit_second",
+                contract_version=started["contract_version"],
+            )
+        )
+        assert False, "expected completed session conflict"
+    except ConflictError as exc:
+        assert "completed" in str(exc)
+
+    assert len(uow.attempts) == 1
+    assert event_service.events[-1][2]["reason"] == "already_completed"
 
 
 def test_session_engine_rejects_stale_contract_and_long_submission():

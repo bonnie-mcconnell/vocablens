@@ -316,14 +316,7 @@ class SessionEngine:
         }
 
         async with self._uow_factory() as uow:
-            summary = await self._learning_engine.apply_session_result(
-                user_id,
-                evaluation.session_result,
-                source="session_engine",
-                uow=uow,
-                reference_id=session_id,
-            )
-            await uow.learning_sessions.record_attempt(
+            attempt, created = await uow.learning_sessions.create_attempt_once(
                 session_id=session_id,
                 user_id=user_id,
                 submission_id=submission_id,
@@ -333,6 +326,35 @@ class SessionEngine:
                 is_correct=feedback.is_correct,
                 improvement_score=feedback.improvement_score,
                 validation_payload=validation,
+                feedback_payload=feedback_payload,
+            )
+            if not created:
+                await uow.commit()
+                return self.feedback_from_payload(attempt.feedback_payload)
+
+            completed_session, completed_now = await uow.learning_sessions.mark_completed_once(
+                user_id=user_id,
+                session_id=session_id,
+                completed_at=utc_now(),
+            )
+            if not completed_now:
+                await self._track_rejection(
+                    user_id=user_id,
+                    event_type="session_submission_rejected",
+                    reason="already_completed",
+                    session_id=session_id,
+                )
+                raise ConflictError("Session already completed")
+
+            summary = await self._learning_engine.apply_session_result(
+                user_id,
+                evaluation.session_result,
+                source="session_engine",
+                uow=uow,
+                reference_id=session_id,
+            )
+            await uow.learning_sessions.update_attempt_feedback(
+                attempt.id,
                 feedback_payload={
                     **feedback_payload,
                     "knowledge_update": {
@@ -341,11 +363,6 @@ class SessionEngine:
                         "updated_item_ids": summary.updated_item_ids,
                     },
                 },
-            )
-            await uow.learning_sessions.mark_completed(
-                user_id=user_id,
-                session_id=session_id,
-                completed_at=utc_now(),
             )
             await uow.events.record(
                 user_id=user_id,
@@ -388,6 +405,7 @@ class SessionEngine:
                     "improvement_score": feedback.improvement_score,
                     "highlighted_mistakes": list(feedback.highlighted_mistakes),
                     "recommended_next_step": feedback.recommended_next_step,
+                    "session_status": completed_session.status,
                 },
                 reason="Evaluated the stored structured session and completed canonical state projection.",
             )

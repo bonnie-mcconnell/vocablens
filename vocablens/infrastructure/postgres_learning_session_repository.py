@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from vocablens.domain.models import LearningSession, LearningSessionAttempt
 from vocablens.infrastructure.db.models import LearningSessionAttemptORM, LearningSessionORM
@@ -125,12 +126,13 @@ class PostgresLearningSessionRepository:
         row = result.scalar_one_or_none()
         return _map_attempt(row) if row is not None else None
 
-    async def mark_completed(self, *, user_id: int, session_id: str, completed_at) -> LearningSession:
-        await self.session.execute(
+    async def mark_completed_once(self, *, user_id: int, session_id: str, completed_at) -> tuple[LearningSession, bool]:
+        result = await self.session.execute(
             update(LearningSessionORM)
             .where(
                 LearningSessionORM.user_id == user_id,
                 LearningSessionORM.session_id == session_id,
+                LearningSessionORM.status == "active",
             )
             .values(
                 status="completed",
@@ -138,14 +140,18 @@ class PostgresLearningSessionRepository:
                 last_evaluated_at=completed_at,
                 evaluation_count=LearningSessionORM.evaluation_count + 1,
             )
+            .returning(LearningSessionORM)
         )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            return _map_session(row), True
         result = await self.session.execute(
             select(LearningSessionORM).where(
                 LearningSessionORM.user_id == user_id,
                 LearningSessionORM.session_id == session_id,
             )
         )
-        return _map_session(result.scalar_one())
+        return _map_session(result.scalar_one()), False
 
     async def mark_expired(self, *, user_id: int, session_id: str, expired_at) -> LearningSession:
         await self.session.execute(
@@ -167,7 +173,7 @@ class PostgresLearningSessionRepository:
         )
         return _map_session(result.scalar_one())
 
-    async def record_attempt(
+    async def create_attempt_once(
         self,
         *,
         session_id: str,
@@ -180,21 +186,41 @@ class PostgresLearningSessionRepository:
         improvement_score: float,
         validation_payload: dict,
         feedback_payload: dict,
-    ) -> LearningSessionAttempt:
-        result = await self.session.execute(
-            insert(LearningSessionAttemptORM)
-            .values(
+    ) -> tuple[LearningSessionAttempt, bool]:
+        try:
+            result = await self.session.execute(
+                insert(LearningSessionAttemptORM)
+                .values(
+                    session_id=session_id,
+                    user_id=user_id,
+                    submission_id=submission_id,
+                    learner_response=learner_response,
+                    response_word_count=response_word_count,
+                    response_char_count=response_char_count,
+                    is_correct=is_correct,
+                    improvement_score=improvement_score,
+                    validation_payload=dict(validation_payload),
+                    feedback_payload=dict(feedback_payload),
+                )
+                .returning(LearningSessionAttemptORM)
+            )
+            return _map_attempt(result.scalar_one()), True
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get_attempt_by_submission(
                 session_id=session_id,
                 user_id=user_id,
                 submission_id=submission_id,
-                learner_response=learner_response,
-                response_word_count=response_word_count,
-                response_char_count=response_char_count,
-                is_correct=is_correct,
-                improvement_score=improvement_score,
-                validation_payload=dict(validation_payload),
-                feedback_payload=dict(feedback_payload),
             )
+            if existing is None:
+                raise
+            return existing, False
+
+    async def update_attempt_feedback(self, attempt_id: int, *, feedback_payload: dict) -> LearningSessionAttempt:
+        result = await self.session.execute(
+            update(LearningSessionAttemptORM)
+            .where(LearningSessionAttemptORM.id == attempt_id)
+            .values(feedback_payload=dict(feedback_payload))
             .returning(LearningSessionAttemptORM)
         )
         return _map_attempt(result.scalar_one())
