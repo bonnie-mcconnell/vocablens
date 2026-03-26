@@ -73,6 +73,14 @@ class FakeEventsRepo:
         return self._events[:limit]
 
 
+class FakeEngagementStatesRepo:
+    def __init__(self, total_sessions: int = 0):
+        self.row = SimpleNamespace(total_sessions=total_sessions)
+
+    async def get_or_create(self, user_id: int):
+        return self.row
+
+
 class FakeSubscriptionEventsRepo:
     def __init__(self):
         self.events = []
@@ -88,10 +96,18 @@ class FakeSubscriptionEventsRepo:
 
 
 class FakeUOW:
-    def __init__(self, subscription=None, used_requests: int = 0, used_tokens: int = 0, events=None):
+    def __init__(
+        self,
+        subscription=None,
+        used_requests: int = 0,
+        used_tokens: int = 0,
+        events=None,
+        total_sessions: int = 0,
+    ):
         self.subscriptions = FakeSubscriptionsRepo(subscription)
         self.usage_logs = FakeUsageLogsRepo(used_requests, used_tokens)
         self.events = FakeEventsRepo(events)
+        self.engagement_states = FakeEngagementStatesRepo(total_sessions=total_sessions)
         self.subscription_events = FakeSubscriptionEventsRepo()
         self.monetization_states = FakeMonetizationStatesRepo()
         self.monetization_offer_events = FakeMonetizationOfferEventsRepo()
@@ -179,6 +195,7 @@ def test_paywall_trigger_correctness_for_sessions_usage_and_wow_moment():
         used_requests=80,
         used_tokens=1000,
         events=events,
+        total_sessions=3,
     )
     service = PaywallService(lambda: uow, tracker)
 

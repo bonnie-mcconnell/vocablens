@@ -72,14 +72,33 @@ class FakeProfilesRepo:
         return self.profile
 
 
+class FakeEngagementStatesRepo:
+    def __init__(self, total_sessions: int = 0):
+        self.row = SimpleNamespace(total_sessions=total_sessions)
+
+    async def get_or_create(self, user_id: int):
+        return self.row
+
+
 class FakeUOW:
-    def __init__(self, *, subscription=None, events=None, since_events=None, used_requests=0, used_tokens=0, profile=None):
+    def __init__(
+        self,
+        *,
+        subscription=None,
+        events=None,
+        since_events=None,
+        used_requests=0,
+        used_tokens=0,
+        profile=None,
+        total_sessions: int = 0,
+    ):
         self.subscriptions = FakeSubscriptionsRepo(subscription)
         self.events = FakeEventsRepo(events, since_events)
         self.usage_logs = FakeUsageLogsRepo(used_requests, used_tokens)
         self.profiles = FakeProfilesRepo(
             profile or SimpleNamespace(drop_off_risk=0.2, session_frequency=3.0)
         )
+        self.engagement_states = FakeEngagementStatesRepo(total_sessions=total_sessions)
         self.monetization_states = FakeMonetizationStatesRepo()
         self.monetization_offer_events = FakeMonetizationOfferEventsRepo()
         self.monetization_health_states = FakeMonetizationHealthStatesRepo()
@@ -181,6 +200,7 @@ def test_adaptive_paywall_service_is_more_aggressive_for_high_intent_users():
         events=events,
         used_requests=45,
         profile=SimpleNamespace(drop_off_risk=0.15, session_frequency=4.2),
+        total_sessions=4,
     )
     service = AdaptivePaywallService(
         lambda: uow,
@@ -220,6 +240,7 @@ def test_adaptive_paywall_service_delays_paywall_for_low_engagement_users():
         events=events,
         used_requests=45,
         profile=SimpleNamespace(drop_off_risk=0.6, session_frequency=0.8),
+        total_sessions=1,
     )
     service = AdaptivePaywallService(
         lambda: uow,
@@ -314,6 +335,7 @@ def test_adaptive_paywall_service_uses_wow_score_for_trial_and_upsell_recommenda
         events=[],
         used_requests=10,
         profile=SimpleNamespace(drop_off_risk=0.2, session_frequency=2.2),
+        total_sessions=2,
     )
     service = AdaptivePaywallService(lambda: uow, tracker)
 

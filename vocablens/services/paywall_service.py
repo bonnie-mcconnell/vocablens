@@ -52,8 +52,9 @@ class PaywallService:
     ) -> PaywallDecision:
         async with self._uow_factory() as uow:
             subscription = await uow.subscriptions.get_by_user(user_id)
-            events = await uow.events.list_by_user(user_id, limit=200)
             used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            monetization_state = await uow.monetization_states.get_or_create(user_id)
             await uow.commit()
 
         tier = (subscription.tier if subscription else "free").lower()
@@ -71,6 +72,9 @@ class PaywallService:
             trial_active = False
 
         resolved_wow_moment = wow_moment or float(wow_score or 0.0) >= 0.65
+        sessions_seen = int(getattr(engagement_state, "total_sessions", 0) or 0)
+        cooldown_until = getattr(monetization_state, "cooldown_until", None)
+        in_cooldown = bool(cooldown_until and cooldown_until > utc_now())
 
         if tier != "free" or trial_active:
             return self._decision(
@@ -81,15 +85,13 @@ class PaywallService:
                 used_tokens=used_tokens,
                 request_limit=request_limit,
                 token_limit=token_limit,
-                sessions_seen=self._session_count(events),
+                sessions_seen=sessions_seen,
                 wow_moment_triggered=resolved_wow_moment,
                 trial_active=trial_active,
                 trial_tier=trial_tier,
                 trial_ends_at=trial_ends_at,
                 allow_access=True,
             )
-
-        sessions_seen = self._session_count(events)
         usage_ratio = max(
             self._ratio(used_requests, request_limit),
             self._ratio(used_tokens, token_limit),
@@ -97,7 +99,23 @@ class PaywallService:
         request_ratio = self._ratio(used_requests, request_limit)
         token_ratio = self._ratio(used_tokens, token_limit)
 
-        if usage_ratio >= self._usage_hard_threshold:
+        if in_cooldown and usage_ratio < self._usage_hard_threshold:
+            decision = self._decision(
+                show_paywall=False,
+                paywall_type=None,
+                reason="paywall cooldown active",
+                used_requests=used_requests,
+                used_tokens=used_tokens,
+                request_limit=request_limit,
+                token_limit=token_limit,
+                sessions_seen=sessions_seen,
+                wow_moment_triggered=resolved_wow_moment,
+                trial_active=False,
+                trial_tier=None,
+                trial_ends_at=None,
+                allow_access=True,
+            )
+        elif usage_ratio >= self._usage_hard_threshold:
             decision = self._decision(
                 show_paywall=True,
                 paywall_type="hard_paywall",
@@ -189,9 +207,6 @@ class PaywallService:
                 "upgrade_completed",
                 {"source": source, "tier": tier},
             )
-
-    def _session_count(self, events) -> int:
-        return sum(1 for event in events if getattr(event, "event_type", None) == "session_started")
 
     def _ratio(self, used: int, limit: int) -> float:
         if limit <= 0:

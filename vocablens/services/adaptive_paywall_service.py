@@ -67,9 +67,10 @@ class AdaptivePaywallService(PaywallService):
     ) -> AdaptivePaywallDecision:
         async with self._uow_factory() as uow:
             subscription = await uow.subscriptions.get_by_user(user_id)
-            events = await uow.events.list_by_user(user_id, limit=250)
             used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
             profile = await uow.profiles.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            monetization_state = await uow.monetization_states.get_or_create(user_id)
             await uow.commit()
 
         tier = (subscription.tier if subscription else "free").lower()
@@ -86,15 +87,17 @@ class AdaptivePaywallService(PaywallService):
             trial_ends_at = None
             trial_active = False
 
-        sessions_seen = self._session_count(events)
+        sessions_seen = int(getattr(engagement_state, "total_sessions", 0) or 0)
         request_ratio = self._ratio(used_requests, request_limit)
         token_ratio = self._ratio(used_tokens, token_limit)
         usage_ratio = max(request_ratio, token_ratio)
 
         resolved_wow_moment = wow_moment or float(wow_score or 0.0) >= 0.65
         wow_value = round(float(wow_score or 0.0), 3)
+        cooldown_until = getattr(monetization_state, "cooldown_until", None)
+        in_cooldown = bool(cooldown_until and cooldown_until > utc_now())
         user_segment = self._policy.segment_user(
-            events=events,
+            monetization_state=monetization_state,
             profile=profile,
             sessions_seen=sessions_seen,
             usage_ratio=usage_ratio,
@@ -142,7 +145,23 @@ class AdaptivePaywallService(PaywallService):
                 upsell_recommended=False,
             )
 
-        if usage_ratio >= thresholds["hard_usage_threshold"]:
+        if in_cooldown and usage_ratio < thresholds["hard_usage_threshold"]:
+            decision = self._decision(
+                show_paywall=False,
+                paywall_type=None,
+                reason="paywall cooldown active",
+                used_requests=used_requests,
+                used_tokens=used_tokens,
+                request_limit=request_limit,
+                token_limit=token_limit,
+                sessions_seen=sessions_seen,
+                wow_moment_triggered=resolved_wow_moment,
+                trial_active=False,
+                trial_tier=None,
+                trial_ends_at=None,
+                allow_access=True,
+            )
+        elif usage_ratio >= thresholds["hard_usage_threshold"]:
             decision = self._decision(
                 show_paywall=True,
                 paywall_type="hard_paywall",

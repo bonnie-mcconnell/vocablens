@@ -5,15 +5,15 @@ class AdaptivePaywallPolicy:
     def segment_user(
         self,
         *,
-        events,
+        monetization_state,
         profile,
         sessions_seen: int,
         usage_ratio: float,
         wow_moment: bool,
         wow_score: float,
     ) -> str:
-        viewed_paywall = any(getattr(event, "event_type", None) == "paywall_viewed" for event in events)
-        clicked_upgrade = any(getattr(event, "event_type", None) == "upgrade_clicked" for event in events)
+        viewed_paywall = int(getattr(monetization_state, "paywall_impressions", 0) or 0) > 0
+        clicked_upgrade = int(getattr(monetization_state, "paywall_acceptances", 0) or 0) > 0
         drop_off_risk = float(getattr(profile, "drop_off_risk", 0.0) or 0.0)
         session_frequency = float(getattr(profile, "session_frequency", 0.0) or 0.0)
         if clicked_upgrade or viewed_paywall or wow_moment or wow_score >= 0.72 or usage_ratio >= 0.55 or sessions_seen >= 4:
