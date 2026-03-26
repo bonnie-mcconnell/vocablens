@@ -10,6 +10,7 @@ from vocablens.domain.errors import NotFoundError
 from vocablens.infrastructure.db.models import (
     DailyMissionORM,
     ExperimentAssignmentORM,
+    LearningSessionORM,
     LifecycleTransitionORM,
     NotificationDeliveryORM,
     NotificationPolicyRegistryORM,
@@ -123,6 +124,42 @@ class DecisionTraceService:
             "attempts": [self._attempt_payload(attempt) for attempt in attempts],
             "events": related_events,
             "traces": [self._trace_payload(trace) for trace in traces],
+        }
+
+    async def session_report(self, user_id: int) -> dict:
+        async with self._uow_factory() as uow:
+            session_row = (
+                await uow.session.execute(
+                    select(LearningSessionORM)
+                    .where(LearningSessionORM.user_id == user_id)
+                    .order_by(LearningSessionORM.created_at.desc(), LearningSessionORM.session_id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            await uow.commit()
+
+        if session_row is None:
+            raise NotFoundError("Session not found")
+
+        detail = await self.session_detail(session_row.session_id)
+        attempts = list(detail.get("attempts", []))
+        events = list(detail.get("events", []))
+        traces = list(detail.get("traces", []))
+        rejection_events = [
+            event
+            for event in events
+            if str(event.get("event_type") or "") == "session_submission_rejected"
+        ]
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "latest_session": detail.get("session"),
+                "latest_attempt": attempts[-1] if attempts else None,
+                "latest_evaluation": self._latest_trace_payload_from_dicts(traces, trace_type="session_evaluation"),
+                "latest_rejection": rejection_events[-1] if rejection_events else None,
+            },
+            "event_summary": self._event_summary_payload(events),
+            "trace_summary": self._trace_summary_payload(traces),
         }
 
     async def onboarding_detail(self, user_id: int) -> dict:

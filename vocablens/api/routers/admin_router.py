@@ -57,6 +57,7 @@ from vocablens.api.schemas import (
     OnboardingDiagnosticsResponse,
     RetentionAnalyticsResponse,
     SessionHealthDashboardResponse,
+    SessionOperatorReportResponse,
     UsageAnalyticsResponse,
 )
 from vocablens.domain.errors import NotFoundError, ValidationError
@@ -535,6 +536,24 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.sessions.health_report"},
+        }
+
+    @router.get("/sessions/{user_id}/report", response_model=SessionOperatorReportResponse)
+    async def session_report(
+        user_id: int,
+        _: str = Depends(get_admin_token),
+        service: DecisionTraceService = Depends(get_decision_trace_service),
+    ):
+        try:
+            detail = await service.session_report(user_id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.sessions.report",
+                "user_id": user_id,
+            },
         }
 
     @router.get("/learning/health/report", response_model=LearningHealthDashboardResponse)

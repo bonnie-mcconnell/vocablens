@@ -1390,6 +1390,12 @@ class FakeDecisionTraceService:
             ],
             "events": [
                 {
+                    "id": 20,
+                    "event_type": "session_submission_rejected",
+                    "payload": {"session_id": reference_id, "reason": "stale_contract"},
+                    "created_at": "2026-03-23T11:59:00",
+                },
+                {
                     "id": 21,
                     "event_type": "session_ended",
                     "payload": {"session_id": reference_id, "improvement_score": 0.74},
@@ -1410,6 +1416,31 @@ class FakeDecisionTraceService:
                     "created_at": "2026-03-23T12:00:00",
                 }
             ],
+        }
+
+    async def session_report(self, user_id: int):
+        detail = await self.session_detail("sess_123")
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "latest_session": detail["session"],
+                "latest_attempt": detail["attempts"][0],
+                "latest_evaluation": detail["traces"][0],
+                "latest_rejection": detail["events"][0],
+            },
+            "event_summary": {
+                "total_events": 2,
+                "counts_by_type": {
+                    "session_ended": 1,
+                    "session_submission_rejected": 1,
+                },
+                "latest_event_at": "2026-03-23T12:00:00",
+            },
+            "trace_summary": {
+                "total_traces": 1,
+                "counts_by_type": {"session_evaluation": 1},
+                "latest_trace_at": "2026-03-23T12:00:00",
+            },
         }
 
     async def onboarding_detail(self, user_id: int):
@@ -2473,6 +2504,10 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/sessions/health/report?limit=10",
         headers={"X-Admin-Token": "secret"},
     )
+    session_report = client.get(
+        "/admin/sessions/1/report",
+        headers={"X-Admin-Token": "secret"},
+    )
     learning_health_report = client.get(
         "/admin/learning/health/report?limit=10",
         headers={"X-Admin-Token": "secret"},
@@ -2554,6 +2589,12 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert notification_policy_report.json()["data"]["health"]["alerts"][0]["code"] == "failed_delivery_rate_high"
     assert notification_policy_report.json()["data"]["delivery_summary"]["counts_by_status"]["sent"] == 1
     assert notification_policy_report.json()["data"]["version_summary"][0]["policy_version"] == "v1"
+    assert session_report.status_code == 200
+    assert session_report.json()["meta"]["source"] == "admin.sessions.report"
+    assert session_report.json()["data"]["latest_decisions"]["latest_session"]["contract_version"] == "v2"
+    assert session_report.json()["data"]["latest_decisions"]["latest_attempt"]["submission_id"] == "submit_12345678"
+    assert session_report.json()["data"]["latest_decisions"]["latest_rejection"]["payload"]["reason"] == "stale_contract"
+    assert session_report.json()["data"]["trace_summary"]["counts_by_type"]["session_evaluation"] == 1
     assert traces.status_code == 200
     assert traces.json()["meta"]["source"] == "admin.decision_traces"
     assert traces.json()["meta"]["filters"]["trace_type"] == "session_evaluation"
@@ -2564,7 +2605,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert detail.json()["data"]["evaluation"]["trace_type"] == "session_evaluation"
     assert detail.json()["data"]["evaluation"]["recommended_next_step"] == "retry_with_correction"
     assert detail.json()["data"]["attempts"][0]["learner_response"] == "I goed there yesterday"
-    assert detail.json()["data"]["events"][0]["event_type"] == "session_ended"
+    assert detail.json()["data"]["events"][0]["event_type"] == "session_submission_rejected"
     assert detail.json()["data"]["traces"][0]["trace_type"] == "session_evaluation"
     assert onboarding.status_code == 200
     assert onboarding.json()["meta"]["source"] == "admin.onboarding.detail"

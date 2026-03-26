@@ -824,6 +824,30 @@ class DecisionTraceDetailResponse(BaseModel):
     meta: DecisionTraceDetailMetaResponse
 
 
+class SessionOperatorLatestDecisionsResponse(BaseModel):
+    latest_session: SessionDiagnosticsResponse | None = None
+    latest_attempt: SessionAttemptDiagnosticsResponse | None = None
+    latest_evaluation: DecisionTraceRecordResponse | None = None
+    latest_rejection: SessionEventDiagnosticsResponse | None = None
+
+
+class SessionOperatorReportDataResponse(BaseModel):
+    detail: DecisionTraceDetailDataResponse
+    latest_decisions: SessionOperatorLatestDecisionsResponse
+    event_summary: "DiagnosticsEventSummaryResponse"
+    trace_summary: "DiagnosticsTraceSummaryResponse"
+
+
+class SessionOperatorReportMetaResponse(BaseModel):
+    source: Literal["admin.sessions.report"]
+    user_id: int
+
+
+class SessionOperatorReportResponse(BaseModel):
+    data: SessionOperatorReportDataResponse
+    meta: SessionOperatorReportMetaResponse
+
+
 class OnboardingDiagnosticsStateResponse(BaseModel):
     current_step: str
     steps_completed: list[str] = Field(default_factory=list)

@@ -6,6 +6,120 @@ class StubDecisionTraceService(DecisionTraceService):
     def __init__(self):
         super().__init__(lambda: None)
 
+    async def session_detail(self, reference_id: str) -> dict:
+        return {
+            "session": {
+                "session_id": reference_id,
+                "user_id": 13,
+                "status": "completed",
+                "contract_version": "v2",
+                "duration_seconds": 220,
+                "mode": "game_round",
+                "weak_area": "grammar",
+                "lesson_target": "past tense",
+                "goal_label": "Fix one grammar pattern cleanly",
+                "success_criteria": "Use the corrected form.",
+                "review_window_minutes": 15,
+                "max_response_words": 12,
+                "session_payload": {"phases": [{"name": "warmup"}, {"name": "core_challenge"}]},
+                "created_at": "2026-03-23T11:58:00",
+                "expires_at": "2026-03-23T12:13:00",
+                "completed_at": "2026-03-23T12:00:00",
+                "last_evaluated_at": "2026-03-23T12:00:00",
+                "evaluation_count": 1,
+            },
+            "evaluation": {
+                "trace_type": "session_evaluation",
+                "source": "session_engine",
+                "is_correct": False,
+                "improvement_score": 0.74,
+                "highlighted_mistakes": ["past_tense_irregular"],
+                "recommended_next_step": "retry_with_correction",
+                "reason": "Evaluated the stored structured session and completed canonical state projection.",
+                "created_at": "2026-03-23T12:00:00",
+            },
+            "attempts": [
+                {
+                    "id": 7,
+                    "session_id": reference_id,
+                    "user_id": 13,
+                    "submission_id": "submit_12345678",
+                    "learner_response": "I goed there yesterday",
+                    "response_word_count": 4,
+                    "response_char_count": 23,
+                    "is_correct": False,
+                    "improvement_score": 0.74,
+                    "validation_payload": {"response_word_count": 4, "max_response_words": 12},
+                    "feedback_payload": {"corrected_response": "I went there yesterday."},
+                    "created_at": "2026-03-23T12:00:00",
+                }
+            ],
+            "events": [
+                {
+                    "id": 20,
+                    "event_type": "session_submission_rejected",
+                    "payload": {"session_id": reference_id, "reason": "stale_contract"},
+                    "created_at": "2026-03-23T11:59:00",
+                },
+                {
+                    "id": 21,
+                    "event_type": "session_ended",
+                    "payload": {"session_id": reference_id, "improvement_score": 0.74},
+                    "created_at": "2026-03-23T12:00:00",
+                },
+            ],
+            "traces": [
+                {
+                    "id": 3,
+                    "user_id": 13,
+                    "trace_type": "session_evaluation",
+                    "source": "session_engine",
+                    "reference_id": reference_id,
+                    "policy_version": "v1",
+                    "inputs": {"learner_response": "I goed there yesterday"},
+                    "outputs": {"improvement_score": 0.74},
+                    "reason": "Evaluated the stored structured session and completed canonical state projection.",
+                    "created_at": "2026-03-23T12:00:00",
+                }
+            ],
+        }
+
+    async def session_report(self, user_id: int) -> dict:
+        detail = await self.session_detail(f"sess_{user_id}")
+        attempts = list(detail["attempts"])
+        events = list(detail["events"])
+        traces = list(detail["traces"])
+        rejection_events = [
+            event
+            for event in events
+            if event["event_type"] == "session_submission_rejected"
+        ]
+        return {
+            "detail": detail,
+            "latest_decisions": {
+                "latest_session": detail["session"],
+                "latest_attempt": attempts[-1] if attempts else None,
+                "latest_evaluation": traces[0] if traces else None,
+                "latest_rejection": rejection_events[-1] if rejection_events else None,
+            },
+            "event_summary": {
+                "total_events": len(events),
+                "counts_by_type": {
+                    event["event_type"]: sum(1 for item in events if item["event_type"] == event["event_type"])
+                    for event in events
+                },
+                "latest_event_at": events[-1]["created_at"] if events else None,
+            },
+            "trace_summary": {
+                "total_traces": len(traces),
+                "counts_by_type": {
+                    trace["trace_type"]: sum(1 for item in traces if item["trace_type"] == trace["trace_type"])
+                    for trace in traces
+                },
+                "latest_trace_at": traces[-1]["created_at"] if traces else None,
+            },
+        }
+
     async def lifecycle_detail(self, user_id: int) -> dict:
         return {
             "lifecycle_transitions": [
@@ -340,3 +454,15 @@ def test_notification_report_promotes_policy_delivery_and_suppression_artifacts(
     assert report["latest_decisions"]["latest_delivery"]["status"] == "sent"
     assert report["delivery_summary"]["counts_by_status"]["skipped"] == 1
     assert report["suppression_summary"]["counts_by_type"]["lifecycle_notification_suppressed"] == 1
+
+
+def test_session_report_promotes_latest_session_attempt_and_trace():
+    service = StubDecisionTraceService()
+
+    report = run_async(service.session_report(13))
+
+    assert report["latest_decisions"]["latest_session"]["session_id"] == "sess_13"
+    assert report["latest_decisions"]["latest_attempt"]["submission_id"] == "submit_12345678"
+    assert report["latest_decisions"]["latest_evaluation"]["trace_type"] == "session_evaluation"
+    assert report["event_summary"]["counts_by_type"]["session_ended"] == 1
+    assert report["trace_summary"]["counts_by_type"]["session_evaluation"] == 1
