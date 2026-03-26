@@ -118,10 +118,23 @@ class StubDecisionTraceService(DecisionTraceService):
                 },
                 "latest_trace_at": traces[-1]["created_at"] if traces else None,
             },
+            "consistency": self._session_consistency_payload(detail),
         }
 
     async def lifecycle_detail(self, user_id: int) -> dict:
         return {
+            "lifecycle_state": {
+                "user_id": user_id,
+                "current_stage": "activating",
+                "previous_stage": "new_user",
+                "current_reasons": ["user is building toward activation"],
+                "entered_at": "2026-03-23T12:04:30",
+                "last_transition_at": "2026-03-23T12:04:30",
+                "last_transition_source": "lifecycle_service.evaluate",
+                "last_transition_reference_id": f"lifecycle:{user_id}",
+                "transition_count": 1,
+                "updated_at": "2026-03-23T12:04:30",
+            },
             "notification_eligibility": {
                 "lifecycle_stage": "activating",
                 "lifecycle_reasons": ["user is building toward activation"],
@@ -456,6 +469,7 @@ def test_lifecycle_report_promotes_latest_artifacts_and_summaries():
     assert report["latest_decisions"]["notification_eligibility"]["state_aligned"] is True
     assert report["event_summary"]["counts_by_type"]["paywall_viewed"] == 1
     assert report["trace_summary"]["counts_by_type"]["lifecycle_decision"] == 1
+    assert report["consistency"]["status"] == "ok"
 
 
 def test_monetization_report_promotes_latest_artifacts_and_summaries():
@@ -466,6 +480,7 @@ def test_monetization_report_promotes_latest_artifacts_and_summaries():
     assert report["latest_decisions"]["monetization_decision"]["trace_type"] == "monetization_decision"
     assert report["latest_decisions"]["latest_monetization_event"]["event_type"] == "decision_evaluated"
     assert report["monetization_event_summary"]["counts_by_type"]["decision_evaluated"] == 1
+    assert report["consistency"]["status"] == "ok"
 
 
 def test_daily_loop_report_promotes_latest_artifacts_and_summaries():
@@ -477,6 +492,7 @@ def test_daily_loop_report_promotes_latest_artifacts_and_summaries():
     assert report["latest_decisions"]["reward_chest_resolution"]["trace_type"] == "reward_chest_resolution"
     assert report["latest_decisions"]["latest_mission"]["status"] == "completed"
     assert report["reward_chest_summary"]["counts_by_status"]["unlocked"] == 1
+    assert report["consistency"]["status"] == "ok"
 
 
 def test_notification_report_promotes_policy_delivery_and_suppression_artifacts():
@@ -490,6 +506,7 @@ def test_notification_report_promotes_policy_delivery_and_suppression_artifacts(
     assert report["latest_decisions"]["latest_delivery"]["status"] == "sent"
     assert report["delivery_summary"]["counts_by_status"]["skipped"] == 1
     assert report["suppression_summary"]["counts_by_type"]["lifecycle_notification_suppressed"] == 1
+    assert report["consistency"]["status"] == "ok"
 
 
 def test_session_report_promotes_latest_session_attempt_and_trace():
@@ -502,3 +519,41 @@ def test_session_report_promotes_latest_session_attempt_and_trace():
     assert report["latest_decisions"]["latest_evaluation"]["trace_type"] == "session_evaluation"
     assert report["event_summary"]["counts_by_type"]["session_ended"] == 1
     assert report["trace_summary"]["counts_by_type"]["session_evaluation"] == 1
+    assert report["consistency"]["status"] == "ok"
+
+
+def test_session_report_surfaces_reference_mismatch():
+    class MismatchService(StubDecisionTraceService):
+        async def session_detail(self, reference_id: str) -> dict:
+            payload = await super().session_detail(reference_id)
+            payload["attempts"][0]["session_id"] = "sess_other"
+            payload["traces"][0]["reference_id"] = "sess_other"
+            return payload
+
+    service = MismatchService()
+
+    report = run_async(service.session_report(13))
+
+    assert report["consistency"]["status"] == "mismatch_detected"
+    assert report["consistency"]["issue_count"] == 2
+    codes = {item["code"] for item in report["consistency"]["issues"]}
+    assert "session_attempt_reference_mismatch" in codes
+    assert "session_evaluation_reference_mismatch" in codes
+
+
+def test_notification_report_surfaces_reference_mismatch():
+    class MismatchService(StubDecisionTraceService):
+        async def notification_detail(self, user_id: int, *, policy_key: str = "default") -> dict:
+            payload = await super().notification_detail(user_id, policy_key=policy_key)
+            payload["notification_state"]["last_reference_id"] = "other_ref"
+            payload["notification_deliveries"][0]["reference_id"] = "other_ref"
+            return payload
+
+    service = MismatchService()
+
+    report = run_async(service.notification_report(11))
+
+    assert report["consistency"]["status"] == "mismatch_detected"
+    codes = {item["code"] for item in report["consistency"]["issues"]}
+    assert "notification_reference_mismatch" in codes
+    assert "notification_delivery_reference_mismatch" in codes

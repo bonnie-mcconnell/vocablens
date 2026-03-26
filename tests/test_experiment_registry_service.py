@@ -237,6 +237,96 @@ def test_experiment_registry_service_returns_operator_report():
     assert payload["experiment"]["recent_exposures"][0]["variant"] == "annual_anchor"
     assert payload["experiment"]["recent_attributions"][0]["variant"] == "annual_anchor"
     assert payload["experiment"]["latest_assignment_trace"]["trace_type"] == "experiment_assignment"
+    assert payload["consistency"]["status"] == "mismatch_detected"
+    codes = {item["code"] for item in payload["consistency"]["issues"]}
+    assert "experiment_exposure_missing_for_assignment" in codes
+
+
+def test_experiment_registry_service_reports_ok_when_assignment_exposure_and_attribution_align():
+    now = utc_now()
+
+    class MatchingExposureRepo:
+        async def list_all(self, experiment_key: str | None = None):
+            rows = [
+                SimpleNamespace(user_id=1, experiment_key="paywall_offer", variant="control", exposed_at=now - timedelta(hours=3)),
+                SimpleNamespace(user_id=2, experiment_key="paywall_offer", variant="control", exposed_at=now - timedelta(hours=2)),
+                SimpleNamespace(user_id=3, experiment_key="paywall_offer", variant="annual_anchor", exposed_at=now - timedelta(hours=1)),
+            ]
+            if experiment_key is None:
+                return rows
+            return [row for row in rows if row.experiment_key == experiment_key]
+
+    class MatchingOutcomeAttributionRepo:
+        async def list_all(self, experiment_key: str | None = None):
+            rows = [
+                SimpleNamespace(
+                    user_id=1,
+                    experiment_key="paywall_offer",
+                    variant="control",
+                    assignment_reason="rollout",
+                    attribution_version="v1",
+                    exposed_at=now - timedelta(hours=3),
+                    window_end_at=now + timedelta(days=29),
+                    retained_d1=True,
+                    retained_d7=False,
+                    converted=False,
+                    first_conversion_at=None,
+                    session_count=1,
+                    message_count=1,
+                    learning_action_count=0,
+                    upgrade_click_count=0,
+                    last_event_at=None,
+                ),
+                SimpleNamespace(
+                    user_id=2,
+                    experiment_key="paywall_offer",
+                    variant="control",
+                    assignment_reason="rollout",
+                    attribution_version="v1",
+                    exposed_at=now - timedelta(hours=2),
+                    window_end_at=now + timedelta(days=30),
+                    retained_d1=False,
+                    retained_d7=False,
+                    converted=False,
+                    first_conversion_at=None,
+                    session_count=0,
+                    message_count=0,
+                    learning_action_count=0,
+                    upgrade_click_count=0,
+                    last_event_at=None,
+                ),
+                SimpleNamespace(
+                    user_id=3,
+                    experiment_key="paywall_offer",
+                    variant="annual_anchor",
+                    assignment_reason="rollout",
+                    attribution_version="v1",
+                    exposed_at=now - timedelta(hours=1),
+                    window_end_at=now + timedelta(days=30),
+                    retained_d1=True,
+                    retained_d7=True,
+                    converted=True,
+                    first_conversion_at=None,
+                    session_count=2,
+                    message_count=0,
+                    learning_action_count=1,
+                    upgrade_click_count=1,
+                    last_event_at=None,
+                ),
+            ]
+            if experiment_key is None:
+                return rows
+            return [row for row in rows if row.experiment_key == experiment_key]
+
+    uow = FakeUOW()
+    uow.experiment_exposures = MatchingExposureRepo()
+    uow.experiment_outcome_attributions = MatchingOutcomeAttributionRepo()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(service.get_operator_report("paywall_offer", limit=10))
+
+    assert payload["consistency"]["status"] == "ok"
+    assert payload["consistency"]["issue_count"] == 0
 
 
 def test_experiment_registry_service_returns_health_dashboard():

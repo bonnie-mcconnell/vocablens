@@ -255,7 +255,14 @@ class ExperimentRegistryService:
                 "recent_attributions": self._recent_attributions_payload(attributions, limit=normalized_limit),
                 "latest_assignment_trace": self._trace_payload(traces[0]) if traces else None,
                 "assignment_traces": [self._trace_payload(item) for item in traces],
-            }
+            },
+            "consistency": self._operator_consistency_payload(
+                experiment_key=normalized_key,
+                assignments=assignments,
+                exposures=exposures,
+                attributions=attributions,
+                latest_trace=traces[0] if traces else None,
+            ),
         }
 
     async def get_health_dashboard(self, *, limit: int = 50) -> dict:
@@ -833,3 +840,100 @@ class ExperimentRegistryService:
             "unevaluated": 3,
         }
         return ranking.get(status, 4)
+
+    def _operator_consistency_payload(
+        self,
+        *,
+        experiment_key: str,
+        assignments: list,
+        exposures: list,
+        attributions: list,
+        latest_trace,
+    ) -> dict:
+        issues: list[dict] = []
+        assignment_by_user = {int(item.user_id): item for item in assignments}
+        exposure_by_user = {int(item.user_id): item for item in exposures}
+        attribution_by_user = {int(item.user_id): item for item in attributions}
+        for user_id, assignment in assignment_by_user.items():
+            exposure = exposure_by_user.get(user_id)
+            if exposure is None:
+                issues.append(
+                    self._consistency_issue(
+                        code="experiment_exposure_missing_for_assignment",
+                        message="Recent assignment has no matching exposure row.",
+                        details={"user_id": user_id, "variant": str(assignment.variant)},
+                    )
+                )
+                continue
+            if str(exposure.variant) != str(assignment.variant):
+                issues.append(
+                    self._consistency_issue(
+                        code="experiment_exposure_variant_mismatch",
+                        message="Exposure variant does not match the canonical assignment variant.",
+                        details={
+                            "user_id": user_id,
+                            "assignment_variant": str(assignment.variant),
+                            "exposure_variant": str(exposure.variant),
+                        },
+                    )
+                )
+            attribution = attribution_by_user.get(user_id)
+            if attribution is None:
+                issues.append(
+                    self._consistency_issue(
+                        code="experiment_attribution_missing_for_exposure",
+                        message="Exposure has no matching attribution row.",
+                        details={"user_id": user_id, "variant": str(exposure.variant)},
+                    )
+                )
+                continue
+            if str(attribution.variant) != str(exposure.variant):
+                issues.append(
+                    self._consistency_issue(
+                        code="experiment_attribution_variant_mismatch",
+                        message="Attribution variant does not match the canonical exposure variant.",
+                        details={
+                            "user_id": user_id,
+                            "exposure_variant": str(exposure.variant),
+                            "attribution_variant": str(attribution.variant),
+                        },
+                    )
+                )
+            exposed_at = getattr(exposure, "exposed_at", None)
+            attributed_exposed_at = getattr(attribution, "exposed_at", None)
+            if exposed_at is not None and attributed_exposed_at is not None and attributed_exposed_at != exposed_at:
+                issues.append(
+                    self._consistency_issue(
+                        code="experiment_attribution_exposed_at_mismatch",
+                        message="Attribution window is not anchored to the canonical exposure timestamp.",
+                        details={
+                            "user_id": user_id,
+                            "exposure_exposed_at": self._timestamp(exposed_at),
+                            "attribution_exposed_at": self._timestamp(attributed_exposed_at),
+                        },
+                    )
+                )
+        if latest_trace is not None and str(getattr(latest_trace, "reference_id", "") or "") != experiment_key:
+            issues.append(
+                self._consistency_issue(
+                    code="experiment_assignment_trace_reference_mismatch",
+                    message="Latest assignment trace reference does not match the experiment key.",
+                    details={
+                        "experiment_key": experiment_key,
+                        "trace_reference_id": str(getattr(latest_trace, "reference_id", "") or ""),
+                    },
+                )
+            )
+        return {
+            "status": "mismatch_detected" if issues else "ok",
+            "issue_count": len(issues),
+            "issues": issues,
+        }
+
+    def _consistency_issue(self, *, code: str, message: str, details: dict, severity: str = "warning") -> dict:
+        return {
+            "code": code,
+            "severity": severity,
+            "message": message,
+            "details": dict(details),
+        }

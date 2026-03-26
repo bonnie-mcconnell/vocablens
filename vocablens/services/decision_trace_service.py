@@ -160,6 +160,7 @@ class DecisionTraceService:
             },
             "event_summary": self._event_summary_payload(events),
             "trace_summary": self._trace_summary_payload(traces),
+            "consistency": self._session_consistency_payload(detail),
         }
 
     async def onboarding_detail(self, user_id: int) -> dict:
@@ -272,6 +273,7 @@ class DecisionTraceService:
             },
             "event_summary": self._event_summary_payload(events),
             "trace_summary": self._trace_summary_payload(traces),
+            "consistency": self._lifecycle_consistency_payload(detail),
         }
 
     async def monetization_detail(self, user_id: int, *, geography: str | None = None) -> dict:
@@ -337,6 +339,7 @@ class DecisionTraceService:
             "event_summary": self._event_summary_payload(events),
             "trace_summary": self._trace_summary_payload(traces),
             "monetization_event_summary": self._event_summary_payload(monetization_events),
+            "consistency": self._monetization_consistency_payload(detail),
         }
 
     async def daily_loop_detail(self, user_id: int) -> dict:
@@ -407,6 +410,7 @@ class DecisionTraceService:
             "trace_summary": self._trace_summary_payload(traces),
             "mission_summary": self._daily_mission_summary_payload(missions),
             "reward_chest_summary": self._reward_chest_summary_payload(reward_chests),
+            "consistency": self._daily_loop_consistency_payload(detail),
         }
 
     async def notification_detail(self, user_id: int, *, policy_key: str = "default") -> dict:
@@ -457,6 +461,7 @@ class DecisionTraceService:
             "trace_summary": self._trace_summary_payload(traces),
             "delivery_summary": self._notification_delivery_summary_payload(deliveries),
             "suppression_summary": self._notification_suppression_summary_payload(suppression_events),
+            "consistency": self._notification_consistency_payload(detail),
         }
 
     def _trace_payload(self, trace) -> dict[str, Any]:
@@ -1102,6 +1107,248 @@ class DecisionTraceService:
             "counts_by_type": dict(sorted(counts.items())),
             "latest_trace_at": latest_trace_at,
         }
+
+    def _consistency_issue(
+        self,
+        *,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+        severity: str = "warning",
+    ) -> dict[str, Any]:
+        return {
+            "code": code,
+            "severity": severity,
+            "message": message,
+            "details": dict(details or {}),
+        }
+
+    def _consistency_payload(self, issues: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "status": "mismatch_detected" if issues else "ok",
+            "issue_count": len(issues),
+            "issues": issues,
+        }
+
+    def _session_consistency_payload(self, detail: dict[str, Any]) -> dict[str, Any]:
+        issues: list[dict[str, Any]] = []
+        session = detail.get("session") or {}
+        attempts = list(detail.get("attempts", []))
+        evaluation = detail.get("evaluation") or {}
+        events = list(detail.get("events", []))
+        session_id = session.get("session_id")
+        latest_attempt = attempts[-1] if attempts else None
+        if latest_attempt and latest_attempt.get("session_id") != session_id:
+            issues.append(
+                self._consistency_issue(
+                    code="session_attempt_reference_mismatch",
+                    message="Latest attempt does not point at the reported session.",
+                    details={
+                        "reported_session_id": session_id,
+                        "attempt_session_id": latest_attempt.get("session_id"),
+                    },
+                )
+            )
+        if evaluation and evaluation.get("trace_type") == "session_evaluation":
+            trace_reference_id = next(
+                (
+                    item.get("reference_id")
+                    for item in detail.get("traces", [])
+                    if item.get("trace_type") == "session_evaluation"
+                ),
+                None,
+            )
+            if trace_reference_id != session_id:
+                issues.append(
+                    self._consistency_issue(
+                        code="session_evaluation_reference_mismatch",
+                        message="Session evaluation trace reference does not match the reported session.",
+                        details={
+                            "reported_session_id": session_id,
+                            "trace_reference_id": trace_reference_id,
+                        },
+                    )
+                )
+        latest_rejection = next(
+            (
+                item
+                for item in reversed(events)
+                if str(item.get("event_type") or "") == "session_submission_rejected"
+            ),
+            None,
+        )
+        if latest_rejection and dict(latest_rejection.get("payload") or {}).get("session_id") not in {None, session_id}:
+            issues.append(
+                self._consistency_issue(
+                    code="session_rejection_reference_mismatch",
+                    message="Latest rejection event points at a different session.",
+                    details={
+                        "reported_session_id": session_id,
+                        "rejection_session_id": dict(latest_rejection.get("payload") or {}).get("session_id"),
+                    },
+                )
+            )
+        return self._consistency_payload(issues)
+
+    def _lifecycle_consistency_payload(self, detail: dict[str, Any]) -> dict[str, Any]:
+        issues: list[dict[str, Any]] = []
+        lifecycle_state = detail.get("lifecycle_state") or {}
+        lifecycle_transitions = list(detail.get("lifecycle_transitions", []))
+        notification_eligibility = detail.get("notification_eligibility") or {}
+        traces = list(detail.get("traces", []))
+        current_stage = lifecycle_state.get("current_stage")
+        if notification_eligibility and notification_eligibility.get("lifecycle_stage") != current_stage:
+            issues.append(
+                self._consistency_issue(
+                    code="lifecycle_notification_stage_mismatch",
+                    message="Notification eligibility lifecycle stage does not match persisted lifecycle state.",
+                    details={
+                        "lifecycle_stage": current_stage,
+                        "eligibility_stage": notification_eligibility.get("lifecycle_stage"),
+                    },
+                )
+            )
+        latest_transition = lifecycle_transitions[0] if lifecycle_transitions else None
+        if latest_transition and latest_transition.get("to_stage") != current_stage:
+            issues.append(
+                self._consistency_issue(
+                    code="lifecycle_transition_stage_mismatch",
+                    message="Latest lifecycle transition does not land on the persisted current stage.",
+                    details={
+                        "current_stage": current_stage,
+                        "transition_to_stage": latest_transition.get("to_stage"),
+                    },
+                )
+            )
+        notification_selection = next(
+            (item for item in traces if item.get("trace_type") == "notification_selection"),
+            None,
+        )
+        expected_reference_id = f"lifecycle:{lifecycle_state.get('user_id')}" if lifecycle_state.get("user_id") else None
+        if notification_selection and expected_reference_id and notification_selection.get("reference_id") != expected_reference_id:
+            issues.append(
+                self._consistency_issue(
+                    code="lifecycle_notification_reference_mismatch",
+                    message="Lifecycle notification trace reference does not match the lifecycle report context.",
+                    details={
+                        "expected_reference_id": expected_reference_id,
+                        "trace_reference_id": notification_selection.get("reference_id"),
+                    },
+                )
+            )
+        return self._consistency_payload(issues)
+
+    def _monetization_consistency_payload(self, detail: dict[str, Any]) -> dict[str, Any]:
+        issues: list[dict[str, Any]] = []
+        monetization_state = detail.get("monetization_state") or {}
+        lifecycle = detail.get("lifecycle") or {}
+        traces = list(detail.get("traces", []))
+        lifecycle_stage = lifecycle.get("stage")
+        if monetization_state and lifecycle_stage and monetization_state.get("lifecycle_stage") != lifecycle_stage:
+            issues.append(
+                self._consistency_issue(
+                    code="monetization_lifecycle_stage_mismatch",
+                    message="Monetization state lifecycle stage does not match the lifecycle decision in this report.",
+                    details={
+                        "lifecycle_stage": lifecycle_stage,
+                        "monetization_lifecycle_stage": monetization_state.get("lifecycle_stage"),
+                    },
+                )
+            )
+        lifecycle_decision = next((item for item in traces if item.get("trace_type") == "lifecycle_decision"), None)
+        monetization_decision = next((item for item in traces if item.get("trace_type") == "monetization_decision"), None)
+        if lifecycle_decision and monetization_decision:
+            lifecycle_created_at = lifecycle_decision.get("created_at")
+            monetization_created_at = monetization_decision.get("created_at")
+            if lifecycle_created_at and monetization_created_at and monetization_created_at < lifecycle_created_at:
+                issues.append(
+                    self._consistency_issue(
+                        code="monetization_timeline_mismatch",
+                        message="Monetization decision predates the lifecycle decision shown in the same report.",
+                        details={
+                            "lifecycle_created_at": lifecycle_created_at,
+                            "monetization_created_at": monetization_created_at,
+                        },
+                    )
+                )
+        return self._consistency_payload(issues)
+
+    def _daily_loop_consistency_payload(self, detail: dict[str, Any]) -> dict[str, Any]:
+        issues: list[dict[str, Any]] = []
+        missions = list(detail.get("missions", []))
+        reward_chests = list(detail.get("reward_chests", []))
+        traces = list(detail.get("traces", []))
+        latest_mission = missions[0] if missions else None
+        latest_reward_chest = reward_chests[0] if reward_chests else None
+        if latest_mission and latest_reward_chest and latest_reward_chest.get("mission_id") != latest_mission.get("id"):
+            issues.append(
+                self._consistency_issue(
+                    code="daily_loop_reward_mission_mismatch",
+                    message="Latest reward chest does not belong to the latest mission in the report.",
+                    details={
+                        "latest_mission_id": latest_mission.get("id"),
+                        "reward_chest_mission_id": latest_reward_chest.get("mission_id"),
+                    },
+                )
+            )
+        reward_trace = next((item for item in traces if item.get("trace_type") == "reward_chest_resolution"), None)
+        if reward_trace and latest_reward_chest:
+            resolved_reward_chest_id = dict(reward_trace.get("outputs") or {}).get("reward_chest_id")
+            if resolved_reward_chest_id not in {None, latest_reward_chest.get("id")}:
+                issues.append(
+                    self._consistency_issue(
+                        code="daily_loop_reward_trace_mismatch",
+                        message="Reward chest trace does not match the latest reward chest artifact.",
+                        details={
+                            "latest_reward_chest_id": latest_reward_chest.get("id"),
+                            "trace_reward_chest_id": resolved_reward_chest_id,
+                        },
+                    )
+                )
+        return self._consistency_payload(issues)
+
+    def _notification_consistency_payload(self, detail: dict[str, Any]) -> dict[str, Any]:
+        issues: list[dict[str, Any]] = []
+        notification_state = detail.get("notification_state") or {}
+        notification_eligibility = detail.get("notification_eligibility") or {}
+        deliveries = list(detail.get("notification_deliveries", []))
+        traces = list(detail.get("traces", []))
+        selection = next((item for item in traces if item.get("trace_type") == "notification_selection"), None)
+        if notification_eligibility and notification_eligibility.get("state_aligned") is False:
+            issues.append(
+                self._consistency_issue(
+                    code="notification_lifecycle_alignment_mismatch",
+                    message="Notification eligibility is not aligned with the persisted notification state.",
+                    details={
+                        "eligibility_lifecycle_stage": notification_eligibility.get("lifecycle_stage"),
+                        "notification_lifecycle_stage": notification_eligibility.get("notification_lifecycle_stage"),
+                    },
+                )
+            )
+        if selection and notification_state.get("last_reference_id") not in {None, selection.get("reference_id")}:
+            issues.append(
+                self._consistency_issue(
+                    code="notification_reference_mismatch",
+                    message="Notification state last reference does not match the latest notification selection trace.",
+                    details={
+                        "state_reference_id": notification_state.get("last_reference_id"),
+                        "trace_reference_id": selection.get("reference_id"),
+                    },
+                )
+            )
+        latest_delivery = deliveries[0] if deliveries else None
+        if latest_delivery and selection and latest_delivery.get("reference_id") not in {None, selection.get("reference_id")}:
+            issues.append(
+                self._consistency_issue(
+                    code="notification_delivery_reference_mismatch",
+                    message="Latest delivery reference does not match the latest notification selection trace.",
+                    details={
+                        "delivery_reference_id": latest_delivery.get("reference_id"),
+                        "trace_reference_id": selection.get("reference_id"),
+                    },
+                )
+            )
+        return self._consistency_payload(issues)
 
     def _latest_trace(self, traces, *, trace_type: str):
         for trace in traces:

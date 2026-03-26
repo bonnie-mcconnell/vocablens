@@ -749,8 +749,22 @@ class ExperimentOperatorReportResponseModel(BaseModel):
     assignment_traces: list[DecisionTraceRecordResponse] = Field(default_factory=list)
 
 
+class DiagnosticsConsistencyIssueResponse(BaseModel):
+    code: str
+    severity: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class DiagnosticsConsistencyResponse(BaseModel):
+    status: str = "ok"
+    issue_count: int = 0
+    issues: list[DiagnosticsConsistencyIssueResponse] = Field(default_factory=list)
+
+
 class ExperimentOperatorReportDataResponse(BaseModel):
     experiment: ExperimentOperatorReportResponseModel
+    consistency: DiagnosticsConsistencyResponse
 
 
 class ExperimentOperatorReportMetaResponse(BaseModel):
@@ -868,6 +882,7 @@ class SessionOperatorReportDataResponse(BaseModel):
     latest_decisions: SessionOperatorLatestDecisionsResponse
     event_summary: "DiagnosticsEventSummaryResponse"
     trace_summary: "DiagnosticsTraceSummaryResponse"
+    consistency: DiagnosticsConsistencyResponse
 
 
 class SessionOperatorReportMetaResponse(BaseModel):
@@ -1280,6 +1295,7 @@ class LifecycleOperatorReportDataResponse(BaseModel):
     latest_decisions: LifecycleOperatorLatestDecisionsResponse
     event_summary: DiagnosticsEventSummaryResponse
     trace_summary: DiagnosticsTraceSummaryResponse
+    consistency: DiagnosticsConsistencyResponse
 
 
 class LifecycleOperatorReportMetaResponse(BaseModel):
@@ -1334,6 +1350,7 @@ class MonetizationOperatorReportDataResponse(BaseModel):
     event_summary: DiagnosticsEventSummaryResponse
     trace_summary: DiagnosticsTraceSummaryResponse
     monetization_event_summary: DiagnosticsEventSummaryResponse
+    consistency: DiagnosticsConsistencyResponse
 
 
 class MonetizationOperatorReportMetaResponse(BaseModel):
@@ -1744,6 +1761,7 @@ class DailyLoopOperatorReportDataResponse(BaseModel):
     trace_summary: DiagnosticsTraceSummaryResponse
     mission_summary: DailyLoopMissionSummaryResponse
     reward_chest_summary: DailyLoopRewardChestSummaryResponse
+    consistency: DiagnosticsConsistencyResponse
 
 
 class DailyLoopOperatorReportMetaResponse(BaseModel):
@@ -1824,6 +1842,7 @@ class NotificationOperatorReportDataResponse(BaseModel):
     trace_summary: DiagnosticsTraceSummaryResponse
     delivery_summary: NotificationDeliverySummaryResponse
     suppression_summary: NotificationSuppressionSummaryResponse
+    consistency: DiagnosticsConsistencyResponse
 
 
 class NotificationOperatorReportMetaResponse(BaseModel):

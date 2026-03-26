@@ -448,7 +448,8 @@ class FakeExperimentRegistryService:
                     "created_at": "2026-03-24T10:15:00",
                 },
                 "assignment_traces": [],
-            }
+            },
+            "consistency": {"status": "ok", "issue_count": 0, "issues": []},
         }
 
 
@@ -1469,6 +1470,7 @@ class FakeDecisionTraceService:
                 "counts_by_type": {"session_evaluation": 1},
                 "latest_trace_at": "2026-03-23T12:00:00",
             },
+            "consistency": {"status": "ok", "issue_count": 0, "issues": []},
         }
 
     async def onboarding_detail(self, user_id: int):
@@ -1700,6 +1702,7 @@ class FakeDecisionTraceService:
                 "counts_by_type": {"lifecycle_decision": 1, "onboarding_paywall_entry": 1},
                 "latest_trace_at": "2026-03-23T12:04:30",
             },
+            "consistency": {"status": "ok", "issue_count": 0, "issues": []},
         }
 
     async def monetization_detail(self, user_id: int, *, geography: str | None = None):
@@ -1967,6 +1970,7 @@ class FakeDecisionTraceService:
                 "counts_by_type": {"decision_evaluated": 1},
                 "latest_event_at": "2026-03-23T12:01:10",
             },
+            "consistency": {"status": "ok", "issue_count": 0, "issues": []},
         }
 
     async def daily_loop_report(self, user_id: int):
@@ -2146,6 +2150,7 @@ class FakeDecisionTraceService:
                 "counts_by_status": {"unlocked": 1},
                 "latest_unlocked_at": "2026-03-23T12:07:05",
             },
+            "consistency": {"status": "ok", "issue_count": 0, "issues": []},
         }
 
     async def notification_report(self, user_id: int, *, policy_key: str = "default"):
@@ -2328,6 +2333,7 @@ class FakeDecisionTraceService:
                 "counts_by_type": {"lifecycle_notification_suppressed": 1},
                 "latest_suppression_at": "2026-03-23T10:00:00",
             },
+            "consistency": {"status": "ok", "issue_count": 0, "issues": []},
         }
 
 
