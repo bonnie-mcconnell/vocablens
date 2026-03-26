@@ -121,3 +121,51 @@ class LifecycleStateService:
             changed=changed,
             transition=transition,
         )
+
+    async def repair_current_stage_transition(
+        self,
+        *,
+        user_id: int,
+        source: str,
+        reference_id: str | None,
+    ) -> Any:
+        now = utc_now()
+        async with self._uow_factory() as uow:
+            state = await uow.lifecycle_states.get(user_id)
+            if state is None:
+                await uow.commit()
+                return None
+            transition = await uow.lifecycle_transitions.create(
+                user_id=user_id,
+                from_stage=getattr(state, "previous_stage", None),
+                to_stage=str(getattr(state, "current_stage", "") or ""),
+                reasons=list(getattr(state, "current_reasons", []) or []),
+                source=source,
+                reference_id=reference_id,
+                payload={
+                    "repair": True,
+                    "last_transition_at": now.isoformat(),
+                },
+                created_at=now,
+            )
+            if hasattr(uow, "decision_traces"):
+                await uow.decision_traces.create(
+                    user_id=user_id,
+                    trace_type="lifecycle_transition",
+                    source=source,
+                    reference_id=reference_id,
+                    policy_version="v1",
+                    inputs={
+                        "repair": True,
+                        "from_stage": getattr(state, "previous_stage", None),
+                        "to_stage": str(getattr(state, "current_stage", "") or ""),
+                        "reasons": list(getattr(state, "current_reasons", []) or []),
+                    },
+                    outputs={
+                        "transition_id": getattr(transition, "id", None),
+                        "current_stage": str(getattr(state, "current_stage", "") or ""),
+                    },
+                    reason="Backfilled lifecycle transition to match canonical lifecycle state.",
+                )
+            await uow.commit()
+        return transition

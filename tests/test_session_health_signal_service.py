@@ -235,3 +235,4 @@ def test_session_health_signal_service_detects_reference_drift(monkeypatch):
     assert "session_reference_drift_detected" in uow.session_health_states.rows["global"].latest_alert_codes
     drilldown = dashboard["attention"][0]["alert_drilldowns"]["session_reference_drift_detected"]
     assert drilldown[0]["artifact_type"] == "session_attempt"
+    assert drilldown[0]["remediation_endpoint"] == "/admin/sessions/health/remediate"

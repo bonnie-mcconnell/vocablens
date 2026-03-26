@@ -400,6 +400,12 @@ class DailyLoopHealthSignalService:
                         "mission_id": int(getattr(chest, "mission_id", 0) or 0),
                         "reward_chest_id": int(getattr(chest, "id", 0) or 0),
                         "mission_owner_user_id": int(getattr(mission, "user_id", 0) or 0) if mission is not None else None,
+                        "remediation_endpoint": "/admin/daily-loop/health/remediate",
+                        "remediation_request": {
+                            "alert_code": "reward_mission_reference_mismatch_detected",
+                            "reward_chest_id": int(getattr(chest, "id", 0) or 0),
+                            "mission_id": int(getattr(chest, "mission_id", 0) or 0),
+                        },
                     }
                 )
                 if len(rows) >= 5:

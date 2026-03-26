@@ -48,6 +48,7 @@ from vocablens.services.notification_policy_service import NotificationPolicySer
 from vocablens.services.notification_state_service import NotificationStateService
 from vocablens.services.onboarding_flow_service import OnboardingFlowService
 from vocablens.services.onboarding_service import OnboardingService
+from vocablens.services.operator_remediation_service import OperatorRemediationService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
@@ -443,4 +444,28 @@ def get_daily_loop_service(
         retention_engine,
         event_service,
         daily_loop_health_signal_service,
+    )
+
+
+def get_operator_remediation_service(
+    uow_factory=Depends(get_uow_factory),
+    session_health_signal_service=Depends(get_session_health_signal_service),
+    lifecycle_service=Depends(get_lifecycle_service),
+    lifecycle_state_service=Depends(get_lifecycle_state_service),
+    lifecycle_health_signal_service=Depends(get_lifecycle_health_signal_service),
+    notification_state_service=Depends(get_notification_state_service),
+    monetization_state_service=Depends(get_monetization_state_service),
+    monetization_health_signal_service=Depends(get_monetization_health_signal_service),
+    daily_loop_health_signal_service=Depends(get_daily_loop_health_signal_service),
+) -> OperatorRemediationService:
+    return OperatorRemediationService(
+        uow_factory,
+        session_health_signal_service=session_health_signal_service,
+        lifecycle_service=lifecycle_service,
+        lifecycle_state_service=lifecycle_state_service,
+        lifecycle_health_signal_service=lifecycle_health_signal_service,
+        notification_state_service=notification_state_service,
+        monetization_state_service=monetization_state_service,
+        monetization_health_signal_service=monetization_health_signal_service,
+        daily_loop_health_signal_service=daily_loop_health_signal_service,
     )

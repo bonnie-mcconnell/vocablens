@@ -69,6 +69,7 @@ from vocablens.api.dependencies_product import (
     get_notification_policy_service,
     get_onboarding_flow_service,
     get_onboarding_service,
+    get_operator_remediation_service,
     get_paywall_service,
     get_progress_service,
     get_retention_engine,

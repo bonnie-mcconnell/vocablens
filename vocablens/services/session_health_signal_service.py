@@ -434,8 +434,16 @@ class SessionHealthSignalService:
                         {
                             "artifact_type": "session_attempt",
                             "user_id": int(getattr(attempt, "user_id", 0) or 0),
+                            "attempt_id": int(getattr(attempt, "id", 0) or 0) or None,
                             "session_id": str(getattr(attempt, "session_id", "") or ""),
                             "submission_id": str(getattr(attempt, "submission_id", "") or ""),
+                            "remediation_endpoint": "/admin/sessions/health/remediate",
+                            "remediation_request": {
+                                "alert_code": "session_reference_drift_detected",
+                                "artifact_type": "session_attempt",
+                                "session_id": str(getattr(attempt, "session_id", "") or ""),
+                                "submission_id": str(getattr(attempt, "submission_id", "") or ""),
+                            },
                         }
                     )
                     if len(rows) >= 5:
@@ -450,6 +458,12 @@ class SessionHealthSignalService:
                                 "user_id": int(getattr(trace, "user_id", 0) or 0),
                                 "reference_id": str(getattr(trace, "reference_id", "") or ""),
                                 "trace_id": int(getattr(trace, "id", 0) or 0),
+                                "remediation_endpoint": "/admin/sessions/health/remediate",
+                                "remediation_request": {
+                                    "alert_code": "session_reference_drift_detected",
+                                    "artifact_type": "session_evaluation_trace",
+                                    "trace_id": int(getattr(trace, "id", 0) or 0),
+                                },
                             }
                         )
                         if len(rows) >= 5:

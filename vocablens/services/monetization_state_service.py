@@ -236,6 +236,21 @@ class MonetizationStateService:
             await uow.commit()
         await self._health_signals.evaluate_scope("global")
 
+    async def sync_lifecycle_stage(
+        self,
+        *,
+        user_id: int,
+        lifecycle_stage: str,
+    ):
+        async with self._uow_factory() as uow:
+            updated = await uow.monetization_states.update(
+                user_id,
+                lifecycle_stage=lifecycle_stage,
+            )
+            await uow.commit()
+        await self._health_signals.evaluate_scope("global")
+        return updated
+
     def _conversion_propensity(self, *, state, decision) -> float:
         base = 0.15
         offer_type = str(getattr(decision, "offer_type", "") or "")

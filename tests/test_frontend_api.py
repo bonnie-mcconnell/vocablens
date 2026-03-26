@@ -18,6 +18,7 @@ from vocablens.api.dependencies import (
     get_lifecycle_health_signal_service,
     get_notification_policy_registry_service,
     get_onboarding_flow_service,
+    get_operator_remediation_service,
     get_session_health_signal_service,
     get_subscription_service,
 )
@@ -1304,6 +1305,74 @@ class FakeSessionHealthSignalService:
         }
 
 
+class FakeOperatorRemediationService:
+    async def remediate_session_alert(
+        self,
+        *,
+        alert_code: str,
+        artifact_type: str | None,
+        session_id: str | None,
+        submission_id: str | None,
+        trace_id: int | None,
+    ):
+        return {
+            "domain": "session",
+            "alert_code": alert_code,
+            "action": "repair_session_attempt_reference",
+            "status": "repaired",
+            "repaired": True,
+            "reevaluated_scopes": ["global"],
+            "target": {
+                "artifact_type": artifact_type,
+                "session_id": session_id,
+                "submission_id": submission_id,
+            },
+            "details": {"canonical_user_id": 9, "trace_id": trace_id},
+        }
+
+    async def remediate_lifecycle_alert(self, *, alert_code: str, artifact_type: str | None, user_id: int | None):
+        return {
+            "domain": "lifecycle",
+            "alert_code": alert_code,
+            "action": "sync_notification_lifecycle_stage",
+            "status": "repaired",
+            "repaired": True,
+            "reevaluated_scopes": ["global", "at_risk"],
+            "target": {"artifact_type": artifact_type, "user_id": user_id},
+            "details": {"current_stage": "at_risk"},
+        }
+
+    async def remediate_monetization_alert(self, *, alert_code: str, user_id: int | None):
+        return {
+            "domain": "monetization",
+            "alert_code": alert_code,
+            "action": "sync_monetization_lifecycle_stage",
+            "status": "repaired",
+            "repaired": True,
+            "reevaluated_scopes": ["global", "us"],
+            "target": {"user_id": user_id},
+            "details": {"lifecycle_stage": "at_risk", "geography": "us"},
+        }
+
+    async def remediate_daily_loop_alert(
+        self,
+        *,
+        alert_code: str,
+        reward_chest_id: int | None,
+        mission_id: int | None,
+    ):
+        return {
+            "domain": "daily_loop",
+            "alert_code": alert_code,
+            "action": "repair_reward_chest_owner",
+            "status": "repaired",
+            "repaired": True,
+            "reevaluated_scopes": ["global"],
+            "target": {"reward_chest_id": reward_chest_id, "mission_id": mission_id},
+            "details": {"canonical_user_id": 5},
+        }
+
+
 class FakeLearningHealthSignalService:
     async def get_health_dashboard(self, *, limit: int = 50):
         return {
@@ -2382,6 +2451,7 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app.dependency_overrides[get_session_health_signal_service] = lambda: FakeSessionHealthSignalService()
     app.dependency_overrides[get_learning_health_signal_service] = lambda: FakeLearningHealthSignalService()
     app.dependency_overrides[get_notification_policy_registry_service] = lambda: FakeNotificationPolicyRegistryService()
+    app.dependency_overrides[get_operator_remediation_service] = lambda: FakeOperatorRemediationService()
     app.dependency_overrides[get_decision_trace_service] = lambda: FakeDecisionTraceService()
     client = TestClient(app)
 
@@ -2486,8 +2556,25 @@ def test_admin_conversion_report_is_protected_and_standardized():
         "/admin/monetization/health/report?limit=10",
         headers={"X-Admin-Token": "secret"},
     )
+    monetization_health_remediate = client.post(
+        "/admin/monetization/health/remediate",
+        json={
+            "alert_code": "monetization_lifecycle_stage_mismatch_detected",
+            "user_id": 1,
+        },
+        headers={"X-Admin-Token": "secret"},
+    )
     lifecycle_health_report = client.get(
         "/admin/lifecycle/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
+    lifecycle_health_remediate = client.post(
+        "/admin/lifecycle/health/remediate",
+        json={
+            "alert_code": "lifecycle_state_drift_detected",
+            "artifact_type": "notification_state",
+            "user_id": 1,
+        },
         headers={"X-Admin-Token": "secret"},
     )
     daily_loop_report = client.get(
@@ -2496,6 +2583,15 @@ def test_admin_conversion_report_is_protected_and_standardized():
     )
     daily_loop_health_report = client.get(
         "/admin/daily-loop/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
+    daily_loop_health_remediate = client.post(
+        "/admin/daily-loop/health/remediate",
+        json={
+            "alert_code": "reward_mission_reference_mismatch_detected",
+            "reward_chest_id": 17,
+            "mission_id": 12,
+        },
         headers={"X-Admin-Token": "secret"},
     )
     content_health_report = client.get(
@@ -2536,6 +2632,16 @@ def test_admin_conversion_report_is_protected_and_standardized():
     )
     session_health_report = client.get(
         "/admin/sessions/health/report?limit=10",
+        headers={"X-Admin-Token": "secret"},
+    )
+    session_health_remediate = client.post(
+        "/admin/sessions/health/remediate",
+        json={
+            "alert_code": "session_reference_drift_detected",
+            "artifact_type": "session_attempt",
+            "session_id": "sess_123",
+            "submission_id": "submit_12345678",
+        },
         headers={"X-Admin-Token": "secret"},
     )
     session_report = client.get(
@@ -2679,10 +2785,16 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert monetization_health_report.json()["meta"]["source"] == "admin.monetization.health_report"
     assert monetization_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
     assert monetization_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert monetization_health_remediate.status_code == 200
+    assert monetization_health_remediate.json()["meta"]["source"] == "admin.monetization.health.remediate"
+    assert monetization_health_remediate.json()["data"]["remediation"]["action"] == "sync_monetization_lifecycle_stage"
     assert lifecycle_health_report.status_code == 200
     assert lifecycle_health_report.json()["meta"]["source"] == "admin.lifecycle.health_report"
     assert lifecycle_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
     assert lifecycle_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert lifecycle_health_remediate.status_code == 200
+    assert lifecycle_health_remediate.json()["meta"]["source"] == "admin.lifecycle.health.remediate"
+    assert lifecycle_health_remediate.json()["data"]["remediation"]["reevaluated_scopes"][1] == "at_risk"
     assert daily_loop_report.status_code == 200
     assert daily_loop_report.json()["meta"]["source"] == "admin.daily_loop.report"
     assert daily_loop_report.json()["data"]["latest_decisions"]["daily_mission_generation"]["trace_type"] == "daily_mission_generation"
@@ -2692,6 +2804,9 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert daily_loop_health_report.json()["meta"]["source"] == "admin.daily_loop.health_report"
     assert daily_loop_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1
     assert daily_loop_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert daily_loop_health_remediate.status_code == 200
+    assert daily_loop_health_remediate.json()["meta"]["source"] == "admin.daily_loop.health.remediate"
+    assert daily_loop_health_remediate.json()["data"]["remediation"]["target"]["reward_chest_id"] == 17
     assert content_health_report.status_code == 200
     assert content_health_report.json()["meta"]["source"] == "admin.content.health_report"
     assert content_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
@@ -2718,6 +2833,9 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert session_health_report.json()["meta"]["source"] == "admin.sessions.health_report"
     assert session_health_report.json()["data"]["summary"]["counts_by_health_status"]["critical"] == 1
     assert session_health_report.json()["data"]["attention"][0]["scope_key"] == "global"
+    assert session_health_remediate.status_code == 200
+    assert session_health_remediate.json()["meta"]["source"] == "admin.sessions.health.remediate"
+    assert session_health_remediate.json()["data"]["remediation"]["target"]["submission_id"] == "submit_12345678"
     assert learning_health_report.status_code == 200
     assert learning_health_report.json()["meta"]["source"] == "admin.learning.health_report"
     assert learning_health_report.json()["data"]["summary"]["counts_by_health_status"]["warning"] == 1

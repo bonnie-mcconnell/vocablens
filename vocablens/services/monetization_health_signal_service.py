@@ -369,6 +369,11 @@ class MonetizationHealthSignalService:
                         "geography": geography or None,
                         "monetization_lifecycle_stage": monetization_stage,
                         "lifecycle_stage": lifecycle_stage,
+                        "remediation_endpoint": "/admin/monetization/health/remediate",
+                        "remediation_request": {
+                            "alert_code": "monetization_lifecycle_stage_mismatch_detected",
+                            "user_id": user_id,
+                        },
                     }
                 )
                 if len(rows) >= 5:

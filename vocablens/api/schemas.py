@@ -221,6 +221,28 @@ class ExperimentRegistryActionRequest(BaseModel):
     change_note: str = Field(..., min_length=8, max_length=500)
 
 
+class HealthAlertRemediationRequest(BaseModel):
+    alert_code: str = Field(..., min_length=3, max_length=128)
+    artifact_type: str | None = Field(default=None, min_length=3, max_length=64)
+    user_id: int | None = Field(default=None, ge=1)
+    session_id: str | None = Field(default=None, min_length=3, max_length=128)
+    submission_id: str | None = Field(default=None, min_length=3, max_length=128)
+    trace_id: int | None = Field(default=None, ge=1)
+    reward_chest_id: int | None = Field(default=None, ge=1)
+    mission_id: int | None = Field(default=None, ge=1)
+
+
+class HealthAlertRemediationResultResponse(BaseModel):
+    domain: str
+    alert_code: str
+    action: str
+    status: str
+    repaired: bool = False
+    reevaluated_scopes: list[str] = Field(default_factory=list)
+    target: dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExperimentRegistryVariantResponse(BaseModel):
     name: str
     weight: int
@@ -1395,6 +1417,19 @@ class MonetizationHealthDashboardResponse(BaseModel):
     meta: MonetizationHealthDashboardMetaResponse
 
 
+class MonetizationHealthRemediationDataResponse(BaseModel):
+    remediation: HealthAlertRemediationResultResponse
+
+
+class MonetizationHealthRemediationMetaResponse(BaseModel):
+    source: Literal["admin.monetization.health.remediate"]
+
+
+class MonetizationHealthRemediationResponse(BaseModel):
+    data: MonetizationHealthRemediationDataResponse
+    meta: MonetizationHealthRemediationMetaResponse
+
+
 class LifecycleHealthScopeResponse(BaseModel):
     scope_key: str
     health_status: str
@@ -1427,6 +1462,19 @@ class LifecycleHealthDashboardResponse(BaseModel):
     meta: LifecycleHealthDashboardMetaResponse
 
 
+class LifecycleHealthRemediationDataResponse(BaseModel):
+    remediation: HealthAlertRemediationResultResponse
+
+
+class LifecycleHealthRemediationMetaResponse(BaseModel):
+    source: Literal["admin.lifecycle.health.remediate"]
+
+
+class LifecycleHealthRemediationResponse(BaseModel):
+    data: LifecycleHealthRemediationDataResponse
+    meta: LifecycleHealthRemediationMetaResponse
+
+
 class DailyLoopHealthScopeResponse(BaseModel):
     scope_key: str
     health_status: str
@@ -1457,6 +1505,19 @@ class DailyLoopHealthDashboardMetaResponse(BaseModel):
 class DailyLoopHealthDashboardResponse(BaseModel):
     data: DailyLoopHealthDashboardDataResponse
     meta: DailyLoopHealthDashboardMetaResponse
+
+
+class DailyLoopHealthRemediationDataResponse(BaseModel):
+    remediation: HealthAlertRemediationResultResponse
+
+
+class DailyLoopHealthRemediationMetaResponse(BaseModel):
+    source: Literal["admin.daily_loop.health.remediate"]
+
+
+class DailyLoopHealthRemediationResponse(BaseModel):
+    data: DailyLoopHealthRemediationDataResponse
+    meta: DailyLoopHealthRemediationMetaResponse
 
 
 class ContentQualityHealthScopeResponse(BaseModel):
@@ -1664,6 +1725,19 @@ class SessionHealthDashboardMetaResponse(BaseModel):
 class SessionHealthDashboardResponse(BaseModel):
     data: SessionHealthDashboardDataResponse
     meta: SessionHealthDashboardMetaResponse
+
+
+class SessionHealthRemediationDataResponse(BaseModel):
+    remediation: HealthAlertRemediationResultResponse
+
+
+class SessionHealthRemediationMetaResponse(BaseModel):
+    source: Literal["admin.sessions.health.remediate"]
+
+
+class SessionHealthRemediationResponse(BaseModel):
+    data: SessionHealthRemediationDataResponse
+    meta: SessionHealthRemediationMetaResponse
 
 
 class LearningHealthScopeResponse(BaseModel):

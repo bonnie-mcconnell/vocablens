@@ -164,6 +164,7 @@ def test_monetization_health_signal_service_detects_lifecycle_stage_drift(monkey
     assert alert_metric.records[0]["labels"]["code"] == "monetization_lifecycle_stage_mismatch_detected"
     drilldown = dashboard["attention"][0]["alert_drilldowns"]["monetization_lifecycle_stage_mismatch_detected"]
     assert drilldown[0]["artifact_type"] == "monetization_state"
+    assert drilldown[0]["remediation_endpoint"] == "/admin/monetization/health/remediate"
 
 
 def test_monetization_health_signal_service_dashboard_orders_attention():

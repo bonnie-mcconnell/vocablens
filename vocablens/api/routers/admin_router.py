@@ -17,6 +17,7 @@ from vocablens.api.dependencies import (
     get_lifecycle_health_signal_service,
     get_monetization_health_signal_service,
     get_notification_policy_registry_service,
+    get_operator_remediation_service,
     get_session_health_signal_service,
     get_subscription_service,
 )
@@ -24,6 +25,7 @@ from vocablens.api.schemas import (
     ConversionMetricsResponse,
     ContentQualityHealthDashboardResponse,
     DailyLoopHealthDashboardResponse,
+    DailyLoopHealthRemediationResponse,
     DailyLoopOperatorReportResponse,
     DecisionTraceDetailResponse,
     DecisionTraceListResponse,
@@ -40,12 +42,15 @@ from vocablens.api.schemas import (
     ExperimentRegistryListResponse,
     ExperimentRegistryUpsertRequest,
     ExperimentResultsResponse,
+    HealthAlertRemediationRequest,
     LearningHealthDashboardResponse,
     LifecycleDiagnosticsResponse,
     LifecycleHealthDashboardResponse,
+    LifecycleHealthRemediationResponse,
     LifecycleOperatorReportResponse,
     MonetizationDiagnosticsResponse,
     MonetizationHealthDashboardResponse,
+    MonetizationHealthRemediationResponse,
     MonetizationOperatorReportResponse,
     NotificationOperatorReportResponse,
     NotificationPolicyAuditResponse,
@@ -57,6 +62,7 @@ from vocablens.api.schemas import (
     OnboardingDiagnosticsResponse,
     RetentionAnalyticsResponse,
     SessionHealthDashboardResponse,
+    SessionHealthRemediationResponse,
     SessionOperatorReportResponse,
     UsageAnalyticsResponse,
 )
@@ -84,6 +90,7 @@ from vocablens.services.notification_policy_registry_service import (
     NotificationPolicyRegistryUpsert,
 )
 from vocablens.services.monetization_health_signal_service import MonetizationHealthSignalService
+from vocablens.services.operator_remediation_service import OperatorRemediationService
 from vocablens.services.session_health_signal_service import SessionHealthSignalService
 from vocablens.services.subscription_service import SubscriptionService
 
@@ -404,6 +411,26 @@ def create_admin_router() -> APIRouter:
             "meta": {"source": "admin.monetization.health_report"},
         }
 
+    @router.post("/monetization/health/remediate", response_model=MonetizationHealthRemediationResponse)
+    async def monetization_health_remediate(
+        request: HealthAlertRemediationRequest,
+        _: str = Depends(get_admin_token),
+        service: OperatorRemediationService = Depends(get_operator_remediation_service),
+    ):
+        try:
+            remediation = await service.remediate_monetization_alert(
+                alert_code=request.alert_code,
+                user_id=request.user_id,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": {"remediation": remediation},
+            "meta": {"source": "admin.monetization.health.remediate"},
+        }
+
     @router.get("/lifecycle/health/report", response_model=LifecycleHealthDashboardResponse)
     async def lifecycle_health_report(
         limit: int = Query(default=50, ge=1, le=200),
@@ -416,6 +443,27 @@ def create_admin_router() -> APIRouter:
             "meta": {"source": "admin.lifecycle.health_report"},
         }
 
+    @router.post("/lifecycle/health/remediate", response_model=LifecycleHealthRemediationResponse)
+    async def lifecycle_health_remediate(
+        request: HealthAlertRemediationRequest,
+        _: str = Depends(get_admin_token),
+        service: OperatorRemediationService = Depends(get_operator_remediation_service),
+    ):
+        try:
+            remediation = await service.remediate_lifecycle_alert(
+                alert_code=request.alert_code,
+                artifact_type=request.artifact_type,
+                user_id=request.user_id,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": {"remediation": remediation},
+            "meta": {"source": "admin.lifecycle.health.remediate"},
+        }
+
     @router.get("/daily-loop/health/report", response_model=DailyLoopHealthDashboardResponse)
     async def daily_loop_health_report(
         limit: int = Query(default=50, ge=1, le=200),
@@ -426,6 +474,27 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.daily_loop.health_report"},
+        }
+
+    @router.post("/daily-loop/health/remediate", response_model=DailyLoopHealthRemediationResponse)
+    async def daily_loop_health_remediate(
+        request: HealthAlertRemediationRequest,
+        _: str = Depends(get_admin_token),
+        service: OperatorRemediationService = Depends(get_operator_remediation_service),
+    ):
+        try:
+            remediation = await service.remediate_daily_loop_alert(
+                alert_code=request.alert_code,
+                reward_chest_id=request.reward_chest_id,
+                mission_id=request.mission_id,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": {"remediation": remediation},
+            "meta": {"source": "admin.daily_loop.health.remediate"},
         }
 
     @router.get("/content/health/report", response_model=ContentQualityHealthDashboardResponse)
@@ -536,6 +605,29 @@ def create_admin_router() -> APIRouter:
         return {
             "data": report,
             "meta": {"source": "admin.sessions.health_report"},
+        }
+
+    @router.post("/sessions/health/remediate", response_model=SessionHealthRemediationResponse)
+    async def session_health_remediate(
+        request: HealthAlertRemediationRequest,
+        _: str = Depends(get_admin_token),
+        service: OperatorRemediationService = Depends(get_operator_remediation_service),
+    ):
+        try:
+            remediation = await service.remediate_session_alert(
+                alert_code=request.alert_code,
+                artifact_type=request.artifact_type,
+                session_id=request.session_id,
+                submission_id=request.submission_id,
+                trace_id=request.trace_id,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": {"remediation": remediation},
+            "meta": {"source": "admin.sessions.health.remediate"},
         }
 
     @router.get("/sessions/{user_id}/report", response_model=SessionOperatorReportResponse)

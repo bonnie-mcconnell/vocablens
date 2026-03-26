@@ -230,3 +230,4 @@ def test_daily_loop_health_signal_service_detects_reward_mission_drift(monkeypat
     assert "reward_mission_reference_mismatch_detected" in uow.daily_loop_health_states.rows["global"].latest_alert_codes
     drilldown = dashboard["attention"][0]["alert_drilldowns"]["reward_mission_reference_mismatch_detected"]
     assert drilldown[0]["artifact_type"] == "reward_chest"
+    assert drilldown[0]["remediation_endpoint"] == "/admin/daily-loop/health/remediate"

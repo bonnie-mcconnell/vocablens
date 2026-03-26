@@ -260,3 +260,4 @@ def test_lifecycle_health_signal_service_detects_cross_domain_stage_drift(monkey
     assert "lifecycle_state_drift_detected" in uow.lifecycle_health_states.rows["global"].latest_alert_codes
     drilldown = dashboard["attention"][0]["alert_drilldowns"]["lifecycle_state_drift_detected"]
     assert drilldown[0]["artifact_type"] == "notification_state"
+    assert drilldown[0]["remediation_endpoint"] == "/admin/lifecycle/health/remediate"

@@ -465,6 +465,12 @@ class LifecycleHealthSignalService:
                         "user_id": user_id,
                         "lifecycle_stage": lifecycle_stage,
                         "notification_lifecycle_stage": notification_stage,
+                        "remediation_endpoint": "/admin/lifecycle/health/remediate",
+                        "remediation_request": {
+                            "alert_code": "lifecycle_state_drift_detected",
+                            "artifact_type": "notification_state",
+                            "user_id": user_id,
+                        },
                     }
                 )
                 if len(rows) >= 5:
@@ -482,6 +488,12 @@ class LifecycleHealthSignalService:
                             "transition_to_stage": str(getattr(transition, "to_stage", "") or ""),
                             "current_stage": str(getattr(lifecycle_state, "current_stage", "") or ""),
                             "reference_id": str(getattr(transition, "reference_id", "") or ""),
+                            "remediation_endpoint": "/admin/lifecycle/health/remediate",
+                            "remediation_request": {
+                                "alert_code": "lifecycle_state_drift_detected",
+                                "artifact_type": "lifecycle_transition",
+                                "user_id": user_id,
+                            },
                         }
                     )
                     if len(rows) >= 5:
