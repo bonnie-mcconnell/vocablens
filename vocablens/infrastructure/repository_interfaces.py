@@ -83,32 +83,32 @@ class EmbeddingRepository(Protocol):
 class ExperimentAssignmentRepository(Protocol):
     async def get(self, user_id: int, experiment_key: str) -> Optional[Any]: ...
     async def list_all(self, experiment_key: str | None = None) -> List[Any]: ...
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
         experiment_key: str,
         variant: str,
         assigned_at: datetime | None = None,
-    ) -> Any: ...
+    ) -> tuple[Any, bool]: ...
 
 
 class ExperimentExposureRepository(Protocol):
     async def get(self, user_id: int, experiment_key: str) -> Optional[Any]: ...
     async def list_all(self, experiment_key: str | None = None) -> List[Any]: ...
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
         experiment_key: str,
         variant: str,
         exposed_at: datetime | None = None,
-    ) -> Any: ...
+    ) -> tuple[Any, bool]: ...
 
 
 class ExperimentOutcomeAttributionRepository(Protocol):
     async def get(self, user_id: int, experiment_key: str) -> Optional[Any]: ...
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -118,7 +118,7 @@ class ExperimentOutcomeAttributionRepository(Protocol):
         attribution_version: str,
         exposed_at: datetime,
         window_end_at: datetime,
-    ) -> Any: ...
+    ) -> tuple[Any, bool]: ...
     async def update(self, user_id: int, experiment_key: str, **kwargs) -> Any: ...
     async def list_all(self, experiment_key: str | None = None) -> List[Any]: ...
     async def list_active_by_user(self, user_id: int, occurred_at: datetime) -> List[Any]: ...

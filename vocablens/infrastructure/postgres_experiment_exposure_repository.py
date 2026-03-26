@@ -1,5 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import ExperimentExposureORM
@@ -18,7 +19,7 @@ class PostgresExperimentExposureRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -33,7 +34,15 @@ class PostgresExperimentExposureRepository:
             exposed_at=exposed_at or utc_now(),
         )
         self.session.add(exposure)
-        return exposure
+        try:
+            await self.session.flush()
+            return exposure, True
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get(user_id, experiment_key)
+            if existing is None:
+                raise
+            return existing, False
 
     async def list_all(self, experiment_key: str | None = None):
         query = select(ExperimentExposureORM).order_by(

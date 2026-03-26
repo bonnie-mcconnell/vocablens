@@ -15,7 +15,7 @@ class FakeExperimentOutcomeAttributions:
     async def get(self, user_id: int, experiment_key: str):
         return self.rows.get((user_id, experiment_key))
 
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -26,6 +26,9 @@ class FakeExperimentOutcomeAttributions:
         exposed_at,
         window_end_at,
     ):
+        existing = await self.get(user_id, experiment_key)
+        if existing is not None:
+            return existing, False
         row = SimpleNamespace(
             user_id=user_id,
             experiment_key=experiment_key,
@@ -45,7 +48,7 @@ class FakeExperimentOutcomeAttributions:
             last_event_at=None,
         )
         self.rows[(user_id, experiment_key)] = row
-        return row
+        return row, True
 
     async def update(self, user_id: int, experiment_key: str, **kwargs):
         row = self.rows[(user_id, experiment_key)]
@@ -102,3 +105,33 @@ def test_experiment_attribution_service_tracks_session_and_conversion_outcomes()
     assert row.message_count == 1
     assert row.learning_action_count == 1
     assert row.first_conversion_at == exposed_at + timedelta(days=3)
+
+
+def test_experiment_attribution_service_keeps_existing_exposure_window_on_retry():
+    uow = FakeUOW()
+    service = ExperimentAttributionService(lambda: uow)
+    exposed_at = utc_now() - timedelta(days=5)
+
+    first_row, first_created = run_async(
+        service.ensure_exposure(
+            user_id=12,
+            experiment_key="paywall_offer",
+            variant="control",
+            exposed_at=exposed_at,
+            assignment_reason="rollout",
+        )
+    )
+    second_row, second_created = run_async(
+        service.ensure_exposure(
+            user_id=12,
+            experiment_key="paywall_offer",
+            variant="control",
+            exposed_at=exposed_at + timedelta(days=1),
+            assignment_reason="rollout",
+        )
+    )
+
+    assert first_created is True
+    assert second_created is False
+    assert first_row.exposed_at == second_row.exposed_at
+    assert second_row.window_end_at == exposed_at + timedelta(days=30)

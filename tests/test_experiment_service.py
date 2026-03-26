@@ -15,7 +15,10 @@ class FakeAssignments:
     async def get(self, user_id: int, experiment_key: str):
         return self.rows.get((user_id, experiment_key))
 
-    async def create(self, *, user_id: int, experiment_key: str, variant: str, assigned_at=None):
+    async def create_once(self, *, user_id: int, experiment_key: str, variant: str, assigned_at=None):
+        existing = await self.get(user_id, experiment_key)
+        if existing is not None:
+            return existing, False
         row = SimpleNamespace(
             user_id=user_id,
             experiment_key=experiment_key,
@@ -23,7 +26,7 @@ class FakeAssignments:
             assigned_at=assigned_at,
         )
         self.rows[(user_id, experiment_key)] = row
-        return row
+        return row, True
 
 
 class FakeExposures:
@@ -33,7 +36,10 @@ class FakeExposures:
     async def get(self, user_id: int, experiment_key: str):
         return self.rows.get((user_id, experiment_key))
 
-    async def create(self, *, user_id: int, experiment_key: str, variant: str, exposed_at=None):
+    async def create_once(self, *, user_id: int, experiment_key: str, variant: str, exposed_at=None):
+        existing = await self.get(user_id, experiment_key)
+        if existing is not None:
+            return existing, False
         row = SimpleNamespace(
             user_id=user_id,
             experiment_key=experiment_key,
@@ -41,7 +47,7 @@ class FakeExposures:
             exposed_at=exposed_at,
         )
         self.rows[(user_id, experiment_key)] = row
-        return row
+        return row, True
 
 
 class FakeSubscriptions:
@@ -72,7 +78,7 @@ class FakeExperimentOutcomeAttributions:
     async def get(self, user_id: int, experiment_key: str):
         return self.rows.get((user_id, experiment_key))
 
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -83,6 +89,9 @@ class FakeExperimentOutcomeAttributions:
         exposed_at,
         window_end_at,
     ):
+        existing = await self.get(user_id, experiment_key)
+        if existing is not None:
+            return existing, False
         row = SimpleNamespace(
             user_id=user_id,
             experiment_key=experiment_key,
@@ -93,7 +102,7 @@ class FakeExperimentOutcomeAttributions:
             window_end_at=window_end_at,
         )
         self.rows[(user_id, experiment_key)] = row
-        return row
+        return row, True
 
     async def update(self, user_id: int, experiment_key: str, **kwargs):
         row = self.rows[(user_id, experiment_key)]
@@ -217,7 +226,7 @@ def test_experiment_service_returns_baseline_without_persisting_when_context_is_
 def test_experiment_service_honors_mutual_exclusion_and_prerequisites():
     uow = FakeUOW()
     run_async(
-        uow.experiment_assignments.create(
+        uow.experiment_assignments.create_once(
             user_id=5,
             experiment_key="pricing_test",
             variant="control",
@@ -268,3 +277,22 @@ def test_experiment_service_seeds_canonical_outcome_attribution_on_exposure():
     assert attribution.window_end_at == attribution.exposed_at + timedelta(days=30)
     assert uow.decision_traces.rows[0].trace_type == "experiment_assignment"
     assert health_signals.calls == ["paywall_offer"]
+
+
+def test_experiment_service_uses_persisted_exposure_time_for_attribution_window():
+    uow = FakeUOW()
+    health_signals = FakeExperimentHealthSignalService()
+    service = ExperimentService(
+        lambda: uow,
+        health_signal_service=health_signals,
+        experiments={"paywall_offer": _definition()},
+    )
+
+    variant = run_async(service.assign(33, "paywall_offer"))
+
+    exposure = uow.experiment_exposures.rows[(33, "paywall_offer")]
+    attribution = uow.experiment_outcome_attributions.rows[(33, "paywall_offer")]
+
+    assert attribution.variant == variant
+    assert attribution.exposed_at == exposure.exposed_at
+    assert attribution.window_end_at == exposure.exposed_at + timedelta(days=30)

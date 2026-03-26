@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable
 
-from sqlalchemy.exc import IntegrityError
-
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.experiment_attribution_service import ExperimentAttributionService
@@ -201,80 +199,29 @@ class ExperimentService:
         assigned_at: datetime,
         assignment_reason: str,
     ) -> tuple[str, bool]:
-        try:
-            async with self._uow_factory() as uow:
-                assignment = await uow.experiment_assignments.get(user_id, experiment_key)
-                exposure = await uow.experiment_exposures.get(user_id, experiment_key)
-                assigned_variant = variant
-                if assignment is None:
-                    await uow.experiment_assignments.create(
-                        user_id=user_id,
-                        experiment_key=experiment_key,
-                        variant=variant,
-                        assigned_at=assigned_at,
-                    )
-                else:
-                    assigned_variant = assignment.variant
-                exposure_created = False
-                if exposure is None:
-                    await uow.experiment_exposures.create(
-                        user_id=user_id,
-                        experiment_key=experiment_key,
-                        variant=assigned_variant,
-                        exposed_at=assigned_at,
-                    )
-                    exposure_created = True
-                await uow.commit()
-                await self._attribution.ensure_exposure(
-                    user_id=user_id,
-                    experiment_key=experiment_key,
-                    variant=assigned_variant,
-                    exposed_at=assigned_at,
-                    assignment_reason=assignment_reason,
-                )
-                return assigned_variant, exposure_created
-        except IntegrityError:
-            return await self._recover_assignment_and_exposure(
+        async with self._uow_factory() as uow:
+            assignment, _ = await uow.experiment_assignments.create_once(
                 user_id=user_id,
                 experiment_key=experiment_key,
+                variant=variant,
                 assigned_at=assigned_at,
-                assignment_reason=assignment_reason,
             )
-
-    async def _recover_assignment_and_exposure(
-        self,
-        *,
-        user_id: int,
-        experiment_key: str,
-        assigned_at: datetime,
-        assignment_reason: str,
-    ) -> tuple[str, bool]:
-        async with self._uow_factory() as uow:
-            assignment = await uow.experiment_assignments.get(user_id, experiment_key)
-            if assignment is None:
-                raise RuntimeError(f"Experiment assignment missing after integrity failure for '{experiment_key}'")
-            exposure = await uow.experiment_exposures.get(user_id, experiment_key)
-            exposure_created = False
-            if exposure is None:
-                try:
-                    await uow.experiment_exposures.create(
-                        user_id=user_id,
-                        experiment_key=experiment_key,
-                        variant=assignment.variant,
-                        exposed_at=assigned_at,
-                    )
-                    exposure_created = True
-                except IntegrityError:
-                    exposure_created = False
+            assigned_variant = assignment.variant
+            exposure, exposure_created = await uow.experiment_exposures.create_once(
+                user_id=user_id,
+                experiment_key=experiment_key,
+                variant=assigned_variant,
+                exposed_at=assigned_at,
+            )
             await uow.commit()
         await self._attribution.ensure_exposure(
             user_id=user_id,
             experiment_key=experiment_key,
-            variant=assignment.variant,
-            exposed_at=assigned_at,
+            variant=assigned_variant,
+            exposed_at=exposure.exposed_at,
             assignment_reason=assignment_reason,
         )
-        return assignment.variant, exposure_created
+        return assigned_variant, exposure_created
 
     async def _get_definition(self, experiment_key: str) -> ExperimentDefinition:
         override = self._experiment_overrides.get(experiment_key)

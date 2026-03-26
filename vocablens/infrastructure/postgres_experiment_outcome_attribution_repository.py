@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import ExperimentOutcomeAttributionORM
@@ -22,7 +23,7 @@ class PostgresExperimentOutcomeAttributionRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -43,8 +44,15 @@ class PostgresExperimentOutcomeAttributionRepository:
             window_end_at=window_end_at,
         )
         self.session.add(row)
-        await self.session.flush()
-        return row
+        try:
+            await self.session.flush()
+            return row, True
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get(user_id, experiment_key)
+            if existing is None:
+                raise
+            return existing, False
 
     async def update(self, user_id: int, experiment_key: str, **kwargs):
         row = await self.get(user_id, experiment_key)

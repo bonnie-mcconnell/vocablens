@@ -18,14 +18,17 @@ class FakeExperimentAssignmentsRepo:
             return None
         return SimpleNamespace(**record)
 
-    async def create(self, *, user_id: int, experiment_key: str, variant: str, assigned_at=None):
+    async def create_once(self, *, user_id: int, experiment_key: str, variant: str, assigned_at=None):
+        existing = await self.get(user_id, experiment_key)
+        if existing is not None:
+            return existing, False
         self.assignments[(user_id, experiment_key)] = {
             "user_id": user_id,
             "experiment_key": experiment_key,
             "variant": variant,
             "assigned_at": assigned_at,
         }
-        return SimpleNamespace(**self.assignments[(user_id, experiment_key)])
+        return SimpleNamespace(**self.assignments[(user_id, experiment_key)]), True
 
 
 class FakeExperimentExposuresRepo:
@@ -38,14 +41,17 @@ class FakeExperimentExposuresRepo:
             return None
         return SimpleNamespace(**record)
 
-    async def create(self, *, user_id: int, experiment_key: str, variant: str, exposed_at=None):
+    async def create_once(self, *, user_id: int, experiment_key: str, variant: str, exposed_at=None):
+        existing = await self.get(user_id, experiment_key)
+        if existing is not None:
+            return existing, False
         self.exposures[(user_id, experiment_key)] = {
             "user_id": user_id,
             "experiment_key": experiment_key,
             "variant": variant,
             "exposed_at": exposed_at,
         }
-        return SimpleNamespace(**self.exposures[(user_id, experiment_key)])
+        return SimpleNamespace(**self.exposures[(user_id, experiment_key)]), True
 
 
 class FakeExperimentRegistriesRepo:
@@ -83,7 +89,7 @@ class FakeExperimentOutcomeAttributionsRepo:
     async def get(self, user_id: int, experiment_key: str):
         return self.rows.get((user_id, experiment_key))
 
-    async def create(
+    async def create_once(
         self,
         *,
         user_id: int,
@@ -94,6 +100,9 @@ class FakeExperimentOutcomeAttributionsRepo:
         exposed_at,
         window_end_at,
     ):
+        existing = await self.get(user_id, experiment_key)
+        if existing is not None:
+            return existing, False
         row = SimpleNamespace(
             user_id=user_id,
             experiment_key=experiment_key,
@@ -104,7 +113,7 @@ class FakeExperimentOutcomeAttributionsRepo:
             window_end_at=window_end_at,
         )
         self.rows[(user_id, experiment_key)] = row
-        return row
+        return row, True
 
 
 class FakeDecisionTracesRepo:
@@ -199,7 +208,7 @@ def test_experiment_assignment_respects_weighted_distribution():
 
 def test_experiment_assignment_does_not_reassign_existing_users():
     service, repo, exposures, events = _experiment_service({"pricing_test": {"control": 100}})
-    run_async(repo.create(user_id=7, experiment_key="pricing_test", variant="variant_a"))
+    run_async(repo.create_once(user_id=7, experiment_key="pricing_test", variant="variant_a"))
 
     variant = run_async(service.assign(7, "pricing_test"))
 
@@ -210,7 +219,7 @@ def test_experiment_assignment_does_not_reassign_existing_users():
 
 def test_experiment_assignment_backfills_missing_exposure_for_existing_assignment():
     service, repo, exposures, events = _experiment_service({"pricing_test": {"control": 100}})
-    run_async(repo.create(user_id=9, experiment_key="pricing_test", variant="control"))
+    run_async(repo.create_once(user_id=9, experiment_key="pricing_test", variant="control"))
 
     variant = run_async(service.assign(9, "pricing_test"))
 

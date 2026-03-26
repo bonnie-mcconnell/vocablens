@@ -31,20 +31,19 @@ class ExperimentAttributionService:
         variant: str,
         exposed_at: datetime,
         assignment_reason: str,
-    ) -> None:
+    ):
         async with self._uow_factory() as uow:
-            existing = await uow.experiment_outcome_attributions.get(user_id, experiment_key)
-            if existing is None:
-                await uow.experiment_outcome_attributions.create(
-                    user_id=user_id,
-                    experiment_key=experiment_key,
-                    variant=variant,
-                    assignment_reason=assignment_reason,
-                    attribution_version=ATTRIBUTION_VERSION,
-                    exposed_at=exposed_at,
-                    window_end_at=exposed_at + timedelta(days=ATTRIBUTION_WINDOW_DAYS),
-                )
+            row, created = await uow.experiment_outcome_attributions.create_once(
+                user_id=user_id,
+                experiment_key=experiment_key,
+                variant=variant,
+                assignment_reason=assignment_reason,
+                attribution_version=ATTRIBUTION_VERSION,
+                exposed_at=exposed_at,
+                window_end_at=exposed_at + timedelta(days=ATTRIBUTION_WINDOW_DAYS),
+            )
             await uow.commit()
+        return row, created
 
     async def record_event(
         self,
