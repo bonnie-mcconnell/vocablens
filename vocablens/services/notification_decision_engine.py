@@ -62,48 +62,33 @@ class NotificationDecisionEngine:
 
         runtime_policy = await self._policy_service.current_policy()
 
-        await self._notification_states.sync_preferences(
+        notification_state = await self._notification_states.sync_preferences(
             user_id=user_id,
             preferred_channel=getattr(profile, "preferred_channel", "push"),
             preferred_time_of_day=getattr(profile, "preferred_time_of_day", None),
             frequency_limit=int(getattr(profile, "frequency_limit", 0) or 0),
         )
 
-        profile_frequency_limit = int(getattr(profile, "frequency_limit", runtime_policy.default_frequency_limit) or 0)
-        frequency_limit = (
-            0
-            if profile_frequency_limit == 0 or runtime_policy.default_frequency_limit == 0
-            else min(profile_frequency_limit, runtime_policy.default_frequency_limit)
-        )
+        preferred_channel = getattr(notification_state, "preferred_channel", None) or getattr(profile, "preferred_channel", "push")
+        frequency_limit = int(getattr(notification_state, "frequency_limit", runtime_policy.default_frequency_limit) or 0)
         today_key = utc_now().date().isoformat()
         state_day = str(getattr(notification_state, "sent_count_day", "") or "")
         sent_today_count = int(getattr(notification_state, "sent_count_today", 0) or 0)
         if state_day != today_key:
             sent_today_count = 0
-        sent_today = [row for row in recent_deliveries if row.created_at and row.created_at.date().isoformat() == today_key]
-        sent_today_count = max(sent_today_count, len(sent_today))
 
         lifecycle_policy = dict(getattr(notification_state, "lifecycle_policy", {}) or {})
-        lifecycle_stage = str(getattr(notification_state, "lifecycle_stage", "") or "")
-        stage_policy = await self._policy_service.lifecycle_stage_policy(
-            lifecycle_stage,
-            source_context=source_context,
-        ) if "lifecycle_service" in source_context else None
         lifecycle_notifications_enabled = (
-            stage_policy.lifecycle_notifications_enabled
-            if stage_policy is not None
-            else lifecycle_policy.get("lifecycle_notifications_enabled", True)
+            lifecycle_policy.get("lifecycle_notifications_enabled", True)
         )
         suppression_reason = (
-            stage_policy.suppression_reason
-            if stage_policy is not None
-            else getattr(notification_state, "suppression_reason", None)
+            getattr(notification_state, "suppression_reason", None)
         )
         if "lifecycle_service" in source_context and not lifecycle_notifications_enabled:
             decision = NotificationDecision(
                 False,
                 utc_now(),
-                getattr(notification_state, "preferred_channel", None) or profile.preferred_channel,
+                preferred_channel,
                 getattr(notification_state, "suppressed_until", None),
                 None,
                 str(suppression_reason or "lifecycle suppression active"),
@@ -126,13 +111,14 @@ class NotificationDecisionEngine:
                 action=None,
                 decision=decision,
                 predicted_hour=None,
+                sent_today_count=sent_today_count,
                 reference_id=reference_id,
                 source_context=source_context,
                 runtime_policy=runtime_policy,
             )
             return decision
         if frequency_limit == 0:
-            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "notifications disabled")
+            decision = NotificationDecision(False, utc_now(), preferred_channel, None, None, "notifications disabled")
             await self._notification_states.record_decision(
                 user_id=user_id,
                 reason=decision.reason,
@@ -151,13 +137,14 @@ class NotificationDecisionEngine:
                 action=None,
                 decision=decision,
                 predicted_hour=None,
+                sent_today_count=sent_today_count,
                 reference_id=reference_id,
                 source_context=source_context,
                 runtime_policy=runtime_policy,
             )
             return decision
         if sent_today_count >= frequency_limit:
-            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "daily frequency limit reached")
+            decision = NotificationDecision(False, utc_now(), preferred_channel, None, None, "daily frequency limit reached")
             await self._notification_states.record_decision(
                 user_id=user_id,
                 reason=decision.reason,
@@ -176,6 +163,7 @@ class NotificationDecisionEngine:
                 action=None,
                 decision=decision,
                 predicted_hour=None,
+                sent_today_count=sent_today_count,
                 reference_id=reference_id,
                 source_context=source_context,
                 runtime_policy=runtime_policy,
@@ -184,7 +172,7 @@ class NotificationDecisionEngine:
 
         cooldown_until = getattr(notification_state, "cooldown_until", None)
         if cooldown_until and cooldown_until > utc_now():
-            decision = NotificationDecision(False, cooldown_until, profile.preferred_channel, cooldown_until, None, "cooldown active")
+            decision = NotificationDecision(False, cooldown_until, preferred_channel, cooldown_until, None, "cooldown active")
             await self._notification_states.record_decision(
                 user_id=user_id,
                 reason=decision.reason,
@@ -203,6 +191,7 @@ class NotificationDecisionEngine:
                 action=None,
                 decision=decision,
                 predicted_hour=None,
+                sent_today_count=sent_today_count,
                 reference_id=reference_id,
                 source_context=source_context,
                 runtime_policy=runtime_policy,
@@ -211,7 +200,7 @@ class NotificationDecisionEngine:
 
         action = self._pick_action(assessment)
         if action is None:
-            decision = NotificationDecision(False, utc_now(), profile.preferred_channel, None, None, "no retention action")
+            decision = NotificationDecision(False, utc_now(), preferred_channel, None, None, "no retention action")
             await self._notification_states.record_decision(
                 user_id=user_id,
                 reason=decision.reason,
@@ -230,19 +219,20 @@ class NotificationDecisionEngine:
                 action=None,
                 decision=decision,
                 predicted_hour=None,
+                sent_today_count=sent_today_count,
                 reference_id=reference_id,
                 source_context=source_context,
                 runtime_policy=runtime_policy,
             )
             return decision
 
-        predicted_hour = self._predicted_hour(profile, session_events)
+        predicted_hour = self._predicted_hour(notification_state, profile, session_events)
         send_at = self._send_time(predicted_hour)
         message = self._build_message(
             user_id=user_id,
             action=action,
             assessment=assessment,
-            channel=profile.preferred_channel,
+            channel=preferred_channel,
             weak_clusters=weak_clusters,
             mistakes=mistakes,
         )
@@ -259,7 +249,7 @@ class NotificationDecisionEngine:
         decision = NotificationDecision(
             should_send=True,
             send_at=send_at,
-            channel=profile.preferred_channel,
+            channel=preferred_channel,
             cooldown_until=send_at + self._cooldown,
             message=message,
             reason="retention action selected",
@@ -282,6 +272,7 @@ class NotificationDecisionEngine:
             action=action,
             decision=decision,
             predicted_hour=predicted_hour,
+            sent_today_count=sent_today_count,
             reference_id=reference_id,
             source_context=source_context,
             runtime_policy=runtime_policy,
@@ -296,8 +287,8 @@ class NotificationDecisionEngine:
         )
         return actions[0] if actions else None
 
-    def _predicted_hour(self, profile, session_events) -> int:
-        preferred = getattr(profile, "preferred_time_of_day", None)
+    def _predicted_hour(self, notification_state, profile, session_events) -> int:
+        preferred = getattr(notification_state, "preferred_time_of_day", None)
         if preferred is not None:
             return int(preferred)
         timestamps = [getattr(event, "created_at", None) for event in session_events if getattr(event, "created_at", None)]
@@ -372,6 +363,7 @@ class NotificationDecisionEngine:
         action,
         decision: NotificationDecision,
         predicted_hour: int | None,
+        sent_today_count: int,
         reference_id: str | None,
         source_context: str,
         runtime_policy,
@@ -411,7 +403,8 @@ class NotificationDecisionEngine:
                         "suppression_reason": getattr(notification_state, "suppression_reason", None),
                     },
                     "evaluated_constraints": {
-                        "frequency_limit": int(getattr(profile, "frequency_limit", 0) or 0),
+                        "frequency_limit": int(getattr(notification_state, "frequency_limit", 0) or 0),
+                        "sent_today_count": int(sent_today_count or 0),
                         "cooldown_active": bool(
                             getattr(notification_state, "cooldown_until", None)
                             and getattr(notification_state, "cooldown_until", None) > utc_now()
@@ -419,6 +412,10 @@ class NotificationDecisionEngine:
                         "lifecycle_notifications_enabled": dict(
                             getattr(notification_state, "lifecycle_policy", {}) or {}
                         ).get("lifecycle_notifications_enabled"),
+                        "suppression_active": bool(
+                            getattr(notification_state, "suppressed_until", None)
+                            and getattr(notification_state, "suppressed_until", None) > utc_now()
+                        ),
                         "source_context": source_context,
                     },
                     "delivery_context": {

@@ -122,6 +122,23 @@ class StubDecisionTraceService(DecisionTraceService):
 
     async def lifecycle_detail(self, user_id: int) -> dict:
         return {
+            "notification_eligibility": {
+                "lifecycle_stage": "activating",
+                "lifecycle_reasons": ["user is building toward activation"],
+                "notification_lifecycle_stage": "activating",
+                "state_aligned": True,
+                "lifecycle_notifications_enabled": True,
+                "suppression_reason": None,
+                "suppression_active": False,
+                "suppressed_until": None,
+                "cooldown_active": False,
+                "cooldown_until": None,
+                "frequency_limit": 2,
+                "sent_count_today": 0,
+                "daily_limit_reached": False,
+                "next_eligible_at": None,
+                "blocking_reasons": [],
+            },
             "lifecycle_transitions": [
                 {
                     "id": 4,
@@ -343,6 +360,23 @@ class StubDecisionTraceService(DecisionTraceService):
                 "last_decision_reason": "At-risk user matched the reengagement policy.",
                 "updated_at": "2026-03-23T12:08:00",
             },
+            "notification_eligibility": {
+                "lifecycle_stage": "at_risk",
+                "lifecycle_reasons": ["retention engine marked user as at risk"],
+                "notification_lifecycle_stage": "at_risk",
+                "state_aligned": True,
+                "lifecycle_notifications_enabled": True,
+                "suppression_reason": None,
+                "suppression_active": False,
+                "suppressed_until": None,
+                "cooldown_active": True,
+                "cooldown_until": "2026-03-23T16:00:00",
+                "frequency_limit": 2,
+                "sent_count_today": 1,
+                "daily_limit_reached": False,
+                "next_eligible_at": "2026-03-23T16:00:00",
+                "blocking_reasons": ["cooldown active"],
+            },
             "notification_suppression_events": [
                 {
                     "id": 73,
@@ -419,6 +453,7 @@ def test_lifecycle_report_promotes_latest_artifacts_and_summaries():
 
     assert report["latest_decisions"]["lifecycle_decision"]["trace_type"] == "lifecycle_decision"
     assert report["latest_decisions"]["lifecycle_action_plan"]["trace_type"] == "lifecycle_action_plan"
+    assert report["latest_decisions"]["notification_eligibility"]["state_aligned"] is True
     assert report["event_summary"]["counts_by_type"]["paywall_viewed"] == 1
     assert report["trace_summary"]["counts_by_type"]["lifecycle_decision"] == 1
 
@@ -450,6 +485,7 @@ def test_notification_report_promotes_policy_delivery_and_suppression_artifacts(
     report = run_async(service.notification_report(11))
 
     assert report["latest_decisions"]["notification_selection"]["trace_type"] == "notification_selection"
+    assert report["latest_decisions"]["notification_eligibility"]["cooldown_active"] is True
     assert report["latest_decisions"]["active_policy"]["policy_key"] == "default"
     assert report["latest_decisions"]["latest_delivery"]["status"] == "sent"
     assert report["delivery_summary"]["counts_by_status"]["skipped"] == 1

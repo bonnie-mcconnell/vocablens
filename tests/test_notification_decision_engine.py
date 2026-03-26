@@ -234,6 +234,40 @@ def test_notification_decision_engine_respects_daily_limit_and_prevents_spam():
     assert uow.decision_traces.created[0]["outputs"]["should_send"] is False
 
 
+def test_notification_decision_engine_uses_canonical_send_count_over_delivery_replay():
+    now = utc_now()
+    profile = SimpleNamespace(preferred_channel="push", preferred_time_of_day=18, frequency_limit=1)
+    notification_state = SimpleNamespace(
+        user_id=12,
+        preferred_channel="push",
+        preferred_time_of_day=18,
+        frequency_limit=1,
+        lifecycle_policy={},
+        suppression_reason=None,
+        suppressed_until=None,
+        cooldown_until=None,
+        sent_count_day=now.date().isoformat(),
+        sent_count_today=0,
+        last_decision_at=None,
+        last_decision_reason=None,
+        last_reference_id=None,
+    )
+    deliveries = [SimpleNamespace(created_at=now, status="sent")]
+    assessment = SimpleNamespace(
+        state="at-risk",
+        drop_off_risk=0.7,
+        current_streak=3,
+        suggested_actions=[SimpleNamespace(kind="streak_nudge", reason="Keep it going", target=None)],
+    )
+    uow = FakeUOW(profile, deliveries=deliveries, notification_state=notification_state)
+    engine = NotificationDecisionEngine(lambda: uow)
+
+    decision = run_async(engine.decide(12, assessment))
+
+    assert decision.should_send is True
+    assert uow.decision_traces.created[0]["inputs"]["evaluated_constraints"]["sent_today_count"] == 0
+
+
 def test_notification_decision_engine_prioritizes_streak_over_review():
     profile = SimpleNamespace(preferred_channel="push", preferred_time_of_day=18, frequency_limit=3)
     assessment = SimpleNamespace(
@@ -262,7 +296,7 @@ def test_notification_decision_engine_prioritizes_streak_over_review():
     assert uow.decision_traces.created[0]["outputs"]["message_category"] == "retention:streak_nudge"
 
 
-def test_notification_decision_engine_uses_session_history_for_send_time():
+def test_notification_decision_engine_prefers_canonical_send_hour_after_preference_sync():
     profile = SimpleNamespace(preferred_channel="email", preferred_time_of_day=None, frequency_limit=3, last_active_at=None)
     session_events = [
         SimpleNamespace(created_at=utc_now().replace(hour=9, minute=10, second=0, microsecond=0)),
@@ -282,8 +316,8 @@ def test_notification_decision_engine_uses_session_history_for_send_time():
 
     assert decision.should_send is True
     assert decision.channel == "email"
-    assert decision.send_at.hour == 10
-    assert uow.decision_traces.created[0]["inputs"]["session_history"]["predicted_hour"] == 10
+    assert decision.send_at.hour == 18
+    assert uow.decision_traces.created[0]["inputs"]["session_history"]["predicted_hour"] == 18
 
 
 def test_notification_decision_engine_respects_canonical_lifecycle_suppression():

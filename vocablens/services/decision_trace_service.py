@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from vocablens.core.time import utc_now
 from vocablens.domain.errors import NotFoundError
 from vocablens.infrastructure.db.models import (
     DailyMissionORM,
@@ -28,7 +29,6 @@ from vocablens.infrastructure.db.models import (
 )
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.adaptive_paywall_policy import AdaptivePaywallPolicy
-from vocablens.services.lifecycle_stage_policy import LifecycleSnapshot, classify_lifecycle_stage
 from vocablens.services.monetization_policy import MonetizationPolicy
 from vocablens.services.report_models import LifecycleAction
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
@@ -237,6 +237,10 @@ class DecisionTraceService:
                 self._lifecycle_transition_payload(item) for item in snapshot["lifecycle_transitions"]
             ],
             "notification_state": self._notification_state_payload(snapshot["notification_state"]),
+            "notification_eligibility": self._notification_eligibility_payload(
+                snapshot["notification_state"],
+                snapshot["lifecycle_state"],
+            ),
             "notification_suppression_events": [
                 self._notification_suppression_event_payload(item)
                 for item in snapshot["notification_suppression_events"]
@@ -262,6 +266,7 @@ class DecisionTraceService:
                 "lifecycle_action_plan": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_action_plan"),
                 "lifecycle_transition": self._latest_trace_payload_from_dicts(traces, trace_type="lifecycle_transition"),
                 "notification_selection": self._latest_trace_payload_from_dicts(traces, trace_type="notification_selection"),
+                "notification_eligibility": detail.get("notification_eligibility"),
                 "latest_transition": transitions[0] if transitions else None,
                 "latest_notification_suppression": notification_suppression_events[0] if notification_suppression_events else None,
             },
@@ -417,6 +422,10 @@ class DecisionTraceService:
         return {
             "notification_policy": self._notification_policy_payload(snapshot["notification_policy"]),
             "notification_state": self._notification_state_payload(snapshot["notification_state"]),
+            "notification_eligibility": self._notification_eligibility_payload(
+                snapshot["notification_state"],
+                snapshot["lifecycle_state"],
+            ),
             "notification_suppression_events": [
                 self._notification_suppression_event_payload(item)
                 for item in snapshot["notification_suppression_events"]
@@ -439,6 +448,7 @@ class DecisionTraceService:
             "detail": detail,
             "latest_decisions": {
                 "notification_selection": self._latest_trace_payload_from_dicts(traces, trace_type="notification_selection"),
+                "notification_eligibility": detail.get("notification_eligibility"),
                 "active_policy": detail.get("notification_policy"),
                 "latest_delivery": deliveries[0] if deliveries else None,
                 "latest_suppression_event": suppression_events[0] if suppression_events else None,
@@ -758,23 +768,10 @@ class DecisionTraceService:
                 ],
                 "paywall": self._lifecycle_paywall_payload_from_trace(outputs.get("paywall")),
             }
+        lifecycle_state = snapshot.get("lifecycle_state")
         learning_state = self._learning_state_domain(snapshot["learning_state"], snapshot["user"].id)
-        engagement_state = self._engagement_state_domain(snapshot["engagement_state"], snapshot["user"].id)
-        retention_view = type(
-            "RetentionView",
-            (),
-            {
-                "state": "at-risk" if retention["state"] == "at-risk" else retention["state"],
-                "is_high_engagement": retention["is_high_engagement"],
-            },
-        )()
-        stage, reasons = classify_lifecycle_stage(
-            snapshot=LifecycleSnapshot(
-                learning_state=learning_state,
-                engagement_state=engagement_state,
-                retention=retention_view,
-            )
-        )
+        stage = str(getattr(lifecycle_state, "current_stage", None) or "activating")
+        reasons = [str(reason) for reason in list(getattr(lifecycle_state, "current_reasons", []) or [])]
         actions = self._lifecycle_actions(
             stage=stage,
             retention=retention,
@@ -792,6 +789,59 @@ class DecisionTraceService:
                 "usage_percent": int(paywall.get("usage_percent", 0) or 0),
                 "allow_access": bool(paywall.get("allow_access", True)),
             },
+        }
+
+    def _notification_eligibility_payload(self, notification_state, lifecycle_state) -> dict[str, Any] | None:
+        if notification_state is None:
+            return None
+        now = utc_now()
+        lifecycle_stage = getattr(lifecycle_state, "current_stage", None)
+        lifecycle_reasons = [str(reason) for reason in list(getattr(lifecycle_state, "current_reasons", []) or [])]
+        notification_lifecycle_stage = getattr(notification_state, "lifecycle_stage", None)
+        lifecycle_policy = dict(getattr(notification_state, "lifecycle_policy", {}) or {})
+        suppressed_until = getattr(notification_state, "suppressed_until", None)
+        cooldown_until = getattr(notification_state, "cooldown_until", None)
+        frequency_limit = int(getattr(notification_state, "frequency_limit", 0) or 0)
+        sent_count_today = int(getattr(notification_state, "sent_count_today", 0) or 0)
+        sent_count_day = str(getattr(notification_state, "sent_count_day", "") or "")
+        if sent_count_day != now.date().isoformat():
+            sent_count_today = 0
+
+        blocking_reasons: list[str] = []
+        if lifecycle_policy.get("lifecycle_notifications_enabled") is False:
+            blocking_reasons.append(str(getattr(notification_state, "suppression_reason", None) or "lifecycle suppression active"))
+        if suppressed_until and suppressed_until > now:
+            blocking_reasons.append("suppression window active")
+        if cooldown_until and cooldown_until > now:
+            blocking_reasons.append("cooldown active")
+        if frequency_limit == 0:
+            blocking_reasons.append("notifications disabled")
+        elif sent_count_today >= frequency_limit:
+            blocking_reasons.append("daily frequency limit reached")
+
+        next_eligible_candidates = [
+            timestamp
+            for timestamp in (suppressed_until, cooldown_until)
+            if timestamp is not None and timestamp > now
+        ]
+        next_eligible_at = max(next_eligible_candidates) if next_eligible_candidates else None
+
+        return {
+            "lifecycle_stage": lifecycle_stage,
+            "lifecycle_reasons": lifecycle_reasons,
+            "notification_lifecycle_stage": notification_lifecycle_stage,
+            "state_aligned": lifecycle_stage == notification_lifecycle_stage if lifecycle_stage is not None else notification_lifecycle_stage is None,
+            "lifecycle_notifications_enabled": bool(lifecycle_policy.get("lifecycle_notifications_enabled", True)),
+            "suppression_reason": getattr(notification_state, "suppression_reason", None),
+            "suppression_active": bool(suppressed_until and suppressed_until > now),
+            "suppressed_until": self._timestamp(suppressed_until),
+            "cooldown_active": bool(cooldown_until and cooldown_until > now),
+            "cooldown_until": self._timestamp(cooldown_until),
+            "frequency_limit": frequency_limit,
+            "sent_count_today": sent_count_today,
+            "daily_limit_reached": bool(frequency_limit > 0 and sent_count_today >= frequency_limit),
+            "next_eligible_at": self._timestamp(next_eligible_at),
+            "blocking_reasons": blocking_reasons,
         }
 
     async def _adaptive_paywall_payload(self, snapshot: dict[str, Any]) -> dict[str, Any]:

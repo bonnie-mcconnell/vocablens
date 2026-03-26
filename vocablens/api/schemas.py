@@ -1047,6 +1047,24 @@ class NotificationStateDiagnosticsResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class NotificationEligibilityDiagnosticsResponse(BaseModel):
+    lifecycle_stage: str | None = None
+    lifecycle_reasons: list[str] = Field(default_factory=list)
+    notification_lifecycle_stage: str | None = None
+    state_aligned: bool = True
+    lifecycle_notifications_enabled: bool = True
+    suppression_reason: str | None = None
+    suppression_active: bool = False
+    suppressed_until: datetime | None = None
+    cooldown_active: bool = False
+    cooldown_until: datetime | None = None
+    frequency_limit: int = 0
+    sent_count_today: int = 0
+    daily_limit_reached: bool = False
+    next_eligible_at: datetime | None = None
+    blocking_reasons: list[str] = Field(default_factory=list)
+
+
 class NotificationSuppressionEventDiagnosticsResponse(BaseModel):
     id: int
     user_id: int
@@ -1183,6 +1201,7 @@ class LifecycleDiagnosticsDataResponse(BaseModel):
     lifecycle_state: UserLifecycleStateDiagnosticsResponse | None = None
     lifecycle_transitions: list[LifecycleTransitionDiagnosticsResponse] = Field(default_factory=list)
     notification_state: NotificationStateDiagnosticsResponse | None = None
+    notification_eligibility: NotificationEligibilityDiagnosticsResponse | None = None
     notification_suppression_events: list[NotificationSuppressionEventDiagnosticsResponse] = Field(default_factory=list)
     profile: UserProfileDiagnosticsResponse | None = None
     retention: RetentionDiagnosticsResponse
@@ -1219,6 +1238,7 @@ class LifecycleOperatorLatestDecisionsResponse(BaseModel):
     lifecycle_action_plan: DecisionTraceRecordResponse | None = None
     lifecycle_transition: DecisionTraceRecordResponse | None = None
     notification_selection: DecisionTraceRecordResponse | None = None
+    notification_eligibility: NotificationEligibilityDiagnosticsResponse | None = None
     latest_transition: LifecycleTransitionDiagnosticsResponse | None = None
     latest_notification_suppression: NotificationSuppressionEventDiagnosticsResponse | None = None
 
@@ -1736,6 +1756,7 @@ class NotificationDeliveryDiagnosticsResponse(BaseModel):
 class NotificationDiagnosticsDataResponse(BaseModel):
     notification_policy: NotificationPolicyDiagnosticsResponse | None = None
     notification_state: NotificationStateDiagnosticsResponse | None = None
+    notification_eligibility: NotificationEligibilityDiagnosticsResponse | None = None
     notification_suppression_events: list[NotificationSuppressionEventDiagnosticsResponse] = Field(default_factory=list)
     notification_deliveries: list[NotificationDeliveryDiagnosticsResponse] = Field(default_factory=list)
     events: list[SessionEventDiagnosticsResponse] = Field(default_factory=list)
@@ -1758,6 +1779,7 @@ class NotificationSuppressionSummaryResponse(BaseModel):
 
 class NotificationOperatorLatestDecisionsResponse(BaseModel):
     notification_selection: DecisionTraceRecordResponse | None = None
+    notification_eligibility: NotificationEligibilityDiagnosticsResponse | None = None
     active_policy: NotificationPolicyDiagnosticsResponse | None = None
     latest_delivery: NotificationDeliveryDiagnosticsResponse | None = None
     latest_suppression_event: NotificationSuppressionEventDiagnosticsResponse | None = None
