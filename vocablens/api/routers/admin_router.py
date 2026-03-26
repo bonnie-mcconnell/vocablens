@@ -32,11 +32,12 @@ from vocablens.api.schemas import (
     ExerciseTemplateRegistryHealthResponse,
     ExerciseTemplateRegistryListResponse,
     ExerciseTemplateRegistryUpsertRequest,
+    ExperimentHealthDashboardResponse,
+    ExperimentOperatorReportResponse,
+    ExperimentRegistryActionRequest,
     ExperimentRegistryAuditResponse,
     ExperimentRegistryDetailResponse,
-    ExperimentHealthDashboardResponse,
     ExperimentRegistryListResponse,
-    ExperimentOperatorReportResponse,
     ExperimentRegistryUpsertRequest,
     ExperimentResultsResponse,
     LearningHealthDashboardResponse,
@@ -228,6 +229,110 @@ def create_admin_router() -> APIRouter:
             "data": audits,
             "meta": {
                 "source": "admin.experiments.registry.audit",
+                "experiment_key": experiment_key,
+            },
+        }
+
+    @router.post("/experiments/registry/{experiment_key}/pause", response_model=ExperimentRegistryDetailResponse)
+    async def experiment_registry_pause(
+        experiment_key: str,
+        request: ExperimentRegistryActionRequest,
+        admin_actor: str | None = Header(default=None, alias="X-Admin-Actor"),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            detail = await service.pause_registry(
+                experiment_key=experiment_key,
+                changed_by=admin_actor,
+                change_note=request.change_note,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.experiments.registry.pause",
+                "experiment_key": experiment_key,
+            },
+        }
+
+    @router.post("/experiments/registry/{experiment_key}/resume", response_model=ExperimentRegistryDetailResponse)
+    async def experiment_registry_resume(
+        experiment_key: str,
+        request: ExperimentRegistryActionRequest,
+        admin_actor: str | None = Header(default=None, alias="X-Admin-Actor"),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            detail = await service.resume_registry(
+                experiment_key=experiment_key,
+                changed_by=admin_actor,
+                change_note=request.change_note,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.experiments.registry.resume",
+                "experiment_key": experiment_key,
+            },
+        }
+
+    @router.post("/experiments/registry/{experiment_key}/kill", response_model=ExperimentRegistryDetailResponse)
+    async def experiment_registry_kill(
+        experiment_key: str,
+        request: ExperimentRegistryActionRequest,
+        admin_actor: str | None = Header(default=None, alias="X-Admin-Actor"),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            detail = await service.kill_registry(
+                experiment_key=experiment_key,
+                changed_by=admin_actor,
+                change_note=request.change_note,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.experiments.registry.kill",
+                "experiment_key": experiment_key,
+            },
+        }
+
+    @router.post("/experiments/registry/{experiment_key}/archive", response_model=ExperimentRegistryDetailResponse)
+    async def experiment_registry_archive(
+        experiment_key: str,
+        request: ExperimentRegistryActionRequest,
+        admin_actor: str | None = Header(default=None, alias="X-Admin-Actor"),
+        _: str = Depends(get_admin_token),
+        service: ExperimentRegistryService = Depends(get_experiment_registry_service),
+    ):
+        try:
+            detail = await service.archive_registry(
+                experiment_key=experiment_key,
+                changed_by=admin_actor,
+                change_note=request.change_note,
+            )
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "data": detail,
+            "meta": {
+                "source": "admin.experiments.registry.archive",
                 "experiment_key": experiment_key,
             },
         }

@@ -217,6 +217,10 @@ class ExperimentRegistryUpsertRequest(BaseModel):
     change_note: str = Field(..., min_length=8, max_length=500)
 
 
+class ExperimentRegistryActionRequest(BaseModel):
+    change_note: str = Field(..., min_length=8, max_length=500)
+
+
 class ExperimentRegistryVariantResponse(BaseModel):
     name: str
     weight: int
@@ -300,7 +304,14 @@ class ExperimentRegistryDetailDataResponse(BaseModel):
 
 
 class ExperimentRegistryDetailMetaResponse(BaseModel):
-    source: Literal["admin.experiments.registry.detail", "admin.experiments.registry.update"]
+    source: Literal[
+        "admin.experiments.registry.detail",
+        "admin.experiments.registry.update",
+        "admin.experiments.registry.pause",
+        "admin.experiments.registry.resume",
+        "admin.experiments.registry.kill",
+        "admin.experiments.registry.archive",
+    ]
     experiment_key: str
 
 

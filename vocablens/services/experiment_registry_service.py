@@ -137,6 +137,71 @@ class ExperimentRegistryService:
             )
         }
 
+    async def pause_registry(
+        self,
+        *,
+        experiment_key: str,
+        changed_by: str | None,
+        change_note: str,
+    ) -> dict:
+        return await self._apply_existing_action(
+            experiment_key=experiment_key,
+            changed_by=changed_by,
+            change_note=change_note,
+            status="paused",
+        )
+
+    async def resume_registry(
+        self,
+        *,
+        experiment_key: str,
+        changed_by: str | None,
+        change_note: str,
+    ) -> dict:
+        normalized_key = self._validate_experiment_key(experiment_key)
+        async with self._uow_factory() as uow:
+            existing = await uow.experiment_registries.get(normalized_key)
+            if existing is None:
+                raise NotFoundError(f"Experiment '{normalized_key}' not found")
+            if bool(existing.is_killed):
+                raise ValidationError(f"Experiment '{normalized_key}' cannot resume while kill switch is enabled")
+            await uow.commit()
+
+        return await self._apply_existing_action(
+            experiment_key=normalized_key,
+            changed_by=changed_by,
+            change_note=change_note,
+            status="active",
+        )
+
+    async def kill_registry(
+        self,
+        *,
+        experiment_key: str,
+        changed_by: str | None,
+        change_note: str,
+    ) -> dict:
+        return await self._apply_existing_action(
+            experiment_key=experiment_key,
+            changed_by=changed_by,
+            change_note=change_note,
+            is_killed=True,
+        )
+
+    async def archive_registry(
+        self,
+        *,
+        experiment_key: str,
+        changed_by: str | None,
+        change_note: str,
+    ) -> dict:
+        return await self._apply_existing_action(
+            experiment_key=experiment_key,
+            changed_by=changed_by,
+            change_note=change_note,
+            status="archived",
+        )
+
     async def list_audit_history(self, experiment_key: str, *, limit: int = 50) -> dict:
         normalized_key = self._validate_experiment_key(experiment_key)
         async with self._uow_factory() as uow:
@@ -281,6 +346,54 @@ class ExperimentRegistryService:
             allow_self=False,
         )
         self._validate_eligibility(experiment_key, command.eligibility or {})
+
+    async def _apply_existing_action(
+        self,
+        *,
+        experiment_key: str,
+        changed_by: str | None,
+        change_note: str,
+        status: str | None = None,
+        is_killed: bool | None = None,
+    ) -> dict:
+        normalized_key = self._validate_experiment_key(experiment_key)
+        async with self._uow_factory() as uow:
+            existing = await uow.experiment_registries.get(normalized_key)
+            if existing is None:
+                raise NotFoundError(f"Experiment '{normalized_key}' not found")
+            await uow.commit()
+
+        command = ExperimentRegistryUpsert(
+            status=status or str(existing.status),
+            rollout_percentage=int(existing.rollout_percentage),
+            holdout_percentage=int(getattr(existing, "holdout_percentage", 0) or 0),
+            is_killed=bool(existing.is_killed) if is_killed is None else is_killed,
+            baseline_variant=str(getattr(existing, "baseline_variant", "control") or "control"),
+            description=existing.description,
+            variants=tuple(
+                ExperimentRegistryVariantInput(
+                    name=str(item.get("name") or ""),
+                    weight=int(item.get("weight") or 0),
+                )
+                for item in list(existing.variants or [])
+            ),
+            eligibility={
+                str(key): tuple(str(item) for item in list(values or []))
+                for key, values in dict(getattr(existing, "eligibility", {}) or {}).items()
+            },
+            mutually_exclusive_with=tuple(
+                str(item) for item in list(getattr(existing, "mutually_exclusive_with", []) or [])
+            ),
+            prerequisite_experiments=tuple(
+                str(item) for item in list(getattr(existing, "prerequisite_experiments", []) or [])
+            ),
+            change_note=change_note,
+        )
+        return await self.upsert_registry(
+            experiment_key=normalized_key,
+            command=command,
+            changed_by=changed_by,
+        )
 
     def _validate_experiment_key(self, experiment_key: str) -> str:
         normalized_key = (experiment_key or "").strip()

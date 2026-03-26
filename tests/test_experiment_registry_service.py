@@ -275,6 +275,72 @@ def test_experiment_registry_service_writes_audit_entry_on_update():
     assert payload["experiment"]["audit_entries"][0]["changed_by"] == "ops@vocablens"
 
 
+def test_experiment_registry_service_pause_action_updates_status_and_audit():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(
+        service.pause_registry(
+            experiment_key="paywall_offer",
+            changed_by="ops@vocablens",
+            change_note="Paused rollout for operator review.",
+        )
+    )
+
+    assert payload["experiment"]["status"] == "paused"
+    assert payload["experiment"]["audit_entries"][0]["action"] == "status_paused"
+    assert payload["experiment"]["audit_entries"][0]["changed_by"] == "ops@vocablens"
+
+
+def test_experiment_registry_service_resume_action_rejects_killed_experiment():
+    uow = FakeUOW()
+    uow.experiment_registries.rows["paywall_offer"].status = "paused"
+    uow.experiment_registries.rows["paywall_offer"].is_killed = True
+    service = ExperimentRegistryService(lambda: uow)
+
+    with pytest.raises(ValidationError):
+        run_async(
+            service.resume_registry(
+                experiment_key="paywall_offer",
+                changed_by="ops@vocablens",
+                change_note="Trying to resume while still killed.",
+            )
+        )
+
+
+def test_experiment_registry_service_kill_action_enables_kill_switch_and_audit():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(
+        service.kill_registry(
+            experiment_key="paywall_offer",
+            changed_by="ops@vocablens",
+            change_note="Killed rollout after anomaly review.",
+        )
+    )
+
+    assert payload["experiment"]["is_killed"] is True
+    assert payload["experiment"]["status"] == "active"
+    assert payload["experiment"]["audit_entries"][0]["action"] == "kill_switch_enabled"
+
+
+def test_experiment_registry_service_archive_action_transitions_status():
+    uow = FakeUOW()
+    service = ExperimentRegistryService(lambda: uow)
+
+    payload = run_async(
+        service.archive_registry(
+            experiment_key="paywall_offer",
+            changed_by="ops@vocablens",
+            change_note="Archived completed experiment.",
+        )
+    )
+
+    assert payload["experiment"]["status"] == "archived"
+    assert payload["experiment"]["audit_entries"][0]["action"] == "status_archived"
+
+
 def test_experiment_registry_service_rejects_missing_control_variant():
     uow = FakeUOW()
     service = ExperimentRegistryService(lambda: uow)

@@ -239,6 +239,86 @@ class FakeExperimentRegistryService:
             }
         }
 
+    async def pause_registry(self, *, experiment_key: str, changed_by: str | None, change_note: str):
+        return {
+            "experiment": {
+                **(await self.get_registry(experiment_key))["experiment"],
+                "status": "paused",
+                "audit_entries": [
+                    {
+                        "id": 6,
+                        "experiment_key": experiment_key,
+                        "action": "status_paused",
+                        "changed_by": changed_by or "system_admin",
+                        "change_note": change_note,
+                        "previous_config": {"status": "active"},
+                        "new_config": {"status": "paused"},
+                        "created_at": "2026-03-24T10:05:00",
+                    }
+                ],
+            }
+        }
+
+    async def resume_registry(self, *, experiment_key: str, changed_by: str | None, change_note: str):
+        return {
+            "experiment": {
+                **(await self.get_registry(experiment_key))["experiment"],
+                "status": "active",
+                "audit_entries": [
+                    {
+                        "id": 7,
+                        "experiment_key": experiment_key,
+                        "action": "status_active",
+                        "changed_by": changed_by or "system_admin",
+                        "change_note": change_note,
+                        "previous_config": {"status": "paused"},
+                        "new_config": {"status": "active"},
+                        "created_at": "2026-03-24T10:07:00",
+                    }
+                ],
+            }
+        }
+
+    async def kill_registry(self, *, experiment_key: str, changed_by: str | None, change_note: str):
+        return {
+            "experiment": {
+                **(await self.get_registry(experiment_key))["experiment"],
+                "is_killed": True,
+                "audit_entries": [
+                    {
+                        "id": 8,
+                        "experiment_key": experiment_key,
+                        "action": "kill_switch_enabled",
+                        "changed_by": changed_by or "system_admin",
+                        "change_note": change_note,
+                        "previous_config": {"is_killed": False},
+                        "new_config": {"is_killed": True},
+                        "created_at": "2026-03-24T10:08:00",
+                    }
+                ],
+            }
+        }
+
+    async def archive_registry(self, *, experiment_key: str, changed_by: str | None, change_note: str):
+        return {
+            "experiment": {
+                **(await self.get_registry(experiment_key))["experiment"],
+                "status": "archived",
+                "audit_entries": [
+                    {
+                        "id": 9,
+                        "experiment_key": experiment_key,
+                        "action": "status_archived",
+                        "changed_by": changed_by or "system_admin",
+                        "change_note": change_note,
+                        "previous_config": {"status": "active"},
+                        "new_config": {"status": "archived"},
+                        "created_at": "2026-03-24T10:09:00",
+                    }
+                ],
+            }
+        }
+
     async def list_audit_history(self, experiment_key: str, *, limit: int = 50):
         return {
             "audit_entries": [
@@ -2258,6 +2338,26 @@ def test_admin_conversion_report_is_protected_and_standardized():
         },
         headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
     )
+    registry_pause = client.post(
+        "/admin/experiments/registry/paywall_offer/pause",
+        json={"change_note": "Paused rollout for operator review."},
+        headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+    )
+    registry_resume = client.post(
+        "/admin/experiments/registry/paywall_offer/resume",
+        json={"change_note": "Resumed rollout after review."},
+        headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+    )
+    registry_kill = client.post(
+        "/admin/experiments/registry/paywall_offer/kill",
+        json={"change_note": "Killed rollout after anomaly review."},
+        headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+    )
+    registry_archive = client.post(
+        "/admin/experiments/registry/paywall_offer/archive",
+        json={"change_note": "Archived completed experiment."},
+        headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+    )
     registry_audit = client.get("/admin/experiments/registry/paywall_offer/audit?limit=10", headers={"X-Admin-Token": "secret"})
     registry_report = client.get("/admin/experiments/registry/paywall_offer/report?limit=10", headers={"X-Admin-Token": "secret"})
     experiment_health_report = client.get("/admin/experiments/health/report?limit=10", headers={"X-Admin-Token": "secret"})
@@ -2405,6 +2505,22 @@ def test_admin_conversion_report_is_protected_and_standardized():
     assert registry_update.json()["meta"]["source"] == "admin.experiments.registry.update"
     assert registry_update.json()["data"]["experiment"]["audit_entries"][0]["changed_by"] == "ops@vocablens"
     assert registry_update.json()["data"]["experiment"]["variants"][1]["weight"] == 40
+    assert registry_pause.status_code == 200
+    assert registry_pause.json()["meta"]["source"] == "admin.experiments.registry.pause"
+    assert registry_pause.json()["data"]["experiment"]["status"] == "paused"
+    assert registry_pause.json()["data"]["experiment"]["audit_entries"][0]["action"] == "status_paused"
+    assert registry_resume.status_code == 200
+    assert registry_resume.json()["meta"]["source"] == "admin.experiments.registry.resume"
+    assert registry_resume.json()["data"]["experiment"]["status"] == "active"
+    assert registry_resume.json()["data"]["experiment"]["audit_entries"][0]["action"] == "status_active"
+    assert registry_kill.status_code == 200
+    assert registry_kill.json()["meta"]["source"] == "admin.experiments.registry.kill"
+    assert registry_kill.json()["data"]["experiment"]["is_killed"] is True
+    assert registry_kill.json()["data"]["experiment"]["audit_entries"][0]["action"] == "kill_switch_enabled"
+    assert registry_archive.status_code == 200
+    assert registry_archive.json()["meta"]["source"] == "admin.experiments.registry.archive"
+    assert registry_archive.json()["data"]["experiment"]["status"] == "archived"
+    assert registry_archive.json()["data"]["experiment"]["audit_entries"][0]["action"] == "status_archived"
     assert registry_audit.status_code == 200
     assert registry_audit.json()["meta"]["source"] == "admin.experiments.registry.audit"
     assert registry_audit.json()["data"]["audit_entries"][0]["action"] == "updated"
