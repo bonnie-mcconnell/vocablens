@@ -21,6 +21,7 @@ class FakeUOW:
             get_by_mission_id=self._get_reward_chest_by_mission_id,
             create=self._create_reward_chest,
             mark_unlocked=self._mark_reward_chest_unlocked,
+            mark_claimed=self._mark_reward_chest_claimed,
         )
         self.decision_traces = SimpleNamespace(create=self._create_decision_trace)
         self._due_items = due_items or []
@@ -99,6 +100,11 @@ class FakeUOW:
     async def _mark_reward_chest_unlocked(self, chest_id: int, *, unlocked_at):
         self._reward_chest.status = "unlocked"
         self._reward_chest.unlocked_at = unlocked_at
+        return self._reward_chest
+
+    async def _mark_reward_chest_claimed(self, chest_id: int, *, claimed_at):
+        self._reward_chest.status = "claimed"
+        self._reward_chest.claimed_at = claimed_at
         return self._reward_chest
 
     async def _create_decision_trace(self, **kwargs):
@@ -347,3 +353,41 @@ def test_daily_loop_completion_is_idempotent_after_first_unlock():
     assert second.reward_chest_unlocked is True
     assert second.completed is True
     assert health_signals.calls == ["global", "global"]
+
+
+def test_daily_loop_claim_reward_chest_is_idempotent():
+    recommendation = SimpleNamespace(
+        action="practice_grammar",
+        target="grammar",
+        reason="Grammar weak",
+        lesson_difficulty="medium",
+        skill_focus="grammar",
+    )
+    event_service = FakeEventService()
+    health_signals = FakeDailyLoopHealthSignalService()
+    uow = FakeUOW()
+    service = DailyLoopService(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeGamificationService(streak=6, xp=200),
+        FakeNotificationEngine(),
+        FakeRetentionEngine(streak=6),
+        event_service,
+        health_signals,
+    )
+
+    run_async(service.build_daily_loop(1))
+    run_async(service.complete_daily_mission(1))
+    first = run_async(service.claim_reward_chest(1))
+    second = run_async(service.claim_reward_chest(1))
+
+    assert first.claimed is True
+    assert first.already_claimed is False
+    assert first.reward_preview["chest_state"] == "claimed"
+    assert second.claimed is True
+    assert second.already_claimed is True
+    assert second.reward_preview["chest_state"] == "claimed"
+    emitted_types = [call[1] for call in event_service.calls]
+    assert emitted_types.count("reward_chest_claimed") == 1
+    assert uow._decision_traces[-1]["source"] == "daily_loop_service.claim_reward_chest"
+    assert health_signals.calls == ["global", "global", "global"]

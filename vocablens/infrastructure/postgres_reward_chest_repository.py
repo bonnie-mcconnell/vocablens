@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import RewardChestORM
@@ -37,20 +38,27 @@ class PostgresRewardChestRepository:
         payload: dict,
     ):
         now = utc_now()
-        result = await self.session.execute(
-            insert(RewardChestORM)
-            .values(
-                user_id=user_id,
-                mission_id=mission_id,
-                xp_reward=xp_reward,
-                badge_hint=badge_hint,
-                payload=dict(payload),
-                created_at=now,
-                updated_at=now,
+        try:
+            result = await self.session.execute(
+                insert(RewardChestORM)
+                .values(
+                    user_id=user_id,
+                    mission_id=mission_id,
+                    xp_reward=xp_reward,
+                    badge_hint=badge_hint,
+                    payload=dict(payload),
+                    created_at=now,
+                    updated_at=now,
+                )
+                .returning(RewardChestORM)
             )
-            .returning(RewardChestORM)
-        )
-        return result.scalar_one()
+            return result.scalar_one()
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get_by_mission_id(mission_id)
+            if existing is None:
+                raise
+            return existing
 
     async def mark_unlocked(self, chest_id: int, *, unlocked_at):
         await self.session.execute(
@@ -59,6 +67,21 @@ class PostgresRewardChestRepository:
             .values(
                 status="unlocked",
                 unlocked_at=unlocked_at,
+                updated_at=utc_now(),
+            )
+        )
+        result = await self.session.execute(
+            select(RewardChestORM).where(RewardChestORM.id == chest_id)
+        )
+        return result.scalar_one()
+
+    async def mark_claimed(self, chest_id: int, *, claimed_at):
+        await self.session.execute(
+            update(RewardChestORM)
+            .where(RewardChestORM.id == chest_id)
+            .values(
+                status="claimed",
+                claimed_at=claimed_at,
                 updated_at=utc_now(),
             )
         )

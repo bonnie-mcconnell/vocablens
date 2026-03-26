@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.db.models import DailyMissionORM
@@ -44,24 +45,31 @@ class PostgresDailyMissionRepository:
         notification_preview: dict,
     ):
         now = utc_now()
-        result = await self.session.execute(
-            insert(DailyMissionORM)
-            .values(
-                user_id=user_id,
-                mission_date=mission_date,
-                weak_area=weak_area,
-                mission_max_sessions=mission_max_sessions,
-                steps=list(steps),
-                loss_aversion_message=loss_aversion_message,
-                streak_at_issue=streak_at_issue,
-                momentum_score=momentum_score,
-                notification_preview=dict(notification_preview),
-                created_at=now,
-                updated_at=now,
+        try:
+            result = await self.session.execute(
+                insert(DailyMissionORM)
+                .values(
+                    user_id=user_id,
+                    mission_date=mission_date,
+                    weak_area=weak_area,
+                    mission_max_sessions=mission_max_sessions,
+                    steps=list(steps),
+                    loss_aversion_message=loss_aversion_message,
+                    streak_at_issue=streak_at_issue,
+                    momentum_score=momentum_score,
+                    notification_preview=dict(notification_preview),
+                    created_at=now,
+                    updated_at=now,
+                )
+                .returning(DailyMissionORM)
             )
-            .returning(DailyMissionORM)
-        )
-        return result.scalar_one()
+            return result.scalar_one()
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get_by_user_date(user_id, mission_date)
+            if existing is None:
+                raise
+            return existing
 
     async def mark_completed(self, mission_id: int, *, completed_at):
         await self.session.execute(

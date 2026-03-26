@@ -55,6 +55,13 @@ class SkipShieldResult:
     reason: str
 
 
+@dataclass(frozen=True)
+class RewardChestClaim:
+    claimed: bool
+    already_claimed: bool
+    reward_preview: dict[str, Any]
+
+
 class DailyLoopService:
     def __init__(
         self,
@@ -181,6 +188,9 @@ class DailyLoopService:
         await self._health_signals.evaluate_scope("global")
         return self._plan_from_rows(mission_row, chest_row, streak_shield_available=shield_available)
 
+    async def get_or_issue_daily_mission(self, user_id: int) -> DailyLoopPlan:
+        return await self.build_daily_loop(user_id)
+
     async def complete_daily_mission(self, user_id: int) -> DailyLoopCompletion:
         await self._retention.record_activity(user_id)
         now = utc_now()
@@ -214,7 +224,8 @@ class DailyLoopService:
                 milestones=milestones,
             )
             mission = await uow.daily_missions.mark_completed(mission.id, completed_at=now)
-            chest = await uow.reward_chests.mark_unlocked(chest.id, unlocked_at=now)
+            if chest is not None and getattr(chest, "status", "") == "locked":
+                chest = await uow.reward_chests.mark_unlocked(chest.id, unlocked_at=now)
             await uow.decision_traces.create(
                 user_id=user_id,
                 trace_type="reward_chest_resolution",
@@ -265,6 +276,65 @@ class DailyLoopService:
             chest,
             current_streak=engagement_state.current_streak,
             momentum_score=momentum_score,
+        )
+
+    async def claim_reward_chest(self, user_id: int) -> RewardChestClaim:
+        now = utc_now()
+        async with self._uow_factory() as uow:
+            mission = await uow.daily_missions.get_by_user_date(user_id, now.date().isoformat())
+            if mission is None:
+                await uow.commit()
+                raise ValueError("Daily mission not issued")
+            chest = await uow.reward_chests.get_by_mission_id(mission.id)
+            if chest is None:
+                await uow.commit()
+                raise ValueError("Reward chest not issued")
+            if str(getattr(chest, "status", "")) == "locked":
+                await uow.commit()
+                raise ValueError("Reward chest is locked")
+            if str(getattr(chest, "status", "")) == "claimed":
+                await uow.commit()
+                return RewardChestClaim(
+                    claimed=True,
+                    already_claimed=True,
+                    reward_preview=self._reward_preview_from_chest(chest),
+                )
+            chest = await uow.reward_chests.mark_claimed(chest.id, claimed_at=now)
+            await uow.decision_traces.create(
+                user_id=user_id,
+                trace_type="reward_chest_resolution",
+                source="daily_loop_service.claim_reward_chest",
+                reference_id=f"reward_chest:{chest.id}",
+                policy_version="v1",
+                inputs={
+                    "mission_id": int(mission.id),
+                    "mission_date": str(mission.mission_date),
+                    "previous_status": "unlocked",
+                },
+                outputs={
+                    "reward_chest_id": int(chest.id),
+                    "status": str(chest.status),
+                    "claimed_at": now.isoformat(),
+                },
+                reason="Claimed canonical reward chest.",
+            )
+            await uow.commit()
+
+        if self._events:
+            await self._events.track_event(
+                user_id,
+                "reward_chest_claimed",
+                {
+                    "reward_chest_id": int(chest.id),
+                    "xp_reward": int(getattr(chest, "xp_reward", 25) or 25),
+                    "badge_hint": str(getattr(chest, "badge_hint", "Reward pending") or "Reward pending"),
+                },
+            )
+        await self._health_signals.evaluate_scope("global")
+        return RewardChestClaim(
+            claimed=True,
+            already_claimed=False,
+            reward_preview=self._reward_preview_from_chest(chest),
         )
 
     async def use_skip_shield(self, user_id: int) -> SkipShieldResult:
@@ -425,5 +495,5 @@ class DailyLoopService:
         payload = dict(getattr(chest, "payload", {}) or {})
         payload.setdefault("xp_reward", int(getattr(chest, "xp_reward", 25) or 25))
         payload.setdefault("badge_hint", str(getattr(chest, "badge_hint", "Reward pending") or "Reward pending"))
-        payload["chest_state"] = "unlocked" if getattr(chest, "status", "") in {"unlocked", "claimed"} else "locked"
+        payload["chest_state"] = str(getattr(chest, "status", "") or "locked")
         return payload
