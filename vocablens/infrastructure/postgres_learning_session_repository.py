@@ -225,6 +225,12 @@ class PostgresLearningSessionRepository:
         )
         return _map_attempt(result.scalar_one())
 
+    async def delete_attempt(self, attempt_id: int) -> None:
+        row = await self.session.get(LearningSessionAttemptORM, attempt_id)
+        if row is None:
+            return
+        await self.session.delete(row)
+
     async def list_attempts(self, *, session_id: str) -> list[LearningSessionAttempt]:
         result = await self.session.execute(
             select(LearningSessionAttemptORM)

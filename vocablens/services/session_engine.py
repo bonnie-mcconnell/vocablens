@@ -338,6 +338,7 @@ class SessionEngine:
                 completed_at=utc_now(),
             )
             if not completed_now:
+                await uow.learning_sessions.delete_attempt(attempt.id)
                 await self._track_rejection(
                     user_id=user_id,
                     event_type="session_submission_rejected",

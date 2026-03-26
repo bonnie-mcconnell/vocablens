@@ -18,6 +18,7 @@ class FakeUOW:
             get_attempt_by_submission=self._get_attempt_by_submission,
             create_attempt_once=self._create_attempt_once,
             update_attempt_feedback=self._update_attempt_feedback,
+            delete_attempt=self._delete_attempt,
             mark_completed_once=self._mark_completed_once,
             mark_expired=self._mark_expired,
         )
@@ -82,6 +83,9 @@ class FakeUOW:
                 attempt["feedback_payload"] = dict(feedback_payload)
                 return SimpleNamespace(created_at=None, **attempt)
         raise AssertionError(f"missing attempt {attempt_id}")
+
+    async def _delete_attempt(self, attempt_id: int):
+        self.attempts = [attempt for attempt in self.attempts if attempt["id"] != attempt_id]
 
     async def _get_attempt_by_submission(self, *, session_id: str, user_id: int, submission_id: str):
         for attempt in self.attempts:
