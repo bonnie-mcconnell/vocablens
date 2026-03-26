@@ -65,6 +65,8 @@ class MonetizationHealthSignalService:
         normalized_limit = max(1, min(limit, 200))
         async with self._uow_factory() as uow:
             states = await uow.monetization_health_states.list_all()
+            monetization_states = await uow.monetization_states.list_all()
+            lifecycle_states = await uow.lifecycle_states.list_all()
             await uow.commit()
         rows = [
             {
@@ -72,7 +74,13 @@ class MonetizationHealthSignalService:
                 "health_status": str(item.current_status),
                 "latest_alert_codes": list(item.latest_alert_codes or []),
                 "metrics": dict(item.metrics or {}),
-                "last_evaluated_at": item.last_evaluated_at.isoformat() if item.last_evaluated_at else None,
+                "alert_drilldowns": self._dashboard_drilldowns(
+                    scope_key=str(item.scope_key),
+                    latest_alert_codes=list(item.latest_alert_codes or []),
+                    monetization_states=monetization_states,
+                    lifecycle_states=lifecycle_states,
+                ),
+                "last_evaluated_at": getattr(item, "last_evaluated_at", None).isoformat() if getattr(item, "last_evaluated_at", None) else None,
             }
             for item in states
         ]
@@ -325,3 +333,46 @@ class MonetizationHealthSignalService:
             "healthy": 2,
         }
         return ranking.get(status, 3)
+
+    def _dashboard_drilldowns(
+        self,
+        *,
+        scope_key: str,
+        latest_alert_codes: list[str],
+        monetization_states: list[Any],
+        lifecycle_states: list[Any],
+    ) -> dict[str, list[dict[str, Any]]]:
+        drilldowns: dict[str, list[dict[str, Any]]] = {}
+        if "monetization_lifecycle_stage_mismatch_detected" not in latest_alert_codes:
+            return drilldowns
+        lifecycle_by_user = {
+            int(getattr(item, "user_id", 0) or 0): item
+            for item in lifecycle_states
+            if int(getattr(item, "user_id", 0) or 0) > 0
+        }
+        rows: list[dict[str, Any]] = []
+        for state in monetization_states:
+            geography = str(getattr(state, "current_geography", "") or "")
+            if scope_key != "global" and geography != scope_key:
+                continue
+            user_id = int(getattr(state, "user_id", 0) or 0)
+            lifecycle_state = lifecycle_by_user.get(user_id)
+            if lifecycle_state is None:
+                continue
+            monetization_stage = str(getattr(state, "lifecycle_stage", "") or "")
+            lifecycle_stage = str(getattr(lifecycle_state, "current_stage", "") or "")
+            if monetization_stage != lifecycle_stage:
+                rows.append(
+                    {
+                        "artifact_type": "monetization_state",
+                        "user_id": user_id,
+                        "geography": geography or None,
+                        "monetization_lifecycle_stage": monetization_stage,
+                        "lifecycle_stage": lifecycle_stage,
+                    }
+                )
+                if len(rows) >= 5:
+                    break
+        if rows:
+            drilldowns["monetization_lifecycle_stage_mismatch_detected"] = rows
+        return drilldowns

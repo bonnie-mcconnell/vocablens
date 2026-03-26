@@ -193,6 +193,7 @@ def test_daily_loop_health_signal_service_dashboard_orders_attention():
     assert report["summary"]["counts_by_health_status"]["warning"] == 1
     assert report["summary"]["alert_counts_by_code"]["mission_issue_coverage_low"] == 1
     assert report["attention"][0]["scope_key"] == "global"
+    assert report["attention"][0]["alert_drilldowns"] == {}
 
 
 def test_daily_loop_health_signal_service_detects_reward_mission_drift(monkeypatch):
@@ -222,7 +223,10 @@ def test_daily_loop_health_signal_service_detects_reward_mission_drift(monkeypat
     service = DailyLoopHealthSignalService(lambda: uow, alert_sink=alert_sink)
 
     report = run_async(service.evaluate_scope("global"))
+    dashboard = run_async(service.get_health_dashboard(limit=10))
 
     assert report["health"]["status"] == "critical"
     assert report["health"]["metrics"]["reward_mission_mismatches"] == 1
     assert "reward_mission_reference_mismatch_detected" in uow.daily_loop_health_states.rows["global"].latest_alert_codes
+    drilldown = dashboard["attention"][0]["alert_drilldowns"]["reward_mission_reference_mismatch_detected"]
+    assert drilldown[0]["artifact_type"] == "reward_chest"

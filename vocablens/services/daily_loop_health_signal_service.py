@@ -67,6 +67,8 @@ class DailyLoopHealthSignalService:
         normalized_limit = max(1, min(limit, 200))
         async with self._uow_factory() as uow:
             states = await uow.daily_loop_health_states.list_all()
+            missions = await uow.daily_missions.list_all(limit=5000)
+            reward_chests = await uow.reward_chests.list_all(limit=5000)
             await uow.commit()
         rows = [
             {
@@ -74,7 +76,12 @@ class DailyLoopHealthSignalService:
                 "health_status": str(item.current_status),
                 "latest_alert_codes": list(item.latest_alert_codes or []),
                 "metrics": dict(item.metrics or {}),
-                "last_evaluated_at": item.last_evaluated_at.isoformat() if item.last_evaluated_at else None,
+                "alert_drilldowns": self._dashboard_drilldowns(
+                    latest_alert_codes=list(item.latest_alert_codes or []),
+                    missions=missions,
+                    reward_chests=reward_chests,
+                ),
+                "last_evaluated_at": getattr(item, "last_evaluated_at", None).isoformat() if getattr(item, "last_evaluated_at", None) else None,
             }
             for item in states
         ]
@@ -366,3 +373,37 @@ class DailyLoopHealthSignalService:
             "healthy": 2,
         }
         return ranking.get(status, 3)
+
+    def _dashboard_drilldowns(
+        self,
+        *,
+        latest_alert_codes: list[str],
+        missions: list[Any],
+        reward_chests: list[Any],
+    ) -> dict[str, list[dict[str, Any]]]:
+        drilldowns: dict[str, list[dict[str, Any]]] = {}
+        if "reward_mission_reference_mismatch_detected" not in latest_alert_codes:
+            return drilldowns
+        missions_by_id = {
+            int(getattr(item, "id", 0) or 0): item
+            for item in missions
+            if int(getattr(item, "id", 0) or 0) > 0
+        }
+        rows: list[dict[str, Any]] = []
+        for chest in reward_chests:
+            mission = missions_by_id.get(int(getattr(chest, "mission_id", 0) or 0))
+            if mission is None or int(getattr(mission, "user_id", 0) or 0) != int(getattr(chest, "user_id", 0) or 0):
+                rows.append(
+                    {
+                        "artifact_type": "reward_chest",
+                        "user_id": int(getattr(chest, "user_id", 0) or 0),
+                        "mission_id": int(getattr(chest, "mission_id", 0) or 0),
+                        "reward_chest_id": int(getattr(chest, "id", 0) or 0),
+                        "mission_owner_user_id": int(getattr(mission, "user_id", 0) or 0) if mission is not None else None,
+                    }
+                )
+                if len(rows) >= 5:
+                    break
+        if rows:
+            drilldowns["reward_mission_reference_mismatch_detected"] = rows
+        return drilldowns

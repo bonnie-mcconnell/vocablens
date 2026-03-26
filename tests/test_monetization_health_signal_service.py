@@ -156,11 +156,14 @@ def test_monetization_health_signal_service_detects_lifecycle_stage_drift(monkey
     service = MonetizationHealthSignalService(lambda: uow, alert_sink=alert_sink)
 
     report = run_async(service.evaluate_scope("global"))
+    dashboard = run_async(service.get_health_dashboard(limit=10))
 
     assert report["health"]["status"] == "critical"
     assert report["health"]["metrics"]["lifecycle_stage_mismatches"] == 1
     assert "monetization_lifecycle_stage_mismatch_detected" in uow.monetization_health_states.rows["global"].latest_alert_codes
     assert alert_metric.records[0]["labels"]["code"] == "monetization_lifecycle_stage_mismatch_detected"
+    drilldown = dashboard["attention"][0]["alert_drilldowns"]["monetization_lifecycle_stage_mismatch_detected"]
+    assert drilldown[0]["artifact_type"] == "monetization_state"
 
 
 def test_monetization_health_signal_service_dashboard_orders_attention():
@@ -180,3 +183,4 @@ def test_monetization_health_signal_service_dashboard_orders_attention():
 
     assert report["summary"]["counts_by_health_status"]["critical"] == 1
     assert report["attention"][0]["scope_key"] == "global"
+    assert report["attention"][0]["alert_drilldowns"] == {}

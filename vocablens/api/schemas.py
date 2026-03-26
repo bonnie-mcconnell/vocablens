@@ -1369,6 +1369,7 @@ class MonetizationHealthScopeResponse(BaseModel):
     health_status: str
     latest_alert_codes: list[str] = Field(default_factory=list)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    alert_drilldowns: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     last_evaluated_at: datetime | None = None
 
 
@@ -1399,6 +1400,7 @@ class LifecycleHealthScopeResponse(BaseModel):
     health_status: str
     latest_alert_codes: list[str] = Field(default_factory=list)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    alert_drilldowns: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     last_evaluated_at: datetime | None = None
 
 
@@ -1430,6 +1432,7 @@ class DailyLoopHealthScopeResponse(BaseModel):
     health_status: str
     latest_alert_codes: list[str] = Field(default_factory=list)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    alert_drilldowns: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     last_evaluated_at: datetime | None = None
 
 
@@ -1636,6 +1639,7 @@ class SessionHealthScopeResponse(BaseModel):
     health_status: str
     latest_alert_codes: list[str] = Field(default_factory=list)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    alert_drilldowns: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     last_evaluated_at: datetime | None = None
 
 

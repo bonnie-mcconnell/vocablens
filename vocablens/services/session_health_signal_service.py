@@ -75,14 +75,41 @@ class SessionHealthSignalService:
         normalized_limit = max(1, min(limit, 200))
         async with self._uow_factory() as uow:
             states = await uow.session_health_states.list_all()
+            window_start = utc_now() - timedelta(days=7)
+            sessions = (
+                await uow.session.execute(
+                    select(LearningSessionORM).where(LearningSessionORM.created_at >= window_start)
+                )
+            ).scalars().all()
+            attempts = (
+                await uow.session.execute(
+                    select(LearningSessionAttemptORM).where(LearningSessionAttemptORM.created_at >= window_start)
+                )
+            ).scalars().all()
+            traces = (
+                await uow.session.execute(
+                    select(DecisionTraceORM).where(
+                        DecisionTraceORM.created_at >= window_start,
+                        DecisionTraceORM.trace_type == "session_evaluation",
+                    )
+                )
+            ).scalars().all()
             await uow.commit()
+        sessions_by_id = {str(item.session_id): item for item in sessions}
         rows = [
             {
                 "scope_key": str(item.scope_key),
                 "health_status": str(item.current_status),
                 "latest_alert_codes": list(item.latest_alert_codes or []),
                 "metrics": dict(item.metrics or {}),
-                "last_evaluated_at": item.last_evaluated_at.isoformat() if item.last_evaluated_at else None,
+                "alert_drilldowns": self._dashboard_drilldowns(
+                    scope_key=str(item.scope_key),
+                    latest_alert_codes=list(item.latest_alert_codes or []),
+                    sessions_by_id=sessions_by_id,
+                    attempts=attempts,
+                    traces=traces,
+                ),
+                "last_evaluated_at": getattr(item, "last_evaluated_at", None).isoformat() if getattr(item, "last_evaluated_at", None) else None,
             }
             for item in states
         ]
@@ -385,3 +412,48 @@ class SessionHealthSignalService:
     def _status_rank(self, status: str) -> int:
         ranking = {"critical": 0, "warning": 1, "healthy": 2}
         return ranking.get(status, 3)
+
+    def _dashboard_drilldowns(
+        self,
+        *,
+        scope_key: str,
+        latest_alert_codes: list[str],
+        sessions_by_id: dict[str, Any],
+        attempts: list[Any],
+        traces: list[Any],
+    ) -> dict[str, list[dict[str, Any]]]:
+        drilldowns: dict[str, list[dict[str, Any]]] = {}
+        if scope_key != "global":
+            return drilldowns
+        if "session_reference_drift_detected" in latest_alert_codes:
+            rows: list[dict[str, Any]] = []
+            for attempt in attempts:
+                session = sessions_by_id.get(str(getattr(attempt, "session_id", "") or ""))
+                if session is None or int(getattr(session, "user_id", 0) or 0) != int(getattr(attempt, "user_id", 0) or 0):
+                    rows.append(
+                        {
+                            "artifact_type": "session_attempt",
+                            "user_id": int(getattr(attempt, "user_id", 0) or 0),
+                            "session_id": str(getattr(attempt, "session_id", "") or ""),
+                            "submission_id": str(getattr(attempt, "submission_id", "") or ""),
+                        }
+                    )
+                    if len(rows) >= 5:
+                        break
+            if len(rows) < 5:
+                for trace in traces:
+                    session = sessions_by_id.get(str(getattr(trace, "reference_id", "") or ""))
+                    if session is None or int(getattr(session, "user_id", 0) or 0) != int(getattr(trace, "user_id", 0) or 0):
+                        rows.append(
+                            {
+                                "artifact_type": "session_evaluation_trace",
+                                "user_id": int(getattr(trace, "user_id", 0) or 0),
+                                "reference_id": str(getattr(trace, "reference_id", "") or ""),
+                                "trace_id": int(getattr(trace, "id", 0) or 0),
+                            }
+                        )
+                        if len(rows) >= 5:
+                            break
+            if rows:
+                drilldowns["session_reference_drift_detected"] = rows
+        return drilldowns

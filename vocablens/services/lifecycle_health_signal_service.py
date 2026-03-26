@@ -71,6 +71,11 @@ class LifecycleHealthSignalService:
         normalized_limit = max(1, min(limit, 200))
         async with self._uow_factory() as uow:
             states = await uow.lifecycle_health_states.list_all()
+            lifecycle_states = await uow.lifecycle_states.list_all()
+            transitions = await uow.lifecycle_transitions.list_all(limit=5000)
+            notification_states = (
+                await uow.session.execute(select(UserNotificationStateORM))
+            ).scalars().all()
             await uow.commit()
         rows = [
             {
@@ -78,7 +83,14 @@ class LifecycleHealthSignalService:
                 "health_status": str(item.current_status),
                 "latest_alert_codes": list(item.latest_alert_codes or []),
                 "metrics": dict(item.metrics or {}),
-                "last_evaluated_at": item.last_evaluated_at.isoformat() if item.last_evaluated_at else None,
+                "alert_drilldowns": self._dashboard_drilldowns(
+                    scope_key=str(item.scope_key),
+                    latest_alert_codes=list(item.latest_alert_codes or []),
+                    lifecycle_states=lifecycle_states,
+                    transitions=transitions,
+                    notification_states=notification_states,
+                ),
+                "last_evaluated_at": getattr(item, "last_evaluated_at", None).isoformat() if getattr(item, "last_evaluated_at", None) else None,
             }
             for item in states
         ]
@@ -408,3 +420,72 @@ class LifecycleHealthSignalService:
             "healthy": 2,
         }
         return ranking.get(status, 3)
+
+    def _dashboard_drilldowns(
+        self,
+        *,
+        scope_key: str,
+        latest_alert_codes: list[str],
+        lifecycle_states: list[Any],
+        transitions: list[Any],
+        notification_states: list[Any],
+    ) -> dict[str, list[dict[str, Any]]]:
+        drilldowns: dict[str, list[dict[str, Any]]] = {}
+        if "lifecycle_state_drift_detected" not in latest_alert_codes:
+            return drilldowns
+        lifecycle_by_user = {
+            int(getattr(item, "user_id", 0) or 0): item
+            for item in lifecycle_states
+            if int(getattr(item, "user_id", 0) or 0) > 0
+        }
+        latest_transition_by_user: dict[int, Any] = {}
+        for transition in transitions:
+            user_id = int(getattr(transition, "user_id", 0) or 0)
+            if user_id <= 0:
+                continue
+            if scope_key != "global" and str(getattr(transition, "to_stage", "") or "") != scope_key:
+                continue
+            previous = latest_transition_by_user.get(user_id)
+            if previous is None or getattr(transition, "created_at", None) > getattr(previous, "created_at", None):
+                latest_transition_by_user[user_id] = transition
+        rows: list[dict[str, Any]] = []
+        for notification_state in notification_states:
+            user_id = int(getattr(notification_state, "user_id", 0) or 0)
+            lifecycle_state = lifecycle_by_user.get(user_id)
+            if lifecycle_state is None:
+                continue
+            lifecycle_stage = str(getattr(lifecycle_state, "current_stage", "") or "")
+            notification_stage = str(getattr(notification_state, "lifecycle_stage", "") or "")
+            if scope_key != "global" and lifecycle_stage != scope_key and notification_stage != scope_key:
+                continue
+            if notification_stage != lifecycle_stage:
+                rows.append(
+                    {
+                        "artifact_type": "notification_state",
+                        "user_id": user_id,
+                        "lifecycle_stage": lifecycle_stage,
+                        "notification_lifecycle_stage": notification_stage,
+                    }
+                )
+                if len(rows) >= 5:
+                    break
+        if len(rows) < 5:
+            for user_id, transition in latest_transition_by_user.items():
+                lifecycle_state = lifecycle_by_user.get(user_id)
+                if lifecycle_state is None:
+                    continue
+                if str(getattr(transition, "to_stage", "") or "") != str(getattr(lifecycle_state, "current_stage", "") or ""):
+                    rows.append(
+                        {
+                            "artifact_type": "lifecycle_transition",
+                            "user_id": user_id,
+                            "transition_to_stage": str(getattr(transition, "to_stage", "") or ""),
+                            "current_stage": str(getattr(lifecycle_state, "current_stage", "") or ""),
+                            "reference_id": str(getattr(transition, "reference_id", "") or ""),
+                        }
+                    )
+                    if len(rows) >= 5:
+                        break
+        if rows:
+            drilldowns["lifecycle_state_drift_detected"] = rows
+        return drilldowns

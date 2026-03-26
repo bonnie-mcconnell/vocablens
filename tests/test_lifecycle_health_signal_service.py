@@ -215,6 +215,7 @@ def test_lifecycle_health_signal_service_dashboard_orders_attention():
     assert report["summary"]["counts_by_health_status"]["critical"] == 1
     assert report["summary"]["alert_counts_by_code"]["recovery_messaging_blocked"] == 1
     assert report["attention"][0]["scope_key"] == "global"
+    assert report["attention"][0]["alert_drilldowns"] == {}
 
 
 def test_lifecycle_health_signal_service_detects_cross_domain_stage_drift(monkeypatch):
@@ -251,8 +252,11 @@ def test_lifecycle_health_signal_service_detects_cross_domain_stage_drift(monkey
     service = LifecycleHealthSignalService(lambda: uow, alert_sink=alert_sink)
 
     report = run_async(service.evaluate_scope("global"))
+    dashboard = run_async(service.get_health_dashboard(limit=10))
 
     assert report["health"]["status"] == "critical"
     assert report["health"]["metrics"]["notification_stage_mismatches"] == 1
     assert report["health"]["metrics"]["transition_stage_mismatches"] == 1
     assert "lifecycle_state_drift_detected" in uow.lifecycle_health_states.rows["global"].latest_alert_codes
+    drilldown = dashboard["attention"][0]["alert_drilldowns"]["lifecycle_state_drift_detected"]
+    assert drilldown[0]["artifact_type"] == "notification_state"

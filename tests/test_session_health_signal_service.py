@@ -61,6 +61,8 @@ class FakeSession:
         self._index = 0
 
     async def execute(self, query):
+        if self._index >= len(self._responses):
+            self._index = 0
         rows = self._responses[self._index]
         self._index += 1
         return FakeExecuteResult(rows)
@@ -197,6 +199,7 @@ def test_session_health_signal_service_dashboard_orders_attention():
     assert report["summary"]["counts_by_health_status"]["critical"] == 1
     assert report["summary"]["alert_counts_by_code"]["session_completion_rate_low"] == 1
     assert report["attention"][0]["scope_key"] == "global"
+    assert report["attention"][0]["alert_drilldowns"] == {}
 
 
 def test_session_health_signal_service_detects_reference_drift(monkeypatch):
@@ -224,8 +227,11 @@ def test_session_health_signal_service_detects_reference_drift(monkeypatch):
     service = SessionHealthSignalService(lambda: uow, alert_sink=alert_sink)
 
     report = run_async(service.evaluate_scope("global"))
+    dashboard = run_async(service.get_health_dashboard(limit=10))
 
     assert report["health"]["status"] == "critical"
     assert report["health"]["metrics"]["attempt_reference_mismatches_7d"] == 1
     assert report["health"]["metrics"]["evaluation_reference_mismatches_7d"] == 1
     assert "session_reference_drift_detected" in uow.session_health_states.rows["global"].latest_alert_codes
+    drilldown = dashboard["attention"][0]["alert_drilldowns"]["session_reference_drift_detected"]
+    assert drilldown[0]["artifact_type"] == "session_attempt"
