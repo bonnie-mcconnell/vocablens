@@ -7,6 +7,7 @@ from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
+from vocablens.services.entitlement_policy_service import EntitlementDecision, EntitlementPolicyService
 from vocablens.services.subscription_service import SubscriptionService
 from vocablens.services.user_experience_contracts import (
     CoreLoopSnapshot,
@@ -48,6 +49,7 @@ class FrontendService:
         progress_service: ProgressService | None = None,
         global_decision_engine: GlobalDecisionEngine | None = None,
         onboarding_service: OnboardingService | None = None,
+        entitlement_policy_service: EntitlementPolicyService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning_engine = learning_engine
@@ -58,6 +60,7 @@ class FrontendService:
         self._progress = progress_service
         self._global_decision = global_decision_engine
         self._onboarding = onboarding_service
+        self._entitlement = entitlement_policy_service
 
     async def dashboard(self, user_id: int) -> dict:
         async with self._uow_factory() as uow:
@@ -73,6 +76,7 @@ class FrontendService:
         roadmap = await self._roadmap.generate_today_plan(user_id)
         retention = await self._retention.assess_user(user_id)
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
+        entitlement = await self._entitlement.evaluate_request(user_id) if self._entitlement else None
         decision = await self._global_decision.decide(user_id) if self._global_decision else None
         onboarding = await self._onboarding.plan(user_id) if self._onboarding else None
         progress = await self._progress.build_dashboard(user_id) if self._progress else self._fallback_progress(vocab, due)
@@ -100,7 +104,7 @@ class FrontendService:
                 trial_ends_at=features.trial_ends_at.isoformat() if getattr(features.trial_ends_at, "isoformat", None) else None,
                 usage_percent=features.usage_percent,
             ),
-            paywall=self._paywall_snapshot(paywall, features),
+            paywall=self._paywall_snapshot(paywall, features, entitlement),
             skills=skills,
             next_action=self._next_action_snapshot(recommendation),
             retention=RetentionSnapshot(
@@ -133,6 +137,7 @@ class FrontendService:
         recommendation = await self._learning_engine.recommend(user_id)
         retention = await self._retention.assess_user(user_id)
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
+        entitlement = await self._entitlement.evaluate_request(user_id) if self._entitlement else None
         decision = await self._global_decision.decide(user_id) if self._global_decision else None
         onboarding = await self._onboarding.plan(user_id) if self._onboarding else None
 
@@ -143,7 +148,7 @@ class FrontendService:
                 RetentionActionSnapshot(kind=action.kind, reason=action.reason, target=action.target)
                 for action in retention.suggested_actions
             ],
-            paywall=self._paywall_snapshot(paywall),
+            paywall=self._paywall_snapshot(paywall, entitlement=entitlement),
             ui=UiDirectivesSnapshot(**self._ui_directives(retention, paywall, {}, onboarding)),
             session_config=SessionConfigSnapshot(**self._session_config(decision, recommendation)),
             emotion_hooks=EmotionHooksSnapshot(**self._emotion_hooks(retention, paywall, {}, onboarding)),
@@ -152,7 +157,8 @@ class FrontendService:
 
     async def paywall(self, user_id: int) -> dict:
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
-        return self._paywall_snapshot(paywall).model_dump(mode="json")
+        entitlement = await self._entitlement.evaluate_request(user_id) if self._entitlement else None
+        return self._paywall_snapshot(paywall, entitlement=entitlement).model_dump(mode="json")
 
     async def weak_areas(self, user_id: int) -> dict:
         async with self._uow_factory() as uow:
@@ -214,14 +220,22 @@ class FrontendService:
             content_type=recommendation.content_type,
         )
 
-    def _paywall_snapshot(self, paywall, features=None) -> PaywallSnapshot:
+    def _paywall_snapshot(self, paywall, features=None, entitlement: EntitlementDecision | None = None) -> PaywallSnapshot:
+        entitlement_usage_percent = None
+        entitlement_allow_access = None
+        if entitlement is not None:
+            request_usage = int((entitlement.used_requests / entitlement.request_limit) * 100) if entitlement.request_limit > 0 else 100
+            token_usage = int((entitlement.used_tokens / entitlement.token_limit) * 100) if entitlement.token_limit > 0 else 100
+            entitlement_usage_percent = min(100, max(request_usage, token_usage))
+            entitlement_allow_access = entitlement.allowed
+
         if not paywall:
             return PaywallSnapshot(
                 show=False,
                 type=None,
                 reason=None,
-                usage_percent=getattr(features, "usage_percent", 0) if features else 0,
-                allow_access=True,
+                usage_percent=entitlement_usage_percent if entitlement_usage_percent is not None else (getattr(features, "usage_percent", 0) if features else 0),
+                allow_access=entitlement_allow_access if entitlement_allow_access is not None else True,
                 trial_active=getattr(features, "trial_active", False) if features else False,
                 trial_ends_at=features.trial_ends_at.isoformat() if features and getattr(features.trial_ends_at, "isoformat", None) else None,
             )
@@ -229,8 +243,8 @@ class FrontendService:
             show=paywall.show_paywall,
             type=paywall.paywall_type,
             reason=paywall.reason,
-            usage_percent=paywall.usage_percent,
-            allow_access=paywall.allow_access,
+            usage_percent=entitlement_usage_percent if entitlement_usage_percent is not None else paywall.usage_percent,
+            allow_access=paywall.allow_access and (entitlement_allow_access if entitlement_allow_access is not None else True),
             trial_active=paywall.trial_active,
             trial_ends_at=paywall.trial_ends_at.isoformat() if getattr(paywall.trial_ends_at, "isoformat", None) else None,
             request_usage_percent=getattr(paywall, "request_usage_percent", None),

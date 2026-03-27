@@ -111,7 +111,15 @@ class FakeOnboardingService:
         return self.plan_data
 
 
-def _frontend_service(*, retention_state: str, paywall_show: bool, onboarding_stage: str, primary_action: str):
+class FakeEntitlementPolicyService:
+    def __init__(self, decision):
+        self.decision = decision
+
+    async def evaluate_request(self, user_id: int):
+        return self.decision
+
+
+def _frontend_service(*, retention_state: str, paywall_show: bool, onboarding_stage: str, primary_action: str, entitlement_decision=None):
     recommendation = SimpleNamespace(
         action="review_word" if primary_action == "review" else "conversation_drill",
         target="hola",
@@ -171,6 +179,13 @@ def _frontend_service(*, retention_state: str, paywall_show: bool, onboarding_st
         stage=onboarding_stage,
         habit_hook={"show_streak_starting": onboarding_stage == "habit_hook", "show_progress_jump": onboarding_stage in {"wow_moment", "habit_hook"}},
     )
+    entitlement = entitlement_decision or SimpleNamespace(
+        allowed=True,
+        used_requests=0,
+        used_tokens=0,
+        request_limit=100,
+        token_limit=50000,
+    )
     return FrontendService(
         lambda: FakeUOW(),
         FakeLearningEngine(recommendation),
@@ -181,6 +196,7 @@ def _frontend_service(*, retention_state: str, paywall_show: bool, onboarding_st
         FakeProgressService(progress),
         FakeGlobalDecisionEngine(decision),
         FakeOnboardingService(onboarding),
+        FakeEntitlementPolicyService(entitlement),
     )
 
 
@@ -222,3 +238,25 @@ def test_frontend_service_returns_retention_and_paywall_signals_for_at_risk_user
     assert "first win" in recommendations["emotion_hooks"]["encouragement_message"].lower()
     assert "usage" in recommendations["emotion_hooks"]["urgency_message"].lower() or "streak" in recommendations["emotion_hooks"]["urgency_message"].lower()
     assert "progress step" in recommendations["emotion_hooks"]["reward_message"].lower()
+
+
+def test_frontend_service_paywall_snapshot_respects_entitlement_block():
+    entitlement = SimpleNamespace(
+        allowed=False,
+        used_requests=100,
+        used_tokens=50000,
+        request_limit=100,
+        token_limit=50000,
+    )
+    service = _frontend_service(
+        retention_state="active",
+        paywall_show=True,
+        onboarding_stage="habit_hook",
+        primary_action="conversation",
+        entitlement_decision=entitlement,
+    )
+
+    paywall = run_async(service.paywall(1))
+
+    assert paywall["allow_access"] is False
+    assert paywall["usage_percent"] == 100

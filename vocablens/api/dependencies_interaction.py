@@ -2,6 +2,7 @@ from fastapi import Depends
 
 from vocablens.api.dependencies_core import (
     get_cached_translator,
+    get_entitlement_policy_service,
     get_llm_provider,
     get_personalization_service,
     get_tts_provider,
@@ -180,6 +181,7 @@ def get_frontend_service(
     progress_service=Depends(get_progress_service),
     global_decision_engine=Depends(get_global_decision_engine),
     onboarding_service=Depends(get_onboarding_service),
+    entitlement_policy_service=Depends(get_entitlement_policy_service),
 ) -> FrontendService:
     return FrontendService(
         uow_factory,
@@ -191,4 +193,5 @@ def get_frontend_service(
         progress_service,
         global_decision_engine,
         onboarding_service,
+        entitlement_policy_service,
     )

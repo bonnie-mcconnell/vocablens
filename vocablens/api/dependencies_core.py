@@ -34,6 +34,7 @@ from vocablens.services.notification_delivery_service import (
     NotificationDeliverySink,
     PushDeliveryBackend,
 )
+from vocablens.services.entitlement_policy_service import EntitlementPolicyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.services.word_extraction_service import WordExtractionService
@@ -52,6 +53,10 @@ def get_job_queue() -> JobQueue:
 def get_personalization_service(uow_factory=Depends(get_uow_factory)):
     from vocablens.services.personalization_service import PersonalizationService
     return PersonalizationService(uow_factory)
+
+
+def get_entitlement_policy_service(uow_factory=Depends(get_uow_factory)) -> EntitlementPolicyService:
+    return EntitlementPolicyService(uow_factory)
 
 
 def get_tutor_mode_service() -> TutorModeService:
