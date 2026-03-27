@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -172,7 +174,7 @@ async def get_current_user(
 
 def get_admin_token(request: Request) -> str:
     token = request.headers.get("X-Admin-Token", "")
-    if not settings.ADMIN_TOKEN or not token or token != settings.ADMIN_TOKEN:
+    if not settings.ADMIN_TOKEN or not token or not secrets.compare_digest(token, settings.ADMIN_TOKEN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",

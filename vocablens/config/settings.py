@@ -8,8 +8,16 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _as_tuple(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
+    if value is None:
+        return default
+    items = tuple(part.strip() for part in value.split(",") if part.strip())
+    return items if items else default
+
+
 @dataclass(frozen=True)
 class Settings:
+    APP_ENV: str = os.getenv("VOCABLENS_ENV", "development")
     SECRET_KEY: str = os.getenv("VOCABLENS_SECRET", "dev-secret-change-me")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
@@ -45,6 +53,21 @@ class Settings:
 
     ENABLE_BACKGROUND_TASKS: bool = _as_bool(os.getenv("ENABLE_BACKGROUND_TASKS"), False)
     ENABLE_REDIS_CACHE: bool = _as_bool(os.getenv("ENABLE_REDIS_CACHE"), False)
+    CORS_ALLOW_ORIGINS: tuple[str, ...] = _as_tuple(
+        os.getenv("CORS_ALLOW_ORIGINS"),
+        ("http://localhost:3000", "http://127.0.0.1:3000"),
+    )
+    CORS_ALLOW_CREDENTIALS: bool = _as_bool(os.getenv("CORS_ALLOW_CREDENTIALS"), True)
+    CORS_ALLOW_METHODS: tuple[str, ...] = _as_tuple(os.getenv("CORS_ALLOW_METHODS"), ("*",))
+    CORS_ALLOW_HEADERS: tuple[str, ...] = _as_tuple(os.getenv("CORS_ALLOW_HEADERS"), ("*",))
+
+    @property
+    def requires_strict_secrets(self) -> bool:
+        return self.APP_ENV.strip().lower() in {"prod", "production", "staging"}
+
+    @property
+    def using_default_secret(self) -> bool:
+        return self.SECRET_KEY == "dev-secret-change-me"
 
 
 settings = Settings()

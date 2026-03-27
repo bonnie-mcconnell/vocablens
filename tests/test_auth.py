@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from vocablens.api.dependencies import get_user_repo
@@ -56,3 +57,62 @@ def test_register_and_login_round_trip():
     login_payload = login.json()
     assert "access_token" in login_payload
     assert decode_token(login_payload["access_token"]) == 1
+
+
+def test_register_duplicate_email_returns_400():
+    app = create_app()
+    repo = InMemoryUserRepo()
+    app.dependency_overrides[get_user_repo] = lambda: repo
+    client = TestClient(app)
+
+    first = client.post(
+        "/register",
+        json={"email": "test@test.com", "password": "password123"},
+    )
+    assert first.status_code == 200
+
+    duplicate = client.post(
+        "/register",
+        json={"email": "test@test.com", "password": "different-pass"},
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Email already registered"
+
+
+def test_login_wrong_password_returns_401():
+    app = create_app()
+    repo = InMemoryUserRepo()
+    app.dependency_overrides[get_user_repo] = lambda: repo
+    client = TestClient(app)
+
+    register = client.post(
+        "/register",
+        json={"email": "test@test.com", "password": "password123"},
+    )
+    assert register.status_code == 200
+
+    login = client.post(
+        "/login",
+        json={"email": "test@test.com", "password": "wrong-password"},
+    )
+    assert login.status_code == 401
+    assert login.json()["detail"] == "Invalid credentials"
+
+
+def test_login_unknown_email_returns_401():
+    app = create_app()
+    repo = InMemoryUserRepo()
+    app.dependency_overrides[get_user_repo] = lambda: repo
+    client = TestClient(app)
+
+    login = client.post(
+        "/login",
+        json={"email": "missing@test.com", "password": "password123"},
+    )
+    assert login.status_code == 401
+    assert login.json()["detail"] == "Invalid credentials"
+
+
+def test_decode_token_invalid_payload_raises_value_error():
+    with pytest.raises(ValueError):
+        decode_token("not-a-jwt")

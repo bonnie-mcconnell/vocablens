@@ -1,5 +1,5 @@
 import json
-from typing import List
+from typing import Callable, List
 
 from vocablens.providers.llm.base import LLMProvider
 
@@ -15,6 +15,7 @@ from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.event_service import EventService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.subscription_service import SubscriptionService
+from vocablens.services.subscription_service import SubscriptionFeatures
 from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.services.wow_engine import WowEngine
 from vocablens.prompts import load_prompt
@@ -28,7 +29,7 @@ class ConversationService:
     def __init__(
         self,
         llm: LLMProvider,
-        uow_factory: type[UnitOfWork],
+        uow_factory: Callable[[], UnitOfWork],
         brain: LanguageBrainService,
         memory: ConversationMemoryService,
         vocab_extractor: ConversationVocabularyService,
@@ -137,7 +138,7 @@ class ConversationService:
                 profile = await uow.profiles.get_or_create(user_id) if hasattr(uow, "profiles") else None
                 patterns = await uow.mistake_patterns.top_patterns(user_id, limit=5) if hasattr(uow, "mistake_patterns") else []
                 await uow.commit()
-            tutor_context = self._tutor_mode.build_context(profile, patterns, recommendation)
+            tutor_context = self._tutor_mode.build_context(profile, list(patterns), recommendation)
             tutor_instructions = self._tutor_mode.prompt_suffix(
                 tutor_context,
                 brain_output.get("correction_feedback", []),
@@ -262,17 +263,16 @@ class ConversationService:
             await uow.conversation.save_turn(user_id, "tutor", reply)
             await uow.commit()
 
-    async def _feature_access(self, user_id: int):
+    async def _feature_access(self, user_id: int) -> SubscriptionFeatures:
         if not self._subscriptions:
-            return type(
-                "Features",
-                (),
-                {
-                    "tier": "premium",
-                    "tutor_depth": "deep",
-                    "explanation_quality": "premium",
-                },
-            )()
+            return SubscriptionFeatures(
+                tier="premium",
+                request_limit=10000,
+                token_limit=1000000,
+                tutor_depth="deep",
+                explanation_quality="premium",
+                personalization_level="premium",
+            )
         features = await self._subscriptions.get_features(user_id)
         await self._subscriptions.record_feature_gate(
             user_id=user_id,

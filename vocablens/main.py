@@ -22,6 +22,11 @@ setup_logging()
 logger = get_logger("vocablens")
 
 
+def _enforce_secure_settings() -> None:
+    if settings.requires_strict_secrets and settings.using_default_secret:
+        raise RuntimeError("VOCABLENS_SECRET must be configured in non-development environments")
+
+
 def _resolve_request_user_id(request: Request) -> int | None:
     scope_user = request.scope.get("user")
     if scope_user is not None:
@@ -42,6 +47,7 @@ def _resolve_request_user_id(request: Request) -> int | None:
 
 
 def create_app() -> FastAPI:
+    _enforce_secure_settings()
 
     app = FastAPI(
         title="VocabLens API",
@@ -60,10 +66,10 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=list(settings.CORS_ALLOW_ORIGINS),
+        allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+        allow_methods=list(settings.CORS_ALLOW_METHODS),
+        allow_headers=list(settings.CORS_ALLOW_HEADERS),
     )
 
     uow_factory = UnitOfWorkFactory(AsyncSessionMaker)
@@ -94,9 +100,8 @@ def create_app() -> FastAPI:
         if user_id:
             async with uow_factory() as uow:
                 sub = await uow.subscriptions.get_by_user(user_id)
-                tier = (sub.tier if sub else "free").lower()
-                request_limit = sub.request_limit if sub else 100
-                token_limit = sub.token_limit if sub else 50000
+                request_limit = int(getattr(sub, "request_limit", 100)) if sub else 100
+                token_limit = int(getattr(sub, "token_limit", 50000)) if sub else 50000
                 used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
                 if used_requests >= request_limit:
                     return Response(status_code=429, content="Request limit exceeded for current period")
