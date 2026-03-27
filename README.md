@@ -93,6 +93,8 @@ VOCABLENS_REQUIRE_POSTGRES_TESTS=true
 
 ## Running tests
 
+Testing policy and lane definitions are documented in `docs/testing_strategy.md`.
+
 Use the project virtual environment:
 
 ```bash
