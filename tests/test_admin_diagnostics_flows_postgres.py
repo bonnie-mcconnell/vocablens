@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 from tests.conftest import run_async
 from tests.postgres_harness import postgres_harness
 from tests.product_flow_scenarios import run_comeback_flow, run_first_week_flow
-from vocablens.api.dependencies import get_admin_token, get_uow_factory
+from vocablens.api.dependencies_admin import get_admin_token
+from vocablens.api.dependencies_core import get_uow_factory
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.main import create_app
 

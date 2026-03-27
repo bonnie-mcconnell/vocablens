@@ -1,11 +1,10 @@
 from fastapi.testclient import TestClient
 
 from tests.conftest import make_user
-from vocablens.api.dependencies import (
+from vocablens.api.dependencies_admin import (
     get_admin_token,
     get_analytics_service,
     get_content_quality_health_signal_service,
-    get_current_user,
     get_daily_loop_health_signal_service,
     get_decision_trace_service,
     get_exercise_template_health_signal_service,
@@ -14,13 +13,16 @@ from vocablens.api.dependencies import (
     get_monetization_health_signal_service,
     get_experiment_registry_service,
     get_experiment_results_service,
-    get_frontend_service,
     get_lifecycle_health_signal_service,
     get_notification_policy_registry_service,
-    get_onboarding_flow_service,
     get_operator_remediation_service,
     get_session_health_signal_service,
     get_subscription_service,
+)
+from vocablens.api.dependencies_interaction_api import (
+    get_current_user,
+    get_frontend_service,
+    get_onboarding_flow_service,
 )
 from vocablens.main import create_app
 

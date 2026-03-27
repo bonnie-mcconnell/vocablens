@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from tests.conftest import make_user
-from vocablens.api.dependencies import get_current_user, get_lesson_generation_service
+from vocablens.api.dependencies_interaction_api import get_current_user, get_lesson_generation_service
 from vocablens.main import create_app
 
 

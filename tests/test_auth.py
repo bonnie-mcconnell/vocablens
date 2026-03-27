@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from jose import jwt as jose_jwt
 from starlette.requests import Request
 
-from vocablens.api.dependencies import get_user_repo
+from vocablens.api.dependencies_auth import get_user_repo
 from vocablens.api.dependencies_core import get_admin_token
 from vocablens.auth.jwt import decode_token
 from vocablens.auth.jwt import ALGORITHM
