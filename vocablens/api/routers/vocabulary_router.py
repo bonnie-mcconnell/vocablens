@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.api.schemas import VocabularyResponse, ReviewRequest
-from vocablens.api.dependencies import get_current_user, get_vocabulary_service
+from vocablens.api.dependencies_interaction_api import get_current_user, get_vocabulary_service
 from vocablens.domain.errors import NotFoundError
 from vocablens.domain.user import User
 from vocablens.core.constants import REVIEW_RATINGS

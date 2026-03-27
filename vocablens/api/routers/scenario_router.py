@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from vocablens.api.dependencies import get_current_user, get_scenario_service
+from vocablens.api.dependencies_interaction_api import get_current_user, get_scenario_service
 from vocablens.domain.user import User
 from vocablens.services.scenario_service import ScenarioService
 

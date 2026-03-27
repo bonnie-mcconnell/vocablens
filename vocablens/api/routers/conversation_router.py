@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from vocablens.api.dependencies import (
+from vocablens.api.dependencies_interaction_api import (
     get_current_user,
     get_conversation_service,
     get_speech_conversation_service,

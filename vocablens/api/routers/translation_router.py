@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
-from vocablens.api.dependencies import (
+from vocablens.api.dependencies_interaction_api import (
     get_current_user,
     get_ocr_service,
     get_vocabulary_service,

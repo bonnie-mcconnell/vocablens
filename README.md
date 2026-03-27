@@ -57,6 +57,18 @@ Run it with:
 .\venv\Scripts\python.exe -m pytest tests\test_migrations.py -q
 ```
 
+For Postgres-native migration/concurrency suites, set:
+
+```env
+VOCABLENS_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost/postgres
+```
+
+To fail fast in CI when Postgres is unavailable instead of skipping these suites:
+
+```env
+VOCABLENS_REQUIRE_POSTGRES_TESTS=true
+```
+
 ## Running tests
 
 Use the project virtual environment:

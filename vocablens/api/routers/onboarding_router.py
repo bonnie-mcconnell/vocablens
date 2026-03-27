@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from vocablens.api.dependencies import get_current_user, get_onboarding_flow_service
+from vocablens.api.dependencies_interaction_api import get_current_user, get_onboarding_flow_service
 from vocablens.api.schemas import APIResponse, OnboardingNextRequest, OnboardingStartRequest
 from vocablens.domain.user import User
 from vocablens.services.onboarding_flow_service import OnboardingFlowService

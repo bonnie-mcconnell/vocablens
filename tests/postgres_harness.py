@@ -21,6 +21,15 @@ from vocablens.infrastructure.db.models import UserORM
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _require_postgres_tests() -> bool:
+    return os.getenv("VOCABLENS_REQUIRE_POSTGRES_TESTS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 @dataclass(frozen=True)
 class PostgresHarness:
     database_url: str
@@ -31,6 +40,8 @@ class PostgresHarness:
 def postgres_root_url() -> str:
     database_url = os.getenv("VOCABLENS_TEST_DATABASE_URL", "").strip()
     if not database_url:
+        if _require_postgres_tests():
+            raise RuntimeError("VOCABLENS_TEST_DATABASE_URL is required when VOCABLENS_REQUIRE_POSTGRES_TESTS is enabled.")
         pytest.skip("Set VOCABLENS_TEST_DATABASE_URL to run Postgres concurrency tests.")
     return database_url
 
@@ -78,12 +89,15 @@ async def _drop_database(root_url: str, database_name: str) -> None:
 
 @contextmanager
 def postgres_harness():
+    require_postgres_tests = _require_postgres_tests()
     root_url = postgres_root_url()
     database_name = f"vocablens_test_{uuid4().hex}"
     database_url = str(make_url(root_url).set(database=database_name))
     try:
         run_async(_create_database(root_url, database_name))
     except (asyncpg.PostgresError, OSError) as exc:
+        if require_postgres_tests:
+            raise RuntimeError(f"Postgres test database unavailable: {exc}") from exc
         pytest.skip(f"Postgres test database unavailable: {exc}")
     try:
         command.upgrade(alembic_config(database_url), "head")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from vocablens.api.dependencies import (
+from vocablens.api.dependencies_interaction_api import (
     get_current_user,
     get_knowledge_graph_service,
     get_learning_roadmap_service,

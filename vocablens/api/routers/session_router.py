@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from vocablens.api.dependencies import get_current_user, get_session_engine
+from vocablens.api.dependencies_interaction_api import get_current_user, get_session_engine
 from vocablens.api.schemas import APIResponse, SessionEvaluateRequest, SessionStartRequest
 from vocablens.domain.errors import ConflictError, NotFoundError
 from vocablens.domain.user import User
