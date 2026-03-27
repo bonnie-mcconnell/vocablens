@@ -236,3 +236,41 @@ def test_admin_reports_keep_comeback_timeline_and_reference_ids_aligned():
         assert notification_decided_at is not None and delivery_created_at is not None and session_created_at is not None
         assert last_accepted_at is not None and conversion_at is not None
         assert notification_decided_at <= delivery_created_at <= session_created_at <= last_accepted_at <= conversion_at
+
+
+def test_admin_notification_report_keeps_selection_and_delivery_payloads_aligned():
+    with postgres_harness() as harness:
+        run_async(run_comeback_flow(harness))
+        client = _build_admin_client(harness)
+
+        report = client.get(
+            "/admin/notifications/602/report?policy_key=default",
+            headers={"X-Admin-Token": "secret"},
+        )
+
+        assert report.status_code == 200
+        payload = report.json()["data"]
+
+        latest_selection = payload["latest_decisions"]["notification_selection"]
+        latest_delivery = payload["latest_decisions"]["latest_delivery"]
+        detail = payload["detail"]
+        summary = payload["delivery_summary"]
+
+        assert latest_selection is not None
+        assert latest_delivery is not None
+        assert detail["notification_deliveries"]
+        assert detail["notification_deliveries"][0]["id"] == latest_delivery["id"]
+
+        assert latest_delivery["status"] == "sent"
+        assert latest_delivery["reference_id"] == latest_selection["reference_id"]
+        assert latest_delivery["source_context"] == latest_selection["source"]
+        assert latest_delivery["category"] == latest_selection["outputs"]["message_category"]
+        assert latest_delivery["payload"]["channel"] == latest_selection["outputs"]["channel"]
+
+        assert detail["notification_state"]["last_reference_id"] == latest_selection["reference_id"]
+        assert detail["notification_state"]["last_delivery_status"] == "sent"
+        assert detail["notification_state"]["last_delivery_channel"] == latest_selection["outputs"]["channel"]
+
+        assert summary["counts_by_status"]["sent"] >= 1
+        assert summary["counts_by_category"][latest_delivery["category"]] >= 1
+        assert summary["counts_by_provider"][latest_delivery["provider"]] >= 1
