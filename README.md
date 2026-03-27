@@ -156,6 +156,21 @@ $env:VOCABLENS_REQUIRE_POSTGRES_TESTS="true"
 .\venv\Scripts\python.exe -m pytest -q tests\test_migrations_postgres.py tests\test_daily_loop_postgres_concurrency.py tests\test_experiment_postgres_concurrency.py tests\test_session_postgres_concurrency.py tests\test_admin_diagnostics_flows_postgres.py tests\test_product_flows_postgres.py
 ```
 
+### Strict Postgres lane troubleshooting
+
+If strict Postgres tests fail before running assertions:
+
+1. `password authentication failed`
+- The credentials in `VOCABLENS_TEST_DATABASE_URL` do not match your local Postgres instance.
+- Update the URL to valid local credentials, or start a clean local Postgres with known credentials.
+
+2. Docker Compose cannot connect to Docker engine
+- Ensure Docker Desktop is running before `docker compose up -d postgres`.
+- If Docker is unavailable, use a local Postgres installation and set `VOCABLENS_TEST_DATABASE_URL` accordingly.
+
+3. Strict mode expected behavior
+- With `VOCABLENS_REQUIRE_POSTGRES_TESTS=true`, setup issues are treated as failures (not skips).
+
 Current coverage includes:
 
 - auth register/login flow
