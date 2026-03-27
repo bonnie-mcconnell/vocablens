@@ -42,6 +42,28 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost/vocablens
 
 If the models changed, review the generated migration carefully before applying it.
 
+## Environment and security
+
+### Production/staging required settings
+
+In non-development environments (`VOCABLENS_ENV=production` or `staging`), the app now enforces a non-default secret at startup.
+
+```env
+VOCABLENS_ENV=production
+VOCABLENS_SECRET=<strong-random-secret>
+```
+
+### CORS settings
+
+Configure CORS explicitly via environment variables (comma-separated lists where applicable):
+
+```env
+CORS_ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=*
+CORS_ALLOW_HEADERS=*
+```
+
 ## Migration smoke test
 
 This repo includes a migration round-trip test that validates:
@@ -102,6 +124,29 @@ Run the same split as `.github/workflows/ci.yml`:
 ```
 
 2. Strict Postgres lane (matches `postgres-required`):
+
+```bash
+$env:VOCABLENS_TEST_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
+$env:VOCABLENS_REQUIRE_POSTGRES_TESTS="true"
+.\venv\Scripts\python.exe -m pytest -q tests\test_migrations_postgres.py tests\test_daily_loop_postgres_concurrency.py tests\test_experiment_postgres_concurrency.py tests\test_session_postgres_concurrency.py tests\test_admin_diagnostics_flows_postgres.py tests\test_product_flows_postgres.py
+```
+
+### CI quickstart
+
+Run lint and the non-Postgres test lane exactly like CI:
+
+```bash
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m pytest -q ^
+  --ignore=tests\test_migrations_postgres.py ^
+  --ignore=tests\test_daily_loop_postgres_concurrency.py ^
+  --ignore=tests\test_experiment_postgres_concurrency.py ^
+  --ignore=tests\test_session_postgres_concurrency.py ^
+  --ignore=tests\test_admin_diagnostics_flows_postgres.py ^
+  --ignore=tests\test_product_flows_postgres.py
+```
+
+Then run the strict Postgres lane:
 
 ```bash
 $env:VOCABLENS_TEST_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
