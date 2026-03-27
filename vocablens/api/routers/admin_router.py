@@ -3,7 +3,7 @@ from dataclasses import asdict, is_dataclass
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi import HTTPException
 
-from vocablens.api.dependencies import (
+from vocablens.api.dependencies_admin import (
     get_admin_token,
     get_analytics_service,
     get_content_quality_health_signal_service,

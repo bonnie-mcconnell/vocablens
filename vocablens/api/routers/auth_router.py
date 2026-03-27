@@ -7,7 +7,7 @@ from vocablens.auth.security import hash_password, verify_password
 from vocablens.auth.jwt import create_access_token
 
 from vocablens.domain.errors import PersistenceError
-from vocablens.api.dependencies import get_user_repo
+from vocablens.api.dependencies_auth import get_user_repo
 
 
 DUMMY_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEeO6cWwWlR9E9QnUnxE27XGr0CcsMEY0p6"
