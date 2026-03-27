@@ -17,6 +17,7 @@ from vocablens.infrastructure.rate_limit import RateLimiter
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.infrastructure.db.session import AsyncSessionMaker
 from vocablens.infrastructure.observability.token_tracker import start_request, get_tokens
+from vocablens.services.entitlement_policy_service import EntitlementPolicyService
 
 setup_logging()
 logger = get_logger("vocablens")
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     )
 
     uow_factory = UnitOfWorkFactory(AsyncSessionMaker)
+    entitlement_policy = EntitlementPolicyService(uow_factory)
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -98,15 +100,9 @@ def create_app() -> FastAPI:
 
         # enforce subscription quotas before hitting handlers
         if user_id:
-            async with uow_factory() as uow:
-                sub = await uow.subscriptions.get_by_user(user_id)
-                request_limit = int(getattr(sub, "request_limit", 100)) if sub else 100
-                token_limit = int(getattr(sub, "token_limit", 50000)) if sub else 50000
-                used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
-                if used_requests >= request_limit:
-                    return Response(status_code=429, content="Request limit exceeded for current period")
-                if used_tokens >= token_limit:
-                    return Response(status_code=429, content="Token quota exceeded for current period")
+            entitlement = await entitlement_policy.evaluate_request(user_id)
+            if not entitlement.allowed:
+                return Response(status_code=429, content=entitlement.message or "Quota exceeded")
 
         try:
             response = await call_next(request)
