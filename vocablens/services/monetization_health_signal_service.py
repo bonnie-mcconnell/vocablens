@@ -66,7 +66,11 @@ class MonetizationHealthSignalService:
         async with self._uow_factory() as uow:
             states = await uow.monetization_health_states.list_all()
             monetization_states = await uow.monetization_states.list_all()
-            lifecycle_states = await uow.lifecycle_states.list_all()
+            lifecycle_states_repo = getattr(uow, "lifecycle_states", None)
+            if lifecycle_states_repo is not None and hasattr(lifecycle_states_repo, "list_all"):
+                lifecycle_states = await lifecycle_states_repo.list_all()
+            else:
+                lifecycle_states = []
             await uow.commit()
         rows = [
             {
@@ -103,8 +107,17 @@ class MonetizationHealthSignalService:
         geography = None if scope_key == "global" else scope_key
         async with self._uow_factory() as uow:
             states = await uow.monetization_states.list_all()
-            lifecycle_states = await uow.lifecycle_states.list_all()
-            events = await uow.monetization_offer_events.list_all(geography=geography)
+            lifecycle_states_repo = getattr(uow, "lifecycle_states", None)
+            if lifecycle_states_repo is not None and hasattr(lifecycle_states_repo, "list_all"):
+                lifecycle_states = await lifecycle_states_repo.list_all()
+            else:
+                lifecycle_states = []
+
+            monetization_offer_events_repo = getattr(uow, "monetization_offer_events", None)
+            if monetization_offer_events_repo is not None and hasattr(monetization_offer_events_repo, "list_all"):
+                events = await monetization_offer_events_repo.list_all(geography=geography)
+            else:
+                events = []
             await uow.commit()
         filtered_states = [
             state

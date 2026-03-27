@@ -1,81 +1,14 @@
-from vocablens.api.dependencies_core import (
-    get_admin_token,
-    get_cached_translator,
-    get_conversation_repo,
-    get_current_user,
-    get_job_queue,
-    get_knowledge_graph_repo,
-    get_learning_event_repo,
-    get_llm_provider,
-    get_notification_decision_engine,
-    get_notification_delivery_service,
-    get_notification_sink,
-    get_ocr_provider,
-    get_ocr_service,
-    get_personalization_service,
-    get_skill_tracking_repo,
-    get_translation_cache_repo,
-    get_translation_provider,
-    get_tts_provider,
-    get_tutor_mode_service,
-    get_uow_factory,
-    get_user_repo,
-    get_vocab_repo,
-    get_whisper_provider,
-    get_word_extractor,
-    security,
-)
-from vocablens.api.dependencies_interaction import (
-    get_conversation_service,
-    get_frontend_service,
-    get_knowledge_graph_service,
-    get_lesson_generation_service,
-    get_learning_graph_service,
-    get_learning_roadmap_service,
-    get_scenario_service,
-    get_speech_conversation_service,
-    get_streaming_tutor_service,
-    get_vocabulary_service,
-)
-from vocablens.api.dependencies_product import (
-    get_addiction_engine,
-    get_analytics_service,
-    get_business_metrics_service,
-    get_content_quality_gate_service,
-    get_content_quality_health_signal_service,
-    get_conversion_funnel_service,
-    get_daily_loop_service,
-    get_daily_loop_health_signal_service,
-    get_decision_trace_service,
-    get_exercise_template_health_signal_service,
-    get_event_service,
-    get_exercise_template_registry_admin_service,
-    get_exercise_template_registry_service,
-    get_experiment_results_service,
-    get_experiment_registry_service,
-    get_experiment_health_signal_service,
-    get_experiment_service,
-    get_gamification_service,
-    get_global_decision_engine,
-    get_habit_engine,
-    get_learning_engine,
-    get_learning_health_signal_service,
-    get_learning_event_service,
-    get_lifecycle_service,
-    get_lifecycle_health_signal_service,
-    get_monetization_engine,
-    get_monetization_health_signal_service,
-    get_notification_policy_registry_service,
-    get_notification_policy_service,
-    get_onboarding_flow_service,
-    get_onboarding_service,
-    get_operator_remediation_service,
-    get_paywall_service,
-    get_progress_service,
-    get_retention_engine,
-    get_session_engine,
-    get_session_health_signal_service,
-    get_skill_tracking_service,
-    get_subscription_service,
-    get_wow_engine,
-)
+"""Legacy dependency barrel.
+
+Prefer importing from context-scoped modules:
+- vocablens.api.dependencies_auth
+- vocablens.api.dependencies_admin
+- vocablens.api.dependencies_interaction_api
+- vocablens.api.dependencies_core / dependencies_interaction / dependencies_product
+
+This module remains as a compatibility shim for older imports.
+"""
+
+from vocablens.api.dependencies_core import *  # noqa: F401,F403
+from vocablens.api.dependencies_interaction import *  # noqa: F401,F403
+from vocablens.api.dependencies_product import *  # noqa: F401,F403
