@@ -1,8 +1,12 @@
 from alembic import command
+import pytest
 from sqlalchemy import inspect
 
 from tests.conftest import run_async
 from tests.postgres_harness import alembic_config, postgres_harness
+
+
+pytestmark = pytest.mark.postgres
 
 
 def _collect_schema_snapshot(engine) -> dict[str, object]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import func, select
 
 from tests.postgres_harness import postgres_harness, seed_user
@@ -14,6 +15,9 @@ from vocablens.infrastructure.db.models import (
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.services.experiment_attribution_service import ExperimentAttributionService
 from vocablens.services.experiment_service import ExperimentContext, ExperimentService
+
+
+pytestmark = pytest.mark.postgres
 
 
 class NullExperimentHealthSignalService:

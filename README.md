@@ -129,13 +129,7 @@ Run the same split as `.github/workflows/ci.yml`:
 1. Non-Postgres lane (matches `unit-and-lint`):
 
 ```bash
-.\venv\Scripts\python.exe -m pytest -q ^
-  --ignore=tests\test_migrations_postgres.py ^
-  --ignore=tests\test_daily_loop_postgres_concurrency.py ^
-  --ignore=tests\test_experiment_postgres_concurrency.py ^
-  --ignore=tests\test_session_postgres_concurrency.py ^
-  --ignore=tests\test_admin_diagnostics_flows_postgres.py ^
-  --ignore=tests\test_product_flows_postgres.py
+.\venv\Scripts\python.exe -m pytest -q -m "not postgres"
 ```
 
 2. Strict Postgres lane (matches `postgres-required`):
@@ -143,7 +137,7 @@ Run the same split as `.github/workflows/ci.yml`:
 ```bash
 $env:VOCABLENS_TEST_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
 $env:VOCABLENS_REQUIRE_POSTGRES_TESTS="true"
-.\venv\Scripts\python.exe -m pytest -q tests\test_migrations_postgres.py tests\test_daily_loop_postgres_concurrency.py tests\test_experiment_postgres_concurrency.py tests\test_session_postgres_concurrency.py tests\test_admin_diagnostics_flows_postgres.py tests\test_product_flows_postgres.py
+.\venv\Scripts\python.exe -m pytest -q -m "postgres"
 ```
 
 ### CI quickstart
@@ -152,13 +146,7 @@ Run lint and the non-Postgres test lane exactly like CI:
 
 ```bash
 .\venv\Scripts\python.exe -m ruff check .
-.\venv\Scripts\python.exe -m pytest -q ^
-  --ignore=tests\test_migrations_postgres.py ^
-  --ignore=tests\test_daily_loop_postgres_concurrency.py ^
-  --ignore=tests\test_experiment_postgres_concurrency.py ^
-  --ignore=tests\test_session_postgres_concurrency.py ^
-  --ignore=tests\test_admin_diagnostics_flows_postgres.py ^
-  --ignore=tests\test_product_flows_postgres.py
+.\venv\Scripts\python.exe -m pytest -q -m "not postgres"
 ```
 
 Then run the strict Postgres lane:
@@ -166,7 +154,7 @@ Then run the strict Postgres lane:
 ```bash
 $env:VOCABLENS_TEST_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
 $env:VOCABLENS_REQUIRE_POSTGRES_TESTS="true"
-.\venv\Scripts\python.exe -m pytest -q tests\test_migrations_postgres.py tests\test_daily_loop_postgres_concurrency.py tests\test_experiment_postgres_concurrency.py tests\test_session_postgres_concurrency.py tests\test_admin_diagnostics_flows_postgres.py tests\test_product_flows_postgres.py
+.\venv\Scripts\python.exe -m pytest -q -m "postgres"
 ```
 
 ### Strict Postgres lane troubleshooting

@@ -27,13 +27,7 @@ jobs:
 
       - name: Pytest (non-Postgres suites)
         run: |
-          python -m pytest -q \
-            --ignore=tests/test_migrations_postgres.py \
-            --ignore=tests/test_daily_loop_postgres_concurrency.py \
-            --ignore=tests/test_experiment_postgres_concurrency.py \
-            --ignore=tests/test_session_postgres_concurrency.py \
-            --ignore=tests/test_admin_diagnostics_flows_postgres.py \
-            --ignore=tests/test_product_flows_postgres.py
+          python -m pytest -q -m "not postgres"
 
   postgres-required:
     runs-on: ubuntu-latest
@@ -88,10 +82,4 @@ jobs:
 
       - name: Pytest (Postgres required suites)
         run: |
-          python -m pytest -q \
-            tests/test_migrations_postgres.py \
-            tests/test_daily_loop_postgres_concurrency.py \
-            tests/test_experiment_postgres_concurrency.py \
-            tests/test_session_postgres_concurrency.py \
-            tests/test_admin_diagnostics_flows_postgres.py \
-            tests/test_product_flows_postgres.py
+          python -m pytest -q -m "postgres"

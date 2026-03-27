@@ -1,6 +1,11 @@
+import pytest
+
 from tests.conftest import run_async
 from tests.postgres_harness import postgres_harness
 from tests.product_flow_scenarios import run_comeback_flow, run_first_week_flow
+
+
+pytestmark = pytest.mark.postgres
 
 
 def test_first_week_flow_persists_canonical_cross_system_state():

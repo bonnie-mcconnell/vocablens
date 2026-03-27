@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import func, select
 
 from tests.conftest import run_async
@@ -15,6 +16,9 @@ from vocablens.infrastructure.db.models import (
 )
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.services.session_engine import SessionEngine
+
+
+pytestmark = pytest.mark.postgres
 
 
 class StubLearningEngine:

@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import run_async
@@ -9,6 +10,9 @@ from vocablens.api.dependencies_admin import get_admin_token
 from vocablens.api.dependencies_core import get_uow_factory
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.main import create_app
+
+
+pytestmark = pytest.mark.postgres
 
 
 def _build_admin_client(harness) -> TestClient:
