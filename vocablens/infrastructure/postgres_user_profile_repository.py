@@ -19,7 +19,6 @@ class PostgresUserProfileRepository:
         await self.session.execute(
             insert(UserProfileORM).values(user_id=user_id)
         )
-        await self.session.commit()
         result = await self.session.execute(
             select(UserProfileORM).where(UserProfileORM.user_id == user_id)
         )
