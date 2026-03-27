@@ -53,6 +53,7 @@ class Settings:
 
     ENABLE_BACKGROUND_TASKS: bool = _as_bool(os.getenv("ENABLE_BACKGROUND_TASKS"), False)
     ENABLE_REDIS_CACHE: bool = _as_bool(os.getenv("ENABLE_REDIS_CACHE"), False)
+    EVENT_INGEST_MODE: str = os.getenv("EVENT_INGEST_MODE", "best_effort").strip().lower()
     CORS_ALLOW_ORIGINS: tuple[str, ...] = _as_tuple(
         os.getenv("CORS_ALLOW_ORIGINS"),
         ("http://localhost:3000", "http://127.0.0.1:3000"),

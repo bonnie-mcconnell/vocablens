@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from tests.conftest import run_async
 from vocablens.services.event_service import EventService
 
@@ -51,6 +53,11 @@ class FakeUOW:
         return self._engagement_state
 
 
+class FailingEventsRepo(FakeEventsRepo):
+    async def record(self, *, user_id: int, event_type: str, payload: dict, created_at=None) -> None:
+        raise RuntimeError("event persistence failed")
+
+
 def test_event_service_persists_events_and_supports_queries():
     repo = FakeEventsRepo()
     service = EventService(lambda: FakeUOW(repo))
@@ -92,3 +99,25 @@ def test_event_service_handles_high_volume_buffered_ingestion():
     assert len(repo.rows) == 500
     assert len(events) == 500
     assert {event.payload["sequence"] for event in events} == set(range(1, 501))
+
+
+def test_event_service_durable_mode_surfaces_persistence_errors():
+    service = EventService(lambda: FakeUOW(FailingEventsRepo()), use_buffer=True, ingest_mode="durable")
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match="event persistence failed"):
+            await service.track_event(1, "message_sent", {"text": "hola"})
+        await service.close()
+
+    run_async(scenario())
+
+
+def test_event_service_best_effort_mode_drops_failed_events_without_raising():
+    service = EventService(lambda: FakeUOW(FailingEventsRepo()), use_buffer=False, ingest_mode="best_effort")
+
+    async def scenario():
+        await service.track_event(1, "message_sent", {"text": "hola"})
+        await service.flush()
+        await service.close()
+
+    run_async(scenario())

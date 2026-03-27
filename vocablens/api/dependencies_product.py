@@ -8,6 +8,7 @@ from vocablens.api.dependencies_core import (
     get_personalization_service,
     get_uow_factory,
 )
+from vocablens.config.settings import settings
 from vocablens.services.addiction_engine import AddictionEngine
 from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
 from vocablens.services.analytics_service import AnalyticsService
@@ -94,7 +95,11 @@ async def get_learning_event_service(
 
 
 def get_event_service(uow_factory=Depends(get_uow_factory)) -> EventService:
-    return EventService(uow_factory, ExperimentAttributionService(uow_factory))
+    return EventService(
+        uow_factory,
+        ExperimentAttributionService(uow_factory),
+        ingest_mode=settings.EVENT_INGEST_MODE,
+    )
 
 
 def get_progress_service(uow_factory=Depends(get_uow_factory)) -> ProgressService:

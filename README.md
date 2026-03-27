@@ -64,6 +64,19 @@ CORS_ALLOW_METHODS=*
 CORS_ALLOW_HEADERS=*
 ```
 
+### Event ingestion mode
+
+Configure event ingestion behavior explicitly:
+
+```env
+EVENT_INGEST_MODE=best_effort
+```
+
+Allowed values:
+
+- `best_effort`: buffered/background writes; failed event persistence is logged and dropped.
+- `durable`: synchronous persistence; write failures surface to the caller.
+
 ## Migration smoke test
 
 This repo includes a migration round-trip test that validates:

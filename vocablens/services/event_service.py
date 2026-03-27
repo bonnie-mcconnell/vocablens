@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
 from typing import Any
 
@@ -35,6 +36,9 @@ SUPPORTED_EVENT_TYPES = {
 }
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
 class EventService:
     def __init__(
         self,
@@ -43,12 +47,16 @@ class EventService:
         *,
         use_buffer: bool = True,
         buffer_size: int = 1000,
+        ingest_mode: str = "best_effort",
     ):
+        if ingest_mode not in {"best_effort", "durable"}:
+            raise ValueError("ingest_mode must be either 'best_effort' or 'durable'")
         self._uow_factory = uow_factory
         self._attribution = experiment_attribution_service
-        self._use_buffer = use_buffer
+        self._ingest_mode = ingest_mode
+        self._use_buffer = use_buffer and ingest_mode == "best_effort"
         self._queue: asyncio.Queue[dict[str, Any]] | None = (
-            asyncio.Queue(maxsize=buffer_size) if use_buffer else None
+            asyncio.Queue(maxsize=buffer_size) if self._use_buffer else None
         )
         self._drain_task: asyncio.Task | None = None
         self._pending_tasks: set[asyncio.Task] = set()
@@ -60,6 +68,10 @@ class EventService:
             "event_type": event_type,
             "payload": dict(payload or {}),
         }
+        if self._ingest_mode == "durable":
+            await self._persist(envelope)
+            return
+
         if self._queue is not None:
             self._ensure_drain_task()
             try:
@@ -88,7 +100,7 @@ class EventService:
             self._ensure_drain_task()
             await self._queue.join()
         if self._pending_tasks:
-            await asyncio.gather(*tuple(self._pending_tasks))
+            await asyncio.gather(*tuple(self._pending_tasks), return_exceptions=True)
 
     async def close(self) -> None:
         await self.flush()
@@ -99,7 +111,7 @@ class EventService:
             self._drain_task = None
 
     def _spawn_persist_task(self, envelope: dict[str, Any]) -> None:
-        task = asyncio.create_task(self._persist(envelope))
+        task = asyncio.create_task(self._persist_best_effort(envelope))
         self._pending_tasks.add(task)
         task.add_done_callback(self._pending_tasks.discard)
 
@@ -115,9 +127,21 @@ class EventService:
         while True:
             envelope = await self._queue.get()
             try:
-                await self._persist(envelope)
+                await self._persist_best_effort(envelope)
             finally:
                 self._queue.task_done()
+
+    async def _persist_best_effort(self, envelope: dict[str, Any]) -> None:
+        try:
+            await self._persist(envelope)
+        except Exception:
+            _LOGGER.exception(
+                "Best-effort event ingestion dropped event",
+                extra={
+                    "event_type": envelope.get("event_type"),
+                    "user_id": envelope.get("user_id"),
+                },
+            )
 
     async def _persist(self, envelope: dict[str, Any]) -> None:
         async with self._uow_factory() as uow:
