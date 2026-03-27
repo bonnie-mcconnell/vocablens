@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.entitlement_policy_service import EntitlementPolicyService
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.monetization_state_service import MonetizationStateService
@@ -62,12 +63,15 @@ class SubscriptionService:
         event_service: EventService | None = None,
         paywall_service: PaywallService | None = None,
         monetization_state_service: MonetizationStateService | None = None,
+        *,
+        entitlement_policy_service: EntitlementPolicyService | None = None,
     ):
         self._uow_factory = uow_factory
         self._experiments = experiment_service
         self._event_service = event_service
         self._paywall_service = paywall_service
         self._monetization_state = monetization_state_service or MonetizationStateService(uow_factory)
+        self._entitlement_policy = entitlement_policy_service
 
     async def get_features(self, user_id: int) -> SubscriptionFeatures:
         async with self._uow_factory() as uow:
@@ -82,14 +86,16 @@ class SubscriptionService:
         base = TIER_FEATURES.get(tier, TIER_FEATURES["free"])
         paywall_variant = await self._paywall_variant(user_id, tier)
         paywall_decision = await self._paywall_service.evaluate(user_id) if self._paywall_service else None
+        entitlement = await self._entitlement_policy.evaluate_request(user_id) if self._entitlement_policy else None
         if not subscription:
-            return self._apply_paywall_variant(base, paywall_variant, paywall_decision)
+            return self._apply_paywall_variant(base, paywall_variant, paywall_decision, entitlement)
         adjusted_limits = self._apply_variant_limits(
             request_limit=subscription.request_limit,
             token_limit=subscription.token_limit,
             variant=paywall_variant,
             tier=tier,
         )
+        fallback = self._decision_fallback(entitlement)
         features = SubscriptionFeatures(
             tier=base.tier,
             request_limit=adjusted_limits["request_limit"],
@@ -100,10 +106,10 @@ class SubscriptionService:
             paywall_variant=paywall_variant,
             trial_active=bool(paywall_decision.trial_active) if paywall_decision else False,
             trial_ends_at=paywall_decision.trial_ends_at if paywall_decision else trial_ends_at,
-            usage_percent=paywall_decision.usage_percent if paywall_decision else 0,
-            paywall_type=paywall_decision.paywall_type if paywall_decision else None,
-            paywall_reason=paywall_decision.reason if paywall_decision else None,
-            allow_access=paywall_decision.allow_access if paywall_decision else True,
+            usage_percent=paywall_decision.usage_percent if paywall_decision else fallback["usage_percent"],
+            paywall_type=paywall_decision.paywall_type if paywall_decision else fallback["paywall_type"],
+            paywall_reason=paywall_decision.reason if paywall_decision else fallback["paywall_reason"],
+            allow_access=paywall_decision.allow_access if paywall_decision else fallback["allow_access"],
         )
         return self._apply_quality_gate(features)
 
@@ -233,6 +239,7 @@ class SubscriptionService:
         base: SubscriptionFeatures,
         variant: str | None,
         decision=None,
+        entitlement=None,
     ) -> SubscriptionFeatures:
         adjusted_limits = self._apply_variant_limits(
             request_limit=base.request_limit,
@@ -240,6 +247,7 @@ class SubscriptionService:
             variant=variant,
             tier=base.tier,
         )
+        fallback = self._decision_fallback(entitlement)
         features = SubscriptionFeatures(
             tier=base.tier,
             request_limit=adjusted_limits["request_limit"],
@@ -250,12 +258,35 @@ class SubscriptionService:
             paywall_variant=variant,
             trial_active=bool(decision.trial_active) if decision else False,
             trial_ends_at=decision.trial_ends_at if decision else None,
-            usage_percent=decision.usage_percent if decision else 0,
-            paywall_type=decision.paywall_type if decision else None,
-            paywall_reason=decision.reason if decision else None,
-            allow_access=decision.allow_access if decision else True,
+            usage_percent=decision.usage_percent if decision else fallback["usage_percent"],
+            paywall_type=decision.paywall_type if decision else fallback["paywall_type"],
+            paywall_reason=decision.reason if decision else fallback["paywall_reason"],
+            allow_access=decision.allow_access if decision else fallback["allow_access"],
         )
         return self._apply_quality_gate(features)
+
+    def _decision_fallback(self, entitlement) -> dict[str, object]:
+        if entitlement is None:
+            return {
+                "usage_percent": 0,
+                "paywall_type": None,
+                "paywall_reason": None,
+                "allow_access": True,
+            }
+
+        usage_percent = 0
+        if entitlement.request_limit > 0:
+            usage_percent = max(usage_percent, int((entitlement.used_requests / entitlement.request_limit) * 100))
+        if entitlement.token_limit > 0:
+            usage_percent = max(usage_percent, int((entitlement.used_tokens / entitlement.token_limit) * 100))
+        usage_percent = min(100, usage_percent)
+
+        return {
+            "usage_percent": usage_percent,
+            "paywall_type": "hard_paywall" if not entitlement.allowed else None,
+            "paywall_reason": entitlement.message,
+            "allow_access": entitlement.allowed,
+        }
 
     def _apply_variant_limits(
         self,

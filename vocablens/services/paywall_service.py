@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.entitlement_policy_service import EntitlementPolicyService
 from vocablens.services.event_service import EventService
 
 
@@ -33,12 +34,14 @@ class PaywallService:
         uow_factory: type[UnitOfWork],
         event_service: EventService | None = None,
         *,
+        entitlement_policy_service: EntitlementPolicyService | None = None,
         session_trigger: int = 3,
         usage_soft_threshold: float = 0.8,
         usage_hard_threshold: float = 1.0,
     ):
         self._uow_factory = uow_factory
         self._events = event_service
+        self._entitlement_policy = entitlement_policy_service
         self._session_trigger = session_trigger
         self._usage_soft_threshold = usage_soft_threshold
         self._usage_hard_threshold = usage_hard_threshold
@@ -52,14 +55,16 @@ class PaywallService:
     ) -> PaywallDecision:
         async with self._uow_factory() as uow:
             subscription = await uow.subscriptions.get_by_user(user_id)
-            used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
             engagement_state = await uow.engagement_states.get_or_create(user_id)
             monetization_state = await uow.monetization_states.get_or_create(user_id)
+            used_requests, used_tokens, request_limit, token_limit = await self._load_usage_and_limits(
+                user_id,
+                subscription,
+                uow=uow,
+            )
             await uow.commit()
 
         tier = (subscription.tier if subscription else "free").lower()
-        request_limit = int(getattr(subscription, "request_limit", 100) or 100)
-        token_limit = int(getattr(subscription, "token_limit", 50000) or 50000)
         trial_tier = getattr(subscription, "trial_tier", None)
         trial_ends_at = getattr(subscription, "trial_ends_at", None)
         trial_active = bool(trial_tier and trial_ends_at and trial_ends_at > utc_now())
@@ -212,6 +217,32 @@ class PaywallService:
         if limit <= 0:
             return 1.0
         return used / limit
+
+    async def _load_usage_and_limits(
+        self,
+        user_id: int,
+        subscription,
+        *,
+        uow=None,
+    ) -> tuple[int, int, int, int]:
+        if self._entitlement_policy is not None:
+            entitlement = await self._entitlement_policy.evaluate_request(user_id)
+            return (
+                entitlement.used_requests,
+                entitlement.used_tokens,
+                entitlement.request_limit,
+                entitlement.token_limit,
+            )
+
+        if uow is not None:
+            used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
+        else:
+            async with self._uow_factory() as local_uow:
+                used_requests, used_tokens = await local_uow.usage_logs.totals_for_user_day(user_id)
+
+        request_limit = int(getattr(subscription, "request_limit", 100) or 100)
+        token_limit = int(getattr(subscription, "token_limit", 50000) or 50000)
+        return used_requests, used_tokens, request_limit, token_limit
 
     def _decision(
         self,

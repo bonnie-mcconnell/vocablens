@@ -1,6 +1,7 @@
 from fastapi import Depends
 
 from vocablens.api.dependencies_core import (
+    get_entitlement_policy_service,
     get_job_queue,
     get_notification_decision_engine,
     get_notification_sink,
@@ -210,12 +211,14 @@ def get_paywall_service(
     event_service=Depends(get_event_service),
     experiment_service=Depends(get_experiment_service),
     monetization_state_service=Depends(get_monetization_state_service),
+    entitlement_policy_service=Depends(get_entitlement_policy_service),
 ) -> PaywallService:
     return AdaptivePaywallService(
         uow_factory,
         event_service,
         experiment_service,
         monetization_state_service,
+        entitlement_policy_service=entitlement_policy_service,
     )
 
 
@@ -249,6 +252,7 @@ def get_subscription_service(
     event_service=Depends(get_event_service),
     paywall_service=Depends(get_paywall_service),
     monetization_state_service=Depends(get_monetization_state_service),
+    entitlement_policy_service=Depends(get_entitlement_policy_service),
 ) -> SubscriptionService:
     return SubscriptionService(
         uow_factory,
@@ -256,6 +260,7 @@ def get_subscription_service(
         event_service,
         paywall_service,
         monetization_state_service,
+        entitlement_policy_service=entitlement_policy_service,
     )
 
 

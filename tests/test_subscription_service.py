@@ -108,6 +108,26 @@ class FakeMonetizationHealthStatesRepo:
         return self.row
 
 
+class FakeEntitlementPolicyService:
+    def __init__(self, allowed: bool, message: str | None, used_requests: int, used_tokens: int, request_limit: int, token_limit: int):
+        self.allowed = allowed
+        self.message = message
+        self.used_requests = used_requests
+        self.used_tokens = used_tokens
+        self.request_limit = request_limit
+        self.token_limit = token_limit
+
+    async def evaluate_request(self, user_id: int):
+        return SimpleNamespace(
+            allowed=self.allowed,
+            message=self.message,
+            used_requests=self.used_requests,
+            used_tokens=self.used_tokens,
+            request_limit=self.request_limit,
+            token_limit=self.token_limit,
+        )
+
+
 def test_subscription_service_returns_tier_features_and_tracks_upgrade():
     uow = FakeUOW(SimpleNamespace(tier="pro", request_limit=1000, token_limit=300000))
     service = SubscriptionService(lambda: uow)
@@ -140,3 +160,26 @@ def test_subscription_service_records_feature_gate_metrics():
     metrics = run_async(service.conversion_metrics())
 
     assert metrics.counts_by_event["feature_gate_blocked"] == 1
+
+
+def test_subscription_service_uses_entitlement_fallback_without_paywall_service():
+    uow = FakeUOW(SimpleNamespace(tier="free", request_limit=100, token_limit=50000))
+    entitlement = FakeEntitlementPolicyService(
+        allowed=False,
+        message="Request limit exceeded for current period",
+        used_requests=100,
+        used_tokens=1200,
+        request_limit=100,
+        token_limit=50000,
+    )
+    service = SubscriptionService(
+        lambda: uow,
+        entitlement_policy_service=entitlement,
+    )
+
+    features = run_async(service.get_features(11))
+
+    assert features.allow_access is False
+    assert features.paywall_type == "hard_paywall"
+    assert features.paywall_reason == "Request limit exceeded for current period"
+    assert features.usage_percent == 100
