@@ -85,6 +85,30 @@ Targeted suites:
 .\venv\Scripts\python.exe -m pytest tests\test_learning_engine.py -q
 ```
 
+### CI-equivalent local runs
+
+Run the same split as `.github/workflows/ci.yml`:
+
+1. Non-Postgres lane (matches `unit-and-lint`):
+
+```bash
+.\venv\Scripts\python.exe -m pytest -q ^
+  --ignore=tests\test_migrations_postgres.py ^
+  --ignore=tests\test_daily_loop_postgres_concurrency.py ^
+  --ignore=tests\test_experiment_postgres_concurrency.py ^
+  --ignore=tests\test_session_postgres_concurrency.py ^
+  --ignore=tests\test_admin_diagnostics_flows_postgres.py ^
+  --ignore=tests\test_product_flows_postgres.py
+```
+
+2. Strict Postgres lane (matches `postgres-required`):
+
+```bash
+$env:VOCABLENS_TEST_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
+$env:VOCABLENS_REQUIRE_POSTGRES_TESTS="true"
+.\venv\Scripts\python.exe -m pytest -q tests\test_migrations_postgres.py tests\test_daily_loop_postgres_concurrency.py tests\test_experiment_postgres_concurrency.py tests\test_session_postgres_concurrency.py tests\test_admin_diagnostics_flows_postgres.py tests\test_product_flows_postgres.py
+```
+
 Current coverage includes:
 
 - auth register/login flow
