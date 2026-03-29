@@ -70,6 +70,47 @@ class UserProgressState:
 
 
 @dataclass(slots=True)
+class UserCoreState:
+    user_id: int
+    xp: int
+    level: int
+    current_streak: int
+    longest_streak: int
+    momentum_score: float
+    total_sessions: int
+    sessions_last_3_days: int
+    version: int
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class MutationLedgerEntry:
+    user_id: int
+    idempotency_key: str
+    source: str
+    reference_id: Optional[str]
+    result_code: Optional[int]
+    result_hash: Optional[str]
+    response_etag: Optional[str]
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class UserMutationQueueItem:
+    id: int
+    user_id: int
+    idempotency_key: str
+    payload: dict
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class LearningStateCursor:
+    user_id: int
+    last_processed_attempt_id: int
+
+
+@dataclass(slots=True)
 class LearningSession:
     session_id: str
     user_id: int

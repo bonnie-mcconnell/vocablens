@@ -60,6 +60,11 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "exercise_templates" in tables
     assert "exercise_template_audits" in tables
     assert "exercise_template_health_states" in tables
+    assert "user_core_state" in tables
+    assert "mutation_ledger" in tables
+    assert "outbox_events" in tables
+    assert "user_mutation_queue" in tables
+    assert "learning_state_cursors" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes

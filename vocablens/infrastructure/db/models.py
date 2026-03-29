@@ -1132,3 +1132,85 @@ class OnboardingFlowStateORM(Base):
     habit_lock_in = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserCoreStateORM(Base):
+    __tablename__ = "user_core_state"
+    __table_args__ = (
+        CheckConstraint("xp >= 0", name="ck_user_core_state_xp_nonnegative"),
+        CheckConstraint("level >= 1", name="ck_user_core_state_level_min"),
+        CheckConstraint("current_streak >= 0", name="ck_user_core_state_streak_nonnegative"),
+        CheckConstraint("longest_streak >= 0", name="ck_user_core_state_longest_streak_nonnegative"),
+        CheckConstraint("momentum_score >= 0 AND momentum_score <= 1", name="ck_user_core_state_momentum_range"),
+        CheckConstraint("total_sessions >= 0", name="ck_user_core_state_total_sessions_nonnegative"),
+        CheckConstraint("sessions_last_3_days >= 0", name="ck_user_core_state_recent_sessions_nonnegative"),
+        CheckConstraint("version >= 1", name="ck_user_core_state_version_min"),
+        Index("idx_user_core_state_updated", "updated_at"),
+    )
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    xp = Column(Integer, nullable=False, default=0)
+    level = Column(Integer, nullable=False, default=1)
+    current_streak = Column(Integer, nullable=False, default=0)
+    longest_streak = Column(Integer, nullable=False, default=0)
+    momentum_score = Column(Float, nullable=False, default=0.0)
+    total_sessions = Column(Integer, nullable=False, default=0)
+    sessions_last_3_days = Column(Integer, nullable=False, default=0)
+    version = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class MutationLedgerORM(Base):
+    __tablename__ = "mutation_ledger"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "idempotency_key", name="pk_mutation_ledger"),
+        Index("idx_mutation_ledger_user", "user_id"),
+        Index("idx_mutation_ledger_created", "created_at"),
+    )
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    idempotency_key = Column(String, nullable=False)
+    source = Column(String, nullable=False)
+    reference_id = Column(String)
+    result_code = Column(Integer)
+    result_hash = Column(String)
+    response_etag = Column(String)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class OutboxEventORM(Base):
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_outbox_events_dedupe_key"),
+        Index("idx_outbox_unpublished", "published_at", "id"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    dedupe_key = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    published_at = Column(DateTime)
+    retry_count = Column(Integer, nullable=False, default=0)
+
+
+class UserMutationQueueORM(Base):
+    __tablename__ = "user_mutation_queue"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_user_mutation_queue_idempotency"),
+        Index("idx_user_queue_user", "user_id", "id"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    idempotency_key = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class LearningStateCursorORM(Base):
+    __tablename__ = "learning_state_cursors"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    last_processed_attempt_id = Column(BigInteger, nullable=False, default=0)

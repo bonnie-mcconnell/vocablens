@@ -106,6 +106,11 @@ from vocablens.infrastructure.postgres_user_lifecycle_state_repository import (
 from vocablens.infrastructure.postgres_lifecycle_transition_repository import (
     PostgresLifecycleTransitionRepository,
 )
+from vocablens.infrastructure.postgres_user_core_state_repository import PostgresUserCoreStateRepository
+from vocablens.infrastructure.postgres_mutation_ledger_repository import PostgresMutationLedgerRepository
+from vocablens.infrastructure.postgres_outbox_event_repository import PostgresOutboxEventRepository
+from vocablens.infrastructure.postgres_user_mutation_queue_repository import PostgresUserMutationQueueRepository
+from vocablens.infrastructure.postgres_learning_state_cursor_repository import PostgresLearningStateCursorRepository
 
 
 class UnitOfWork:
@@ -164,6 +169,11 @@ class UnitOfWork:
         self._reward_chests: Optional[PostgresRewardChestRepository] = None
         self._lifecycle_states: Optional[PostgresUserLifecycleStateRepository] = None
         self._lifecycle_transitions: Optional[PostgresLifecycleTransitionRepository] = None
+        self._core_state: Optional[PostgresUserCoreStateRepository] = None
+        self._mutation_ledger: Optional[PostgresMutationLedgerRepository] = None
+        self._outbox_events: Optional[PostgresOutboxEventRepository] = None
+        self._mutation_queue: Optional[PostgresUserMutationQueueRepository] = None
+        self._learning_state_cursors: Optional[PostgresLearningStateCursorRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -559,6 +569,46 @@ class UnitOfWork:
         if self._lifecycle_transitions is None:
             self._lifecycle_transitions = PostgresLifecycleTransitionRepository(self.session)
         return self._lifecycle_transitions
+
+    @property
+    def core_state(self) -> PostgresUserCoreStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._core_state is None:
+            self._core_state = PostgresUserCoreStateRepository(self.session)
+        return self._core_state
+
+    @property
+    def mutation_ledger(self) -> PostgresMutationLedgerRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._mutation_ledger is None:
+            self._mutation_ledger = PostgresMutationLedgerRepository(self.session)
+        return self._mutation_ledger
+
+    @property
+    def outbox_events(self) -> PostgresOutboxEventRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._outbox_events is None:
+            self._outbox_events = PostgresOutboxEventRepository(self.session)
+        return self._outbox_events
+
+    @property
+    def mutation_queue(self) -> PostgresUserMutationQueueRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._mutation_queue is None:
+            self._mutation_queue = PostgresUserMutationQueueRepository(self.session)
+        return self._mutation_queue
+
+    @property
+    def learning_state_cursors(self) -> PostgresLearningStateCursorRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._learning_state_cursors is None:
+            self._learning_state_cursors = PostgresLearningStateCursorRepository(self.session)
+        return self._learning_state_cursors
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

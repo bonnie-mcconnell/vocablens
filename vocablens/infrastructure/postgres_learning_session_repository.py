@@ -238,3 +238,19 @@ class PostgresLearningSessionRepository:
             .order_by(LearningSessionAttemptORM.created_at.asc(), LearningSessionAttemptORM.id.asc())
         )
         return [_map_attempt(row) for row in result.scalars().all()]
+
+    async def get_attempts_after_id(
+        self,
+        *,
+        user_id: int,
+        last_attempt_id: int,
+        limit: int,
+    ) -> list[LearningSessionAttempt]:
+        result = await self.session.execute(
+            select(LearningSessionAttemptORM)
+            .where(LearningSessionAttemptORM.user_id == user_id)
+            .where(LearningSessionAttemptORM.id > int(last_attempt_id))
+            .order_by(LearningSessionAttemptORM.id.asc())
+            .limit(int(limit))
+        )
+        return [_map_attempt(row) for row in result.scalars().all()]
