@@ -81,57 +81,17 @@ class LifecycleService:
             paywall=paywall,
             progress=progress,
         )
-        actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
-        actions.extend(await self._onboarding_actions(user_id, stage))
-        await self._record_action_trace(
-            user_id=user_id,
-            stage=stage,
-            reasons=reasons,
-            actions=actions,
-            source="lifecycle_service.evaluate",
-        )
-        await self._record_canonical_state(
+        return await self._build_plan_and_record(
             user_id=user_id,
             stage=stage,
             reasons=reasons,
             retention=retention,
-            learning_state=learning_state,
-            engagement_state=engagement_state,
-            source="lifecycle_service.evaluate",
-        )
-        await self._notification_states.apply_lifecycle_policy(
-            user_id=user_id,
-            lifecycle_stage=stage,
-            source="lifecycle_service.evaluate",
-            reference_id=f"lifecycle:{user_id}",
-        )
-        notification = await self._notification_for_stage(stage, user_id, retention, actions)
-
-        plan = LifecyclePlan(
-            stage=stage,
-            reasons=reasons,
-            actions=actions,
-            paywall=LifecyclePaywallState(
-                show=paywall.show_paywall,
-                type=paywall.paywall_type,
-                reason=paywall.reason,
-                usage_percent=paywall.usage_percent,
-                allow_access=paywall.allow_access,
-            ),
-            notification=notification,
-        )
-        await self._record_decision_trace(
-            user_id=user_id,
-            plan=plan,
-            retention=retention,
-            learning_state=learning_state,
-            engagement_state=engagement_state,
             paywall=paywall,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
             user_experience_state=user_experience_state,
             source="lifecycle_service.evaluate",
         )
-        await self._evaluate_health(stage)
-        return plan
 
     async def _state_snapshot(self, user_id: int):
         async with self._uow_factory() as uow:
@@ -204,6 +164,33 @@ class LifecycleService:
             )
         stage = user_experience_state.lifecycle_stage
         reasons = [decision.reason]
+        return await self._build_plan_and_record(
+            user_id=user_id,
+            stage=stage,
+            reasons=reasons,
+            retention=retention,
+            paywall=paywall,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
+            user_experience_state=user_experience_state,
+            source="lifecycle_service.global_decision",
+            global_reason=decision.reason,
+        )
+
+    async def _build_plan_and_record(
+        self,
+        *,
+        user_id: int,
+        stage: LifecycleStage,
+        reasons: list[str],
+        retention: RetentionAssessment,
+        paywall,
+        learning_state,
+        engagement_state,
+        user_experience_state: UserExperienceState,
+        source: str,
+        global_reason: str | None = None,
+    ) -> LifecyclePlan:
         actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
         await self._record_action_trace(
@@ -211,7 +198,7 @@ class LifecycleService:
             stage=stage,
             reasons=reasons,
             actions=actions,
-            source="lifecycle_service.global_decision",
+            source=source,
         )
         await self._record_canonical_state(
             user_id=user_id,
@@ -220,12 +207,12 @@ class LifecycleService:
             retention=retention,
             learning_state=learning_state,
             engagement_state=engagement_state,
-            source="lifecycle_service.global_decision",
+            source=source,
         )
         await self._notification_states.apply_lifecycle_policy(
             user_id=user_id,
             lifecycle_stage=stage,
-            source="lifecycle_service.global_decision",
+            source=source,
             reference_id=f"lifecycle:{user_id}",
         )
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
@@ -250,8 +237,8 @@ class LifecycleService:
             engagement_state=engagement_state,
             paywall=paywall,
             user_experience_state=user_experience_state,
-            source="lifecycle_service.global_decision",
-            global_reason=decision.reason,
+            source=source,
+            global_reason=global_reason,
         )
         await self._evaluate_health(stage)
         return plan
