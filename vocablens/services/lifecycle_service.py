@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Literal
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
@@ -19,6 +19,7 @@ from vocablens.services.report_models import (
     LifecyclePaywallState,
 )
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
+from vocablens.services.user_experience_state import UserExperienceState
 
 LifecycleStage = Literal["new_user", "activating", "engaged", "at_risk", "churned"]
 
@@ -61,6 +62,7 @@ class LifecycleService:
         if self._global_decision:
             return await self._evaluate_from_global_decision(user_id)
         retention = await self._retention.assess_user(user_id)
+        progress = await self._progress.build_dashboard(user_id)
         paywall = await self._paywall.evaluate(user_id)
         learning_state, engagement_state = await self._state_snapshot(user_id)
 
@@ -70,6 +72,14 @@ class LifecycleService:
                 engagement_state=engagement_state,
                 retention=retention,
             )
+        )
+        user_experience_state = self._build_user_experience_state(
+            stage=stage,
+            retention=retention,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
+            paywall=paywall,
+            progress=progress,
         )
         actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
@@ -117,6 +127,7 @@ class LifecycleService:
             learning_state=learning_state,
             engagement_state=engagement_state,
             paywall=paywall,
+            user_experience_state=user_experience_state,
             source="lifecycle_service.evaluate",
         )
         await self._evaluate_health(stage)
@@ -177,9 +188,21 @@ class LifecycleService:
     async def _evaluate_from_global_decision(self, user_id: int) -> LifecyclePlan:
         decision = await self._global_decision.decide(user_id)
         retention = await self._retention.assess_user(user_id)
+        progress = await self._progress.build_dashboard(user_id)
         learning_state, engagement_state = await self._state_snapshot(user_id)
         paywall = await self._paywall.evaluate(user_id)
-        stage = decision.lifecycle_stage
+        if hasattr(self._global_decision, "user_experience_state"):
+            user_experience_state = await self._global_decision.user_experience_state(user_id)
+        else:
+            user_experience_state = self._build_user_experience_state(
+                stage=decision.lifecycle_stage,
+                retention=retention,
+                learning_state=learning_state,
+                engagement_state=engagement_state,
+                paywall=paywall,
+                progress=progress,
+            )
+        stage = user_experience_state.lifecycle_stage
         reasons = [decision.reason]
         actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
@@ -226,6 +249,7 @@ class LifecycleService:
             learning_state=learning_state,
             engagement_state=engagement_state,
             paywall=paywall,
+            user_experience_state=user_experience_state,
             source="lifecycle_service.global_decision",
             global_reason=decision.reason,
         )
@@ -256,6 +280,7 @@ class LifecycleService:
         learning_state,
         engagement_state,
         paywall,
+        user_experience_state: UserExperienceState,
         source: str,
         global_reason: str | None = None,
     ) -> None:
@@ -292,6 +317,7 @@ class LifecycleService:
                         "usage_percent": int(getattr(paywall, "usage_percent", 0) or 0),
                         "allow_access": bool(getattr(paywall, "allow_access", True)),
                     },
+                    "user_experience_state": self._user_experience_payload(user_experience_state),
                     "global_reason": global_reason,
                 },
                 outputs={
@@ -305,6 +331,37 @@ class LifecycleService:
                 reason=plan.reasons[0] if plan.reasons else global_reason,
             )
             await uow.commit()
+
+    def _build_user_experience_state(
+        self,
+        *,
+        stage: LifecycleStage,
+        retention: RetentionAssessment,
+        learning_state,
+        engagement_state,
+        paywall,
+        progress: dict,
+    ) -> UserExperienceState:
+        return UserExperienceState(
+            lifecycle_stage=stage,
+            retention_state=str(retention.state),
+            drop_off_risk=round(float(retention.drop_off_risk or 0.0), 3),
+            total_sessions=int(getattr(engagement_state, "total_sessions", 0) or 0),
+            momentum_score=round(float(getattr(engagement_state, "momentum_score", 0.0) or 0.0), 3),
+            mastery_percent=round(float(getattr(learning_state, "mastery_percent", 0.0) or 0.0), 2),
+            due_reviews=int(progress.get("due_reviews", 0) or 0),
+            subscription_tier="unknown",
+            paywall_visible=bool(getattr(paywall, "show_paywall", False)),
+            paywall_type=getattr(paywall, "paywall_type", None),
+            paywall_allow_access=bool(getattr(paywall, "allow_access", True)),
+        )
+
+    def _user_experience_payload(self, value: UserExperienceState) -> dict:
+        if is_dataclass(value):
+            return asdict(value)
+        if hasattr(value, "__dict__"):
+            return dict(value.__dict__)
+        return {}
 
     async def _record_canonical_state(
         self,

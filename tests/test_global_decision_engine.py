@@ -139,13 +139,32 @@ class FakeNotificationEngine:
 
 
 class FakeGlobalDecisionEngine:
-    def __init__(self, decision):
+    def __init__(self, decision, user_state=None):
         self.decision = decision
+        self.user_state = user_state
         self.calls = []
 
     async def decide(self, user_id: int):
         self.calls.append(user_id)
         return self.decision
+
+    async def user_experience_state(self, user_id: int):
+        self.calls.append(user_id)
+        if self.user_state is not None:
+            return self.user_state
+        return SimpleNamespace(
+            lifecycle_stage=self.decision.lifecycle_stage,
+            retention_state="active",
+            drop_off_risk=0.1,
+            total_sessions=7,
+            momentum_score=0.8,
+            mastery_percent=70.0,
+            due_reviews=0,
+            subscription_tier="pro",
+            paywall_visible=False,
+            paywall_type=None,
+            paywall_allow_access=True,
+        )
 
 
 class FakeLifecycleHealthSignalService:
@@ -451,4 +470,4 @@ def test_learning_lifecycle_and_habit_services_use_global_decision_engine():
     assert learning_decision.reason == "Engaged users should see monetization next."
     assert lifecycle_plan.stage == "engaged"
     assert habit_plan.action.duration_minutes == 5
-    assert global_engine.calls == [5, 5, 5]
+    assert global_engine.calls == [5, 5, 5, 5]

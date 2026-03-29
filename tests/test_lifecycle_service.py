@@ -437,6 +437,8 @@ def test_lifecycle_service_engaged_stage_surfaces_paywall_without_proactive_noti
     assert uow.decision_traces.created[1]["trace_type"] == "lifecycle_transition"
     assert uow.decision_traces.created[2]["outputs"]["paywall"]["type"] == "soft_paywall"
     assert uow.decision_traces.created[2]["reason"] == "user shows strong engagement and progress"
+    assert uow.decision_traces.created[2]["inputs"]["user_experience_state"]["lifecycle_stage"] == "engaged"
+    assert uow.decision_traces.created[2]["inputs"]["user_experience_state"]["paywall_type"] == "soft_paywall"
     assert uow.notification_states.row.lifecycle_policy["lifecycle_notifications_enabled"] is False
     assert uow.notification_suppression_events.created[0]["event_type"] == "lifecycle_policy_updated"
     assert health_signals.calls == ["global", "engaged"]
