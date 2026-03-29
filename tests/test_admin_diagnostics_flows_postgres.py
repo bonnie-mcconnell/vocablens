@@ -35,6 +35,62 @@ def _recent_item_for_user(items: list[dict], user_id: int) -> dict:
     raise AssertionError(f"Expected item for user {user_id}")
 
 
+def _policy_update_request() -> dict:
+    return {
+        "status": "active",
+        "is_killed": False,
+        "description": "Integration test policy update for diagnostics consistency.",
+        "policy": {
+            "cooldown_hours": 9,
+            "default_frequency_limit": 3,
+            "default_preferred_time_of_day": 20,
+            "stage_policies": {
+                "new_user": {
+                    "lifecycle_notifications_enabled": True,
+                    "suppression_reason": None,
+                    "recovery_window_hours": 0,
+                },
+                "activating": {
+                    "lifecycle_notifications_enabled": True,
+                    "suppression_reason": None,
+                    "recovery_window_hours": 0,
+                },
+                "engaged": {
+                    "lifecycle_notifications_enabled": False,
+                    "suppression_reason": "engaged stage suppresses proactive lifecycle messaging",
+                    "recovery_window_hours": 24,
+                },
+                "at_risk": {
+                    "lifecycle_notifications_enabled": True,
+                    "suppression_reason": None,
+                    "recovery_window_hours": 2,
+                },
+                "churned": {
+                    "lifecycle_notifications_enabled": True,
+                    "suppression_reason": None,
+                    "recovery_window_hours": 2,
+                },
+            },
+            "suppression_overrides": [
+                {
+                    "source_context": "lifecycle_service.notification",
+                    "stage": "engaged",
+                    "lifecycle_notifications_enabled": False,
+                    "suppression_reason": "engaged stage suppresses proactive lifecycle messaging",
+                    "recovery_window_hours": 24,
+                }
+            ],
+            "governance": {
+                "min_sample_size": 1,
+                "max_failed_delivery_rate_percent": 18.0,
+                "max_suppression_rate_percent": 60.0,
+                "max_send_rate_drop_percent": 25.0,
+            },
+        },
+        "change_note": "Update policy for integration report consistency assertions.",
+    }
+
+
 def test_admin_diagnostics_follow_first_week_flow_state():
     with postgres_harness() as harness:
         run_async(run_first_week_flow(harness))
@@ -274,3 +330,52 @@ def test_admin_notification_report_keeps_selection_and_delivery_payloads_aligned
         assert summary["counts_by_status"]["sent"] >= 1
         assert summary["counts_by_category"][latest_delivery["category"]] >= 1
         assert summary["counts_by_provider"][latest_delivery["provider"]] >= 1
+
+
+def test_admin_notification_policy_update_is_reflected_in_reports_and_deliveries():
+    with postgres_harness() as harness:
+        client = _build_admin_client(harness)
+
+        updated_policy = client.put(
+            "/admin/notifications/policies/default",
+            headers={"X-Admin-Token": "secret", "X-Admin-Actor": "ops@vocablens"},
+            json=_policy_update_request(),
+        )
+
+        assert updated_policy.status_code == 200
+        assert updated_policy.json()["meta"]["source"] == "admin.notifications.policies.update"
+        assert updated_policy.json()["data"]["policy"]["policy"]["cooldown_hours"] == 9
+
+        run_async(run_comeback_flow(harness))
+
+        notification_report = client.get(
+            "/admin/notifications/602/report?policy_key=default",
+            headers={"X-Admin-Token": "secret"},
+        ).json()["data"]
+        policy_report = client.get(
+            "/admin/notifications/policies/default/report?limit=20",
+            headers={"X-Admin-Token": "secret"},
+        ).json()["data"]
+
+        active_policy = notification_report["latest_decisions"]["active_policy"]
+        selection = notification_report["latest_decisions"]["notification_selection"]
+        delivery = notification_report["latest_decisions"]["latest_delivery"]
+
+        assert active_policy["policy_key"] == "default"
+        assert active_policy["policy"]["cooldown_hours"] == 9
+        assert active_policy["policy"]["governance"]["max_failed_delivery_rate_percent"] == 18.0
+
+        assert selection is not None
+        assert delivery is not None
+        assert selection["inputs"]["policy"]["policy_key"] == "default"
+        assert delivery["policy_key"] == "default"
+        assert delivery["reference_id"] == selection["reference_id"]
+
+        assert policy_report["policy"]["policy_key"] == "default"
+        assert policy_report["policy"]["policy"]["cooldown_hours"] == 9
+        assert policy_report["latest_decisions"]["latest_audit_entry"]["action"] in {"created", "updated"}
+        assert policy_report["latest_decisions"]["latest_delivery"]["policy_key"] == "default"
+        assert any(
+            item["inputs"].get("policy", {}).get("policy_key") == "default"
+            for item in policy_report["recent_traces"]
+        )
