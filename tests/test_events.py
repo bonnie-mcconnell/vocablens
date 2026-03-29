@@ -121,3 +121,29 @@ def test_event_service_best_effort_mode_drops_failed_events_without_raising():
         await service.close()
 
     run_async(scenario())
+
+
+def test_event_service_restart_keeps_buffered_event_continuity():
+    repo = FakeEventsRepo()
+
+    async def scenario():
+        service = EventService(lambda: FakeUOW(repo), use_buffer=True, buffer_size=2, ingest_mode="best_effort")
+        await service.track_event(1, "message_sent", {"sequence": 1})
+        await service.track_event(1, "message_sent", {"sequence": 2})
+        await service.track_event(1, "message_sent", {"sequence": 3})
+
+        # Simulate process restart: close first instance without an explicit flush,
+        # then create a new service instance on the same persistent store.
+        await service.close()
+
+        restarted = EventService(lambda: FakeUOW(repo), use_buffer=True, buffer_size=2, ingest_mode="best_effort")
+        await restarted.track_event(1, "message_sent", {"sequence": 4})
+        await restarted.flush()
+        events = await restarted.get_events_by_type("message_sent")
+        await restarted.close()
+        return events
+
+    events = run_async(scenario())
+
+    assert len(events) == 4
+    assert [event.payload["sequence"] for event in events] == [4, 3, 2, 1]
