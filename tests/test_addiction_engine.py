@@ -39,6 +39,14 @@ class FakeProgressService:
         return self.progress
 
 
+class FakeGlobalDecisionEngine:
+    def __init__(self, user_state=None):
+        self.user_state = user_state
+
+    async def user_experience_state(self, user_id: int):
+        return self.user_state
+
+
 def _habit_plan():
     return SimpleNamespace(
         trigger=HabitTrigger(
@@ -119,3 +127,21 @@ def test_addiction_engine_applies_streak_pressure_and_identity_reinforcement():
     assert "becoming fluent" in plan.identity.message.lower()
     assert plan.ritual.daily_ritual_hour == 7
     assert plan.ritual.streak_anchor == 6
+
+
+def test_addiction_engine_prefers_canonical_drop_off_risk_when_available():
+    notification = SimpleNamespace(send_at=utc_now().replace(hour=12, minute=0, second=0, microsecond=0))
+    engine = AddictionEngine(
+        FakeHabitEngine(_habit_plan()),
+        FakeRetentionEngine(_assessment(streak=4, risk=0.2, last_active_hours_ago=2)),
+        FakeNotificationEngine(notification),
+        FakeProgressService(_progress(due_reviews=2)),
+        global_decision_engine=FakeGlobalDecisionEngine(
+            user_state=SimpleNamespace(retention_state="at-risk", drop_off_risk=0.92)
+        ),
+    )
+
+    plan = run_async(engine.execute(31))
+
+    assert plan.pressure.show_streak_decay_warning is True
+    assert plan.pressure.will_lose_progress is True
