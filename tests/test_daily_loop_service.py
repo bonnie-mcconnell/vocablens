@@ -189,6 +189,14 @@ class FakeDailyLoopHealthSignalService:
         return {"scope_key": scope_key}
 
 
+class FakeGlobalDecisionEngine:
+    def __init__(self, user_state=None):
+        self.user_state = user_state
+
+    async def user_experience_state(self, user_id: int):
+        return self.user_state
+
+
 def _factory_for(uow):
     return lambda: uow
 
@@ -332,6 +340,51 @@ def test_daily_loop_service_reuses_existing_mission_for_same_day():
     assert first.mission[0].target == second.mission[0].target
     assert uow._daily_mission.id == 1
     assert health_signals.calls == ["global"]
+
+
+def test_daily_loop_prefers_canonical_state_for_mission_sizing_and_loss_aversion():
+    recommendation = SimpleNamespace(
+        action="learn_new_word",
+        target="travel",
+        reason="Weak cluster",
+        lesson_difficulty="medium",
+        skill_focus="vocabulary",
+    )
+    uow = FakeUOW(
+        due_items=[],
+        engagement_state=SimpleNamespace(
+            current_streak=0,
+            momentum_score=0.85,
+            total_sessions=4,
+            sessions_last_3_days=2,
+            last_session_at=utc_now() - timedelta(hours=3),
+            shields_used_this_week=0,
+            daily_mission_completed_at=None,
+            updated_at=utc_now(),
+        ),
+    )
+    service = DailyLoopService(
+        _factory_for(uow),
+        FakeLearningEngine(recommendation),
+        FakeGamificationService(),
+        FakeNotificationEngine(),
+        FakeRetentionEngine(drop_off_risk=0.1),
+        FakeEventService(),
+        FakeDailyLoopHealthSignalService(),
+        FakeGlobalDecisionEngine(
+            user_state=SimpleNamespace(
+                momentum_score=0.2,
+                drop_off_risk=0.9,
+                due_reviews=6,
+            )
+        ),
+    )
+
+    plan = run_async(service.build_daily_loop(7))
+
+    assert plan.mission_max_sessions == 1
+    assert plan.momentum_score == 0.2
+    assert "6 review items" in plan.loss_aversion_message
 
 
 def test_daily_loop_completion_is_idempotent_after_first_unlock():

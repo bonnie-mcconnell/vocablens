@@ -445,6 +445,7 @@ def get_daily_loop_service(
     retention_engine=Depends(get_retention_engine),
     event_service=Depends(get_event_service),
     daily_loop_health_signal_service=Depends(get_daily_loop_health_signal_service),
+    global_decision_engine=Depends(get_global_decision_engine),
 ) -> DailyLoopService:
     return DailyLoopService(
         uow_factory,
@@ -454,6 +455,7 @@ def get_daily_loop_service(
         retention_engine,
         event_service,
         daily_loop_health_signal_service,
+        global_decision_engine,
     )
 
 

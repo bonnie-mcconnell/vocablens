@@ -10,6 +10,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.gamification_service import GamificationService
 from vocablens.services.daily_loop_health_signal_service import DailyLoopHealthSignalService
+from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.retention_engine import RetentionEngine
@@ -72,6 +73,7 @@ class DailyLoopService:
         retention_engine: RetentionEngine,
         event_service: EventService | None = None,
         daily_loop_health_signal_service: DailyLoopHealthSignalService | None = None,
+        global_decision_engine: GlobalDecisionEngine | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning = learning_engine
@@ -80,6 +82,7 @@ class DailyLoopService:
         self._retention = retention_engine
         self._events = event_service
         self._health_signals = daily_loop_health_signal_service or DailyLoopHealthSignalService(uow_factory)
+        self._global_decision = global_decision_engine
 
     async def build_daily_loop(self, user_id: int) -> DailyLoopPlan:
         mission_date = utc_now().date().isoformat()
@@ -100,10 +103,25 @@ class DailyLoopService:
             progress_state = await uow.progress_states.get_or_create(user_id)
             due_items = await uow.vocab.list_due(user_id)
             await uow.commit()
+        user_state = await self._user_experience_state(user_id)
 
         weak_area = self._weak_area(recommendation, learning_state)
-        momentum_score = float(getattr(engagement_state, "momentum_score", 0.0) or 0.0)
-        mission_max_sessions = self._mission_size(momentum_score, retention.drop_off_risk)
+        momentum_score = (
+            float(getattr(user_state, "momentum_score", 0.0) or 0.0)
+            if user_state is not None
+            else float(getattr(engagement_state, "momentum_score", 0.0) or 0.0)
+        )
+        drop_off_risk = (
+            float(getattr(user_state, "drop_off_risk", 0.0) or 0.0)
+            if user_state is not None
+            else float(getattr(retention, "drop_off_risk", 0.0) or 0.0)
+        )
+        due_reviews_count = (
+            int(getattr(user_state, "due_reviews", 0) or 0)
+            if user_state is not None
+            else len(due_items)
+        )
+        mission_max_sessions = self._mission_size(momentum_score, drop_off_risk)
         mission = self._mission_steps(recommendation, weak_area, mission_max_sessions, due_items)
         shield_available = self._shield_available(engagement_state)
         reward_chest_ready = self._mission_completed_today(engagement_state)
@@ -123,7 +141,13 @@ class DailyLoopService:
                 weak_area=weak_area,
                 mission_max_sessions=mission_max_sessions,
                 steps=[asdict(step) for step in mission],
-                loss_aversion_message=self._loss_aversion_message(engagement_state, progress_state, due_items, weak_area),
+                loss_aversion_message=self._loss_aversion_message(
+                    engagement_state,
+                    progress_state,
+                    due_items,
+                    weak_area,
+                    due_reviews_count=due_reviews_count,
+                ),
                 streak_at_issue=int(getattr(engagement_state, "current_streak", 0) or 0),
                 momentum_score=momentum_score,
                 notification_preview=notification_preview,
@@ -153,7 +177,7 @@ class DailyLoopService:
                     },
                     "retention": {
                         "state": retention.state,
-                        "drop_off_risk": round(float(retention.drop_off_risk or 0.0), 3),
+                        "drop_off_risk": round(drop_off_risk, 3),
                         "current_streak": int(retention.current_streak or 0),
                     },
                     "engagement": {
@@ -163,7 +187,7 @@ class DailyLoopService:
                     },
                     "learning_state": {
                         "weak_areas": list(getattr(learning_state, "weak_areas", []) or []),
-                        "due_items_count": len(due_items),
+                        "due_items_count": due_reviews_count,
                     },
                 },
                 outputs={
@@ -451,14 +475,28 @@ class DailyLoopService:
         completed_at = getattr(engagement_state, "daily_mission_completed_at", None)
         return bool(completed_at and completed_at.date() == utc_now().date())
 
-    def _loss_aversion_message(self, engagement_state, progress_state, due_items, weak_area: str) -> str:
+    def _loss_aversion_message(
+        self,
+        engagement_state,
+        progress_state,
+        due_items,
+        weak_area: str,
+        *,
+        due_reviews_count: int | None = None,
+    ) -> str:
         streak = getattr(engagement_state, "current_streak", 0)
         xp = getattr(progress_state, "xp", 0)
+        review_items = int(due_reviews_count) if due_reviews_count is not None else len(due_items)
         if streak > 0:
             return f"Skip today and you risk losing your {streak}-day streak, daily momentum, and progress on {weak_area}."
-        if due_items:
-            return f"Skip today and {len(due_items)} review items will keep decaying."
+        if review_items > 0:
+            return f"Skip today and {review_items} review items will keep decaying."
         return f"Skip today and your current progress pace plus {xp} XP momentum will cool off."
+
+    async def _user_experience_state(self, user_id: int):
+        if self._global_decision is None or not hasattr(self._global_decision, "user_experience_state"):
+            return None
+        return await self._global_decision.user_experience_state(user_id)
 
     def _reward_preview(self, progress_state, gamification, unlocked: bool) -> dict[str, Any]:
         level = int(getattr(progress_state, "level", 1) or 1)
