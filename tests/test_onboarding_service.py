@@ -66,11 +66,15 @@ class FakeWowEngine:
 
 
 class FakeGlobalDecisionEngine:
-    def __init__(self, decision):
+    def __init__(self, decision, user_state=None):
         self.decision = decision
+        self.user_state = user_state
 
     async def decide(self, user_id: int):
         return self.decision
+
+    async def user_experience_state(self, user_id: int):
+        return self.user_state
 
 
 class FakeRetentionEngine:
@@ -278,6 +282,30 @@ def test_onboarding_service_triggers_wow_moment_and_habit_hook():
     assert habit_plan.stage == "habit_hook"
     assert habit_plan.habit_hook.show_streak_starting is True
     assert wow_engine.calls
+
+
+def test_onboarding_service_prefers_canonical_new_user_stage_when_available():
+    decision = SimpleNamespace(
+        primary_action="conversation",
+        difficulty_level="hard",
+        session_type="deep",
+        engagement_action="habit_nudge",
+    )
+    service = OnboardingService(
+        lambda: FakeUOW([
+            SimpleNamespace(event_type="session_started"),
+            SimpleNamespace(event_type="session_started"),
+            SimpleNamespace(event_type="session_started"),
+        ]),
+        FakeProgressService(_progress(85.0)),
+        FakeWowEngine(_wow(0.0, False)),
+        FakeGlobalDecisionEngine(decision, user_state=SimpleNamespace(lifecycle_stage="new_user")),
+    )
+
+    plan = run_async(service.plan(12))
+
+    assert plan.stage == "onboarding_start"
+    assert plan.recommended_difficulty == "easy"
 
 
 def test_lifecycle_service_includes_onboarding_actions_for_new_users():

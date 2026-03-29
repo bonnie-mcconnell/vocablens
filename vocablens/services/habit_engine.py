@@ -60,6 +60,10 @@ class HabitEngine:
 
     async def _execute_from_global_decision(self, user_id: int) -> HabitLoopPlan:
         decision = await self._global_decision.decide(user_id)
+        lifecycle_stage = decision.lifecycle_stage
+        if hasattr(self._global_decision, "user_experience_state"):
+            user_state = await self._global_decision.user_experience_state(user_id)
+            lifecycle_stage = getattr(user_state, "lifecycle_stage", lifecycle_stage)
         context = await self._load_context(user_id)
         trigger = self._policy.build_trigger(context.retention, context.notification)
         action = HabitAction(
@@ -70,7 +74,7 @@ class HabitEngine:
         )
         reward = self._policy.build_reward(context.retention, context.progress, action)
         repeat = HabitRepeat(
-            should_repeat=decision.lifecycle_stage in {"new_user", "activating", "at_risk", "engaged"},
+            should_repeat=lifecycle_stage in {"new_user", "activating", "at_risk", "engaged"},
             next_best_trigger="streak_reminder" if decision.engagement_action == "streak_push" else "notification",
             cadence="daily",
         )

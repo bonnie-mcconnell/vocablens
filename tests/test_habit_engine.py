@@ -33,6 +33,18 @@ class FakeProgressService:
         return self.progress
 
 
+class FakeGlobalDecisionEngine:
+    def __init__(self, decision, user_state=None):
+        self.decision = decision
+        self.user_state = user_state
+
+    async def decide(self, user_id: int):
+        return self.decision
+
+    async def user_experience_state(self, user_id: int):
+        return self.user_state
+
+
 def _assessment(state: str = "at-risk", suggested_actions=None) -> RetentionAssessment:
     return RetentionAssessment(
         state=state,
@@ -134,3 +146,36 @@ def test_habit_engine_falls_back_to_passive_trigger_and_low_friction_action():
     assert plan.reward.progress_increase == 0
     assert plan.reward.streak_boost == 4
     assert plan.repeat.next_best_trigger == "streak_reminder"
+
+
+def test_habit_engine_global_path_prefers_canonical_user_state_stage_for_repeat_logic():
+    assessment = _assessment(state="active")
+    notification = SimpleNamespace(
+        should_send=True,
+        send_at=utc_now(),
+        channel="push",
+        cooldown_until=None,
+        message=SimpleNamespace(category="retention:streak_nudge"),
+        reason="retention action selected",
+    )
+    decision = SimpleNamespace(
+        primary_action="learn",
+        difficulty_level="medium",
+        session_type="quick",
+        monetization_action="none",
+        engagement_action="streak_push",
+        lifecycle_stage="engaged",
+        reason="Engaged users should continue learning.",
+    )
+    user_state = SimpleNamespace(lifecycle_stage="churned")
+    engine = HabitEngine(
+        FakeRetentionEngine(assessment),
+        FakeNotificationEngine(notification),
+        FakeProgressService(_progress()),
+        global_decision_engine=FakeGlobalDecisionEngine(decision, user_state=user_state),
+    )
+
+    plan = run_async(engine.execute(9))
+
+    assert plan.action.target == "learn"
+    assert plan.repeat.should_repeat is False

@@ -57,6 +57,9 @@ class OnboardingService:
     ) -> OnboardingPlan:
         progress = await self._progress.build_dashboard(user_id)
         decision = await self._global.decide(user_id)
+        user_state = None
+        if hasattr(self._global, "user_experience_state"):
+            user_state = await self._global.user_experience_state(user_id)
         sessions = await self._session_count(user_id)
         wow = await self._wow_score(user_id, session_snapshot)
 
@@ -65,6 +68,7 @@ class OnboardingService:
             goals=goals,
             progress=progress,
             wow=wow,
+            lifecycle_stage=getattr(user_state, "lifecycle_stage", None),
         )
         recommended_difficulty = self._difficulty(decision.difficulty_level, stage, goals)
         guided_flow = self._guided_flow(goals, recommended_difficulty, decision.primary_action)
@@ -121,6 +125,7 @@ class OnboardingService:
         goals: list[str] | None,
         progress: dict,
         wow: WowScore,
+        lifecycle_stage: str | None = None,
     ) -> OnboardingStage:
         if wow.qualifies:
             daily = progress.get("daily", {})
@@ -129,6 +134,10 @@ class OnboardingService:
                 or int(daily.get("reviews_completed", 0) or 0) > 0
             )
             return "habit_hook" if progress_jump else "wow_moment"
+        if lifecycle_stage in {"new_user", "activating"}:
+            if not goals:
+                return "onboarding_start"
+            return "guided_learning"
         if not goals and sessions <= 1:
             return "onboarding_start"
         accuracy = float(progress.get("metrics", {}).get("accuracy_rate", 0.0) or 0.0)

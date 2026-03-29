@@ -470,4 +470,4 @@ def test_learning_lifecycle_and_habit_services_use_global_decision_engine():
     assert learning_decision.reason == "Engaged users should see monetization next."
     assert lifecycle_plan.stage == "engaged"
     assert habit_plan.action.duration_minutes == 5
-    assert global_engine.calls == [5, 5, 5, 5]
+    assert global_engine.calls == [5, 5, 5, 5, 5]

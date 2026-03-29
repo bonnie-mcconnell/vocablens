@@ -151,9 +151,10 @@ class LifecycleService:
         progress = await self._progress.build_dashboard(user_id)
         learning_state, engagement_state = await self._state_snapshot(user_id)
         paywall = await self._paywall.evaluate(user_id)
+        user_experience_state = None
         if hasattr(self._global_decision, "user_experience_state"):
             user_experience_state = await self._global_decision.user_experience_state(user_id)
-        else:
+        if user_experience_state is None:
             user_experience_state = self._build_user_experience_state(
                 stage=decision.lifecycle_stage,
                 retention=retention,
