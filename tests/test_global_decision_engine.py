@@ -339,6 +339,46 @@ def test_global_decision_engine_is_deterministic_for_same_inputs():
     assert first == second
 
 
+def test_global_decision_engine_exposes_canonical_user_experience_state():
+    progress = _progress(74.0, 38.0, 63.0, due_reviews=2)
+    paywall = SimpleNamespace(
+        show_paywall=True,
+        paywall_type="soft_paywall",
+        reason="usage pressure high",
+        usage_percent=82,
+        allow_access=True,
+        trial_recommended=False,
+        upsell_recommended=False,
+    )
+    features = SimpleNamespace(tier="pro", personalization_level="standard")
+    learning_state = _learning_state_from_progress(progress)
+    engagement_state = SimpleNamespace(total_sessions=4, momentum_score=0.42)
+    engine = GlobalDecisionEngine(
+        lambda: FakeDecisionUOW(
+            learning_state=learning_state,
+            engagement_state=engagement_state,
+        ),
+        FakeRetentionEngine(_assessment("at_risk")),
+        FakeProgressService(progress),
+        FakeSubscriptionService(features),
+        FakePaywallService(paywall),
+    )
+
+    state = run_async(engine.user_experience_state(3))
+
+    assert state.lifecycle_stage == "at_risk"
+    assert state.retention_state == "at-risk"
+    assert state.drop_off_risk == 0.6
+    assert state.total_sessions == 4
+    assert state.momentum_score == 0.42
+    assert state.mastery_percent == 38.0
+    assert state.due_reviews == 2
+    assert state.subscription_tier == "pro"
+    assert state.paywall_visible is True
+    assert state.paywall_type == "soft_paywall"
+    assert state.paywall_allow_access is True
+
+
 def test_learning_lifecycle_and_habit_services_use_global_decision_engine():
     global_decision = SimpleNamespace(
         primary_action="upsell",

@@ -9,6 +9,7 @@ from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.subscription_service import SubscriptionService
+from vocablens.services.user_experience_state import UserExperienceState
 
 PrimaryAction = Literal["learn", "review", "conversation", "upsell", "nudge"]
 SessionType = Literal["quick", "deep", "passive"]
@@ -77,12 +78,61 @@ class GlobalDecisionEngine:
             reason=reason,
         )
 
+    async def user_experience_state(self, user_id: int) -> UserExperienceState:
+        retention = await self._retention.assess_user(user_id)
+        progress = await self._progress.build_dashboard(user_id)
+        features = await self._subscriptions.get_features(user_id)
+        paywall = await self._paywall.evaluate(user_id)
+        learning_state, engagement_state = await self._state_snapshot(user_id)
+
+        stage, _ = classify_lifecycle_stage(
+            snapshot=LifecycleSnapshot(
+                learning_state=learning_state,
+                engagement_state=engagement_state,
+                retention=retention,
+            )
+        )
+        return self._build_user_experience_state(
+            stage=stage,
+            retention=retention,
+            progress=progress,
+            features=features,
+            paywall=paywall,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
+        )
+
     async def _state_snapshot(self, user_id: int) -> tuple[object, object]:
         async with self._uow_factory() as uow:
             learning_state = await uow.learning_states.get_or_create(user_id)
             engagement_state = await uow.engagement_states.get_or_create(user_id)
             await uow.commit()
         return learning_state, engagement_state
+
+    def _build_user_experience_state(
+        self,
+        *,
+        stage: LifecycleStage,
+        retention,
+        progress: dict,
+        features,
+        paywall,
+        learning_state,
+        engagement_state,
+    ) -> UserExperienceState:
+        return UserExperienceState(
+            lifecycle_stage=stage,
+            retention_state=str(getattr(retention, "state", "unknown")),
+            drop_off_risk=round(float(getattr(retention, "drop_off_risk", 0.0) or 0.0), 3),
+            total_sessions=int(getattr(engagement_state, "total_sessions", 0) or 0),
+            momentum_score=round(float(getattr(engagement_state, "momentum_score", 0.0) or 0.0), 3),
+            mastery_percent=round(float(getattr(learning_state, "mastery_percent", 0.0) or 0.0), 2),
+            due_reviews=int(progress.get("due_reviews", 0) or 0),
+            subscription_tier=str(getattr(features, "tier", "free") or "free"),
+            paywall_visible=bool(getattr(paywall, "show_paywall", False)),
+            paywall_type=getattr(paywall, "paywall_type", None),
+            paywall_allow_access=bool(getattr(paywall, "allow_access", True)),
+        )
 
     def _difficulty(self, stage: LifecycleStage, progress: dict, features) -> str:
         accuracy = float(progress["metrics"].get("accuracy_rate", 0.0))
