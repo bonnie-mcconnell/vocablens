@@ -65,6 +65,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "outbox_events" in tables
     assert "user_mutation_queue" in tables
     assert "learning_state_cursors" in tables
+    assert "user_queue_seq" in tables
+    assert "user_execution_mode" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -119,6 +121,9 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "idx_kge_user_relation" in kge_indexes
     assert "idx_kge_user_target" in kge_indexes
     assert "idx_kge_user_source" in kge_indexes
+
+    outbox_columns = {col["name"] for col in inspector.get_columns("outbox_events")}
+    assert {"retry_count", "next_attempt_at", "published_at"} <= outbox_columns
 
     notification_indexes = {idx["name"] for idx in inspector.get_indexes("notification_deliveries")}
     assert "idx_notification_delivery_user" in notification_indexes

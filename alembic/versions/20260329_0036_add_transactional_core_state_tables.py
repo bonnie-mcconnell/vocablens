@@ -67,11 +67,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("published_at", sa.DateTime(), nullable=True),
         sa.Column("retry_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("next_attempt_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("dedupe_key", name="uq_outbox_events_dedupe_key"),
     )
-    op.create_index("idx_outbox_unpublished", "outbox_events", ["published_at", "id"], unique=False)
+    op.create_index("idx_outbox_unpublished", "outbox_events", ["published_at", "next_attempt_at", "id"], unique=False)
 
     op.create_table(
         "user_mutation_queue",
@@ -96,8 +97,30 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("user_id"),
     )
 
+    op.create_table(
+        "user_queue_seq",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("next_seq", sa.BigInteger(), nullable=False, server_default="1"),
+        sa.Column("last_applied_seq", sa.BigInteger(), nullable=False, server_default="0"),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id"),
+    )
+
+    op.create_table(
+        "user_execution_mode",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("mode", sa.String(), nullable=False, server_default="cold"),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id"),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("user_execution_mode")
+    op.drop_table("user_queue_seq")
+
     op.drop_table("learning_state_cursors")
 
     op.drop_index("idx_user_queue_user", table_name="user_mutation_queue")

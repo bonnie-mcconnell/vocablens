@@ -1182,7 +1182,7 @@ class OutboxEventORM(Base):
     __tablename__ = "outbox_events"
     __table_args__ = (
         UniqueConstraint("dedupe_key", name="uq_outbox_events_dedupe_key"),
-        Index("idx_outbox_unpublished", "published_at", "id"),
+        Index("idx_outbox_unpublished", "published_at", "next_attempt_at", "id"),
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -1193,6 +1193,7 @@ class OutboxEventORM(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False)
     published_at = Column(DateTime)
     retry_count = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime, nullable=False, default=utc_now)
 
 
 class UserMutationQueueORM(Base):
@@ -1209,6 +1210,23 @@ class UserMutationQueueORM(Base):
     idempotency_key = Column(String, nullable=False)
     payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserQueueSeqORM(Base):
+    __tablename__ = "user_queue_seq"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    next_seq = Column(BigInteger, nullable=False, default=1)
+    last_applied_seq = Column(BigInteger, nullable=False, default=0)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserExecutionModeORM(Base):
+    __tablename__ = "user_execution_mode"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    mode = Column(String, nullable=False, default="cold")
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class LearningStateCursorORM(Base):

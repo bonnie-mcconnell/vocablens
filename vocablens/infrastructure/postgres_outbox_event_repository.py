@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,7 @@ class PostgresOutboxEventRepository:
             event_type=event_type,
             payload=payload,
             created_at=utc_now(),
+            next_attempt_at=utc_now(),
         )
         self.session.add(row)
         await self.session.flush()
@@ -38,6 +41,7 @@ class PostgresOutboxEventRepository:
                 OutboxEventORM.dedupe_key,
             )
             .where(OutboxEventORM.published_at.is_(None))
+            .where(OutboxEventORM.next_attempt_at <= utc_now())
             .order_by(OutboxEventORM.id)
             .limit(limit)
         )
@@ -68,8 +72,18 @@ class PostgresOutboxEventRepository:
     async def increment_retry_many(self, *, ids: list[int]) -> None:
         if not ids:
             return
-        await self.session.execute(
-            update(OutboxEventORM)
-            .where(OutboxEventORM.id.in_(ids))
-            .values(retry_count=OutboxEventORM.retry_count + 1)
+        rows = await self.session.execute(
+            select(OutboxEventORM.id, OutboxEventORM.retry_count).where(OutboxEventORM.id.in_(ids))
         )
+        now = utc_now()
+        for row in rows.all():
+            next_retry_count = int(row.retry_count or 0) + 1
+            backoff_seconds = min(60, 2 ** next_retry_count)
+            await self.session.execute(
+                update(OutboxEventORM)
+                .where(OutboxEventORM.id == int(row.id))
+                .values(
+                    retry_count=next_retry_count,
+                    next_attempt_at=now + timedelta(seconds=backoff_seconds),
+                )
+            )

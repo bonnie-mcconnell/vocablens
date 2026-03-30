@@ -111,6 +111,7 @@ from vocablens.infrastructure.postgres_mutation_ledger_repository import Postgre
 from vocablens.infrastructure.postgres_outbox_event_repository import PostgresOutboxEventRepository
 from vocablens.infrastructure.postgres_user_mutation_queue_repository import PostgresUserMutationQueueRepository
 from vocablens.infrastructure.postgres_learning_state_cursor_repository import PostgresLearningStateCursorRepository
+from vocablens.infrastructure.postgres_user_execution_mode_repository import PostgresUserExecutionModeRepository
 
 
 class UnitOfWork:
@@ -174,6 +175,7 @@ class UnitOfWork:
         self._outbox_events: Optional[PostgresOutboxEventRepository] = None
         self._mutation_queue: Optional[PostgresUserMutationQueueRepository] = None
         self._learning_state_cursors: Optional[PostgresLearningStateCursorRepository] = None
+        self._execution_mode: Optional[PostgresUserExecutionModeRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -609,6 +611,14 @@ class UnitOfWork:
         if self._learning_state_cursors is None:
             self._learning_state_cursors = PostgresLearningStateCursorRepository(self.session)
         return self._learning_state_cursors
+
+    @property
+    def execution_mode(self) -> PostgresUserExecutionModeRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._execution_mode is None:
+            self._execution_mode = PostgresUserExecutionModeRepository(self.session)
+        return self._execution_mode
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

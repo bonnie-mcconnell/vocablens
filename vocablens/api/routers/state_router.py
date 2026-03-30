@@ -36,8 +36,14 @@ def create_state_router() -> APIRouter:
         user: User = Depends(get_current_user),
         mutator: Mutator = Depends(get_mutator),
         hot_service: HotUserService = Depends(get_hot_user_service),
+        uow_factory=Depends(get_uow_factory),
     ):
-        if request.mode == "hot":
+        async with uow_factory() as uow:
+            await uow.execution_mode.set_mode(user_id=user.id, mode=request.mode)
+            mode = await uow.execution_mode.get_or_create(user.id)
+            await uow.commit()
+
+        if mode == "hot":
             queued = await hot_service.enqueue(
                 user_id=user.id,
                 payload={"xp_delta": int(request.xp_delta)},
@@ -83,9 +89,9 @@ def create_state_router() -> APIRouter:
         mode = "cold"
         consistent = after_command_id is None
         if after_command_id:
-            payload = hot_service.get_cached_command_payload(user_id=user.id, command_id=after_command_id)
-            if payload is not None:
-                state = apply_xp_delta(state, xp_delta=int((payload or {}).get("xp_delta", 0)))
+            cached_state = hot_service.get_cached_command_state(user_id=user.id, command_id=after_command_id)
+            if cached_state is not None:
+                state = cached_state
                 mode = "hot"
                 consistent = True
 
