@@ -22,6 +22,8 @@ class HotUserWorker:
         self._uow_factory = uow_factory
         self._batch_size = batch_size
         self._gap_wait_seconds = 2.0
+        self._max_concurrency = 64
+        self._current_concurrency = 16
 
     async def _wait_for_missing_seq(self, uow, *, user_id: int, missing_seq: int) -> bool:
         deadline = monotonic() + self._gap_wait_seconds
@@ -120,3 +122,50 @@ class HotUserWorker:
             await uow.commit()
             runtime_metrics().observe_worker_throughput(component="hot_user_worker", count=processed)
             return processed
+
+    def _adapt_controls(self) -> None:
+        sink = runtime_metrics()
+        lock_wait_p95 = 0.0
+        queue_lag_p95 = 0.0
+        if hasattr(sink, "lock_wait_p95"):
+            lock_wait_p95 = float(getattr(sink, "lock_wait_p95")("hot_user_worker"))
+        if hasattr(sink, "queue_lag_p95"):
+            queue_lag_p95 = float(getattr(sink, "queue_lag_p95")("hot_user_worker"))
+        if lock_wait_p95 > 150.0:
+            self._current_concurrency = max(1, self._current_concurrency // 2)
+            self._batch_size = min(500, self._batch_size + 25)
+        elif queue_lag_p95 > 5000.0:
+            self._current_concurrency = min(self._max_concurrency, self._current_concurrency + 2)
+            self._batch_size = min(500, self._batch_size + 25)
+        else:
+            self._current_concurrency = min(self._max_concurrency, self._current_concurrency + 1)
+            self._batch_size = max(50, self._batch_size - 5)
+
+    async def run_once(self, *, max_users: int = 128) -> int:
+        async with self._uow_factory() as uow:
+            user_ids = await uow.mutation_queue.list_users_by_lag(limit=max_users)
+            await uow.commit()
+
+        if not user_ids:
+            return 0
+
+        self._adapt_controls()
+        sem = asyncio.Semaphore(self._current_concurrency)
+
+        async def _flush(user_id: int) -> int:
+            async with sem:
+                return await self.flush_user(int(user_id))
+
+        results = await asyncio.gather(*(_flush(user_id) for user_id in user_ids), return_exceptions=True)
+        handled = 0
+        for item in results:
+            if isinstance(item, Exception):
+                continue
+            handled += int(item)
+        return handled
+
+    async def run_forever(self, idle_sleep_seconds: float = 0.05) -> None:
+        while True:
+            handled = await self.run_once()
+            if handled == 0:
+                await asyncio.sleep(idle_sleep_seconds)

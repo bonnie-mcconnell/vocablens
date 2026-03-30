@@ -68,6 +68,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "user_queue_seq" in tables
     assert "user_queue_progress" in tables
     assert "user_execution_mode" in tables
+    assert "user_command_receipts" in tables
+    assert "learning_worker_failures" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -124,7 +126,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "idx_kge_user_source" in kge_indexes
 
     outbox_columns = {col["name"] for col in inspector.get_columns("outbox_events")}
-    assert {"retry_count", "next_attempt_at", "published_at"} <= outbox_columns
+    assert {"retry_count", "next_attempt_at", "published_at", "dead_lettered_at"} <= outbox_columns
 
     queue_seq_columns = {col["name"] for col in inspector.get_columns("user_queue_seq")}
     assert {"user_id", "next_seq", "updated_at"} <= queue_seq_columns
@@ -132,6 +134,12 @@ def test_upgrade_downgrade_upgrade_round_trip():
 
     queue_progress_columns = {col["name"] for col in inspector.get_columns("user_queue_progress")}
     assert {"user_id", "last_applied_seq", "updated_at"} <= queue_progress_columns
+
+    command_receipt_columns = {col["name"] for col in inspector.get_columns("user_command_receipts")}
+    assert {"user_id", "command_id", "command_seq", "mode", "created_at"} <= command_receipt_columns
+
+    learning_failure_columns = {col["name"] for col in inspector.get_columns("learning_worker_failures")}
+    assert {"user_id", "failure_count", "quarantined_until", "last_error", "updated_at"} <= learning_failure_columns
 
     notification_indexes = {idx["name"] for idx in inspector.get_indexes("notification_deliveries")}
     assert "idx_notification_delivery_user" in notification_indexes

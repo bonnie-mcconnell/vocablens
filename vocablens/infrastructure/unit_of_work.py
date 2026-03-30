@@ -113,6 +113,8 @@ from vocablens.infrastructure.postgres_outbox_event_repository import PostgresOu
 from vocablens.infrastructure.postgres_user_mutation_queue_repository import PostgresUserMutationQueueRepository
 from vocablens.infrastructure.postgres_learning_state_cursor_repository import PostgresLearningStateCursorRepository
 from vocablens.infrastructure.postgres_user_execution_mode_repository import PostgresUserExecutionModeRepository
+from vocablens.infrastructure.postgres_user_command_receipt_repository import PostgresUserCommandReceiptRepository
+from vocablens.infrastructure.postgres_learning_worker_failure_repository import PostgresLearningWorkerFailureRepository
 from vocablens.core.contracts import STATEMENT_TIMEOUT_MS
 
 
@@ -178,6 +180,8 @@ class UnitOfWork:
         self._mutation_queue: Optional[PostgresUserMutationQueueRepository] = None
         self._learning_state_cursors: Optional[PostgresLearningStateCursorRepository] = None
         self._execution_mode: Optional[PostgresUserExecutionModeRepository] = None
+        self._command_receipts: Optional[PostgresUserCommandReceiptRepository] = None
+        self._learning_worker_failures: Optional[PostgresLearningWorkerFailureRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -628,6 +632,22 @@ class UnitOfWork:
         if self._execution_mode is None:
             self._execution_mode = PostgresUserExecutionModeRepository(self.session)
         return self._execution_mode
+
+    @property
+    def command_receipts(self) -> PostgresUserCommandReceiptRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._command_receipts is None:
+            self._command_receipts = PostgresUserCommandReceiptRepository(self.session)
+        return self._command_receipts
+
+    @property
+    def learning_worker_failures(self) -> PostgresLearningWorkerFailureRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._learning_worker_failures is None:
+            self._learning_worker_failures = PostgresLearningWorkerFailureRepository(self.session)
+        return self._learning_worker_failures
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

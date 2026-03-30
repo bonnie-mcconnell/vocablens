@@ -58,10 +58,13 @@ class OutboxWorker:
 
         async with self._uow_factory() as uow:
             await uow.outbox_events.mark_published_many(ids=published_ids)
-            await uow.outbox_events.increment_retry_many(ids=failed_ids)
+            retry_stats = await uow.outbox_events.increment_retry_many(ids=failed_ids)
+            retry_stats = retry_stats or {}
             await uow.commit()
         if failed_ids:
             runtime_metrics().increment_outbox_retry(component="outbox_worker", count=len(failed_ids))
+        if retry_stats.get("dead_lettered", 0) > 0:
+            runtime_metrics().increment_dlq(component="outbox_worker", count=int(retry_stats["dead_lettered"]))
         runtime_metrics().observe_worker_throughput(component="outbox_worker", count=len(published_ids))
         return len(batch)
 

@@ -17,6 +17,7 @@ class _Event:
     retry_count: int = 0
     published_at: datetime | None = None
     next_attempt_at: datetime | None = None
+    dead_lettered_at: datetime | None = None
 
 
 class _OutboxRepo:
@@ -28,7 +29,9 @@ class _OutboxRepo:
         eligible = [
             event
             for event in self._shared["events"]
-            if event.published_at is None and (event.next_attempt_at is None or event.next_attempt_at <= now)
+            if event.published_at is None
+            and event.dead_lettered_at is None
+            and (event.next_attempt_at is None or event.next_attempt_at <= now)
         ]
         selected = eligible[:limit]
         return [
@@ -52,6 +55,9 @@ class _OutboxRepo:
                 continue
             next_retry = int(event.retry_count) + 1
             event.retry_count = next_retry
+            if next_retry > 10:
+                event.dead_lettered_at = utc_now()
+                continue
             event.next_attempt_at = utc_now() + timedelta(seconds=min(60, 2 ** next_retry))
 
 
@@ -100,5 +106,10 @@ def test_outbox_backoff_under_failure():
 
         second = await worker.run_once()
         assert second == 0
+
+        for _ in range(11):
+            shared["events"][0].next_attempt_at = utc_now() - timedelta(seconds=1)
+            await worker.run_once()
+        assert shared["events"][0].dead_lettered_at is not None
 
     asyncio.run(_run())

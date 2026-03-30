@@ -38,6 +38,8 @@ class _Shared:
         self.queue: list[dict] = []
         self.next_seq: int = 1
         self.execution_mode: str = "cold"
+        self.last_applied_seq: int = 0
+        self.command_receipts: dict[tuple[int, str], dict] = {}
 
 
 class _FakeCoreRepo:
@@ -63,6 +65,11 @@ class _FakeQueueRepo:
         self._shared.next_seq += 1
         return seq
 
+    async def latest_seq(self, *, user_id: int) -> int:
+        if not self._shared.queue:
+            return 0
+        return max(int(item["seq"]) for item in self._shared.queue)
+
     async def insert_with_seq(self, *, user_id: int, seq: int, idempotency_key: str, payload: dict):
         self._shared.queue.append(
             {
@@ -73,6 +80,12 @@ class _FakeQueueRepo:
             }
         )
         return _QueueItem(seq=int(seq))
+
+    async def get_last_applied_seq(self, user_id: int) -> int:
+        return int(self._shared.last_applied_seq)
+
+    async def set_last_applied_seq(self, *, user_id: int, seq: int) -> None:
+        self._shared.last_applied_seq = int(seq)
 
     async def is_overloaded(self, *, user_id: int, depth_threshold: int, sustained_seconds: int) -> bool:
         depth = await self.count(user_id)
@@ -116,12 +129,29 @@ class _FakeExecutionModeRepo:
         return str(self._shared.execution_mode)
 
 
+class _FakeCommandReceiptRepo:
+    def __init__(self, shared: _Shared):
+        self._shared = shared
+
+    async def upsert(self, *, user_id: int, command_id: str, command_seq: int, mode: str) -> None:
+        self._shared.command_receipts[(int(user_id), str(command_id))] = {
+            "user_id": int(user_id),
+            "command_id": str(command_id),
+            "command_seq": int(command_seq),
+            "mode": str(mode),
+        }
+
+    async def get(self, *, user_id: int, command_id: str):
+        return self._shared.command_receipts.get((int(user_id), str(command_id)))
+
+
 class _FakeUow:
     def __init__(self, shared: _Shared):
         self._shared = shared
         self.core_state = _FakeCoreRepo(shared)
         self.mutation_queue = _FakeQueueRepo(shared)
         self.execution_mode = _FakeExecutionModeRepo(shared)
+        self.command_receipts = _FakeCommandReceiptRepo(shared)
 
     async def __aenter__(self):
         await self._shared.lock.acquire()
@@ -173,7 +203,7 @@ def test_hot_enqueue_assigns_monotonic_seq_under_concurrency():
             for idx in range(1, 21)
         ]
         results = await asyncio.gather(*tasks)
-        seqs = sorted(int(item["seq"]) for item in results)
+        seqs = sorted(int(item["command_seq"]) for item in results)
         assert seqs == list(range(1, 21))
 
         queued = sorted(shared.queue, key=lambda row: int(row["seq"]))
@@ -208,7 +238,9 @@ def test_state_api_supports_after_command_id_read_your_writes_hot_mode():
     )
     assert write_resp.status_code == 200
     write_payload = write_resp.json()
-    assert write_payload["data"] == {"command_id": "cmd-hot-1", "mode": "hot"}
+    assert write_payload["data"]["command_id"] == "cmd-hot-1"
+    assert write_payload["data"]["mode"] == "hot"
+    assert int(write_payload["data"]["command_seq"]) == 1
 
     second_write = client.post(
         "/state/mutate-xp",
@@ -219,18 +251,21 @@ def test_state_api_supports_after_command_id_read_your_writes_hot_mode():
         },
     )
     assert second_write.status_code == 200
+    assert int(second_write.json()["data"]["command_seq"]) == 2
 
     read_first = client.get("/state/core", params={"after_command_id": "cmd-hot-1"})
-    assert read_first.status_code == 200
-    assert read_first.json()["data"]["state"]["xp"] == 0
-    assert read_first.json()["meta"]["consistent"] is False
+    assert read_first.status_code == 409
+
+    # Simulate worker progress up to command_seq 2.
+    shared.last_applied_seq = 2
 
     read_second = client.get("/state/core", params={"after_command_id": "cmd-hot-2"})
     assert read_second.status_code == 200
     payload = read_second.json()
     assert payload["meta"]["mode"] == "hot"
-    assert payload["meta"]["consistent"] is False
+    assert payload["meta"]["consistent"] is True
     assert payload["data"]["state"]["xp"] == 0
+    assert int(payload["meta"]["command_seq"]) == 2
 
 
 def test_hot_queue_overload_coalesces_similar_mutations():
@@ -261,7 +296,7 @@ def test_hot_queue_overload_coalesces_similar_mutations():
             idempotency_key="coalesce-1",
         )
         assert result["mode"] == "hot"
-        assert int(result["seq"]) == 0
+        assert int(result["command_seq"]) == 404
         assert len(shared.queue) == before_len
         latest = sorted(shared.queue, key=lambda row: int(row["seq"]))[-1]
         assert int((latest.get("payload") or {}).get("xp_delta", 0)) == 6
@@ -297,7 +332,7 @@ def test_hot_queue_overload_does_not_coalesce_non_additive_mutations():
             idempotency_key="set-streak-1",
         )
         assert result["mode"] == "hot"
-        assert int(result["seq"]) == 405
+        assert int(result["command_seq"]) == 405
         assert len(shared.queue) == before_len + 1
 
     asyncio.run(_run())

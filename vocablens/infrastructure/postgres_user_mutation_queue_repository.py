@@ -147,6 +147,21 @@ class PostgresUserMutationQueueRepository:
         )
         return oldest_result.scalar_one_or_none()
 
+    async def latest_seq(self, *, user_id: int) -> int:
+        result = await self.session.execute(
+            select(func.coalesce(func.max(UserMutationQueueORM.seq), 0)).where(UserMutationQueueORM.user_id == int(user_id))
+        )
+        return int(result.scalar_one())
+
+    async def list_users_by_lag(self, *, limit: int) -> list[int]:
+        result = await self.session.execute(
+            select(UserMutationQueueORM.user_id)
+            .group_by(UserMutationQueueORM.user_id)
+            .order_by(func.min(UserMutationQueueORM.created_at).asc())
+            .limit(int(limit))
+        )
+        return [int(value) for value in result.scalars().all()]
+
     async def coalesce_latest_xp_delta(self, *, user_id: int, xp_delta: int) -> bool:
         latest_result = await self.session.execute(
             select(UserMutationQueueORM)

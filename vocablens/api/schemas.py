@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
@@ -69,6 +70,12 @@ class StateMutateRequest(BaseModel):
     xp_delta: int = Field(..., ge=0, le=10000)
     idempotency_key: str = Field(..., min_length=1, max_length=128)
     mode: Literal["cold", "hot"] = "cold"
+
+
+class ConsistencyMode(str, Enum):
+    STRONG = "strong"
+    EVENTUAL = "eventual"
+    SESSION = "session"
 
 
 class APIResponse(BaseModel):

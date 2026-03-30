@@ -1194,6 +1194,7 @@ class OutboxEventORM(Base):
     published_at = Column(DateTime)
     retry_count = Column(Integer, nullable=False, default=0)
     next_attempt_at = Column(DateTime, nullable=False, default=utc_now)
+    dead_lettered_at = Column(DateTime)
 
 
 class UserMutationQueueORM(Base):
@@ -1233,6 +1234,29 @@ class UserExecutionModeORM(Base):
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     mode = Column(String, nullable=False, default="cold")
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserCommandReceiptORM(Base):
+    __tablename__ = "user_command_receipts"
+    __table_args__ = (
+        Index("idx_user_command_receipts_created", "created_at"),
+    )
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    command_id = Column(String, primary_key=True)
+    command_seq = Column(BigInteger, nullable=False)
+    mode = Column(String, nullable=False, default="hot")
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class LearningWorkerFailureORM(Base):
+    __tablename__ = "learning_worker_failures"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    failure_count = Column(Integer, nullable=False, default=0)
+    quarantined_until = Column(DateTime)
+    last_error = Column(String)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 

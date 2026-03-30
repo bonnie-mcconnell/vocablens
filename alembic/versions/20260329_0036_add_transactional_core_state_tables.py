@@ -68,6 +68,7 @@ def upgrade() -> None:
         sa.Column("published_at", sa.DateTime(), nullable=True),
         sa.Column("retry_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("next_attempt_at", sa.DateTime(), nullable=False),
+        sa.Column("dead_lettered_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("dedupe_key", name="uq_outbox_events_dedupe_key"),
@@ -124,8 +125,35 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("user_id"),
     )
 
+    op.create_table(
+        "user_command_receipts",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("command_id", sa.String(), nullable=False),
+        sa.Column("command_seq", sa.BigInteger(), nullable=False),
+        sa.Column("mode", sa.String(), nullable=False, server_default="hot"),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id", "command_id"),
+    )
+    op.create_index("idx_user_command_receipts_created", "user_command_receipts", ["created_at"], unique=False)
+
+    op.create_table(
+        "learning_worker_failures",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("failure_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("quarantined_until", sa.DateTime(), nullable=True),
+        sa.Column("last_error", sa.String(), nullable=True),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id"),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("learning_worker_failures")
+    op.drop_index("idx_user_command_receipts_created", table_name="user_command_receipts")
+    op.drop_table("user_command_receipts")
+
     op.drop_table("user_execution_mode")
     op.drop_table("user_queue_progress")
     op.drop_table("user_queue_seq")

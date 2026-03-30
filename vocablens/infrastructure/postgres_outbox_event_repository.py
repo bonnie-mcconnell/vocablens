@@ -41,6 +41,7 @@ class PostgresOutboxEventRepository:
                 OutboxEventORM.dedupe_key,
             )
             .where(OutboxEventORM.published_at.is_(None))
+            .where(OutboxEventORM.dead_lettered_at.is_(None))
             .where(OutboxEventORM.next_attempt_at <= utc_now())
             .order_by(OutboxEventORM.id)
             .limit(limit)
@@ -69,16 +70,31 @@ class PostgresOutboxEventRepository:
             .values(published_at=published_at or utc_now())
         )
 
-    async def increment_retry_many(self, *, ids: list[int]) -> None:
+    async def increment_retry_many(self, *, ids: list[int]) -> dict[str, int]:
         if not ids:
-            return
+            return {"failed": 0, "dead_lettered": 0}
         rows = await self.session.execute(
             select(OutboxEventORM.id, OutboxEventORM.retry_count).where(OutboxEventORM.id.in_(ids))
         )
         now = utc_now()
+        dead_lettered = 0
+        failed = 0
         for row in rows.all():
             next_retry_count = int(row.retry_count or 0) + 1
-            backoff_seconds = min(60, 2 ** next_retry_count)
+            failed += 1
+            if next_retry_count > 10:
+                dead_lettered += 1
+                await self.session.execute(
+                    update(OutboxEventORM)
+                    .where(OutboxEventORM.id == int(row.id))
+                    .values(
+                        retry_count=next_retry_count,
+                        dead_lettered_at=now,
+                    )
+                )
+                continue
+
+            backoff_seconds = min(60, 2**next_retry_count)
             await self.session.execute(
                 update(OutboxEventORM)
                 .where(OutboxEventORM.id == int(row.id))
@@ -87,3 +103,4 @@ class PostgresOutboxEventRepository:
                     next_attempt_at=now + timedelta(seconds=backoff_seconds),
                 )
             )
+        return {"failed": failed, "dead_lettered": dead_lettered}
