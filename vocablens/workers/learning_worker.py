@@ -3,7 +3,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
-from vocablens.core.contracts import LEARNING_WORKER_CONCURRENCY, LEARNING_WORKER_MAX_USERS_PER_TICK
+from vocablens.core.contracts import (
+    LEARNING_WORKER_BACKLOG_LIMIT,
+    LEARNING_WORKER_CONCURRENCY,
+    LEARNING_WORKER_MAX_LAG_SECONDS,
+    LEARNING_WORKER_MAX_USERS_PER_TICK,
+)
+from vocablens.core.runtime_metrics import runtime_metrics
+from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 
 
@@ -23,6 +30,12 @@ class LearningWorker:
                     last_attempt_id=cursor.last_processed_attempt_id,
                     limit=500,
                 )
+                if attempts and (utc_now() - attempts[0].created_at).total_seconds() > float(LEARNING_WORKER_MAX_LAG_SECONDS):
+                    attempts = await uow.learning_sessions.get_attempts_after_id(
+                        user_id=user_id,
+                        last_attempt_id=cursor.last_processed_attempt_id,
+                        limit=LEARNING_WORKER_BACKLOG_LIMIT,
+                    )
                 if not attempts:
                     await uow.commit()
                     return
@@ -33,6 +46,11 @@ class LearningWorker:
                     last_processed_attempt_id=int(attempts[-1].id),
                 )
                 await uow.commit()
+                runtime_metrics().observe_worker_throughput(component="learning_worker", count=len(attempts))
+                runtime_metrics().observe_queue_lag_ms(
+                    component="learning_worker",
+                    value_ms=max(0.0, (utc_now() - attempts[0].created_at).total_seconds() * 1000),
+                )
 
     async def run_batch(self, user_ids: list[int]) -> None:
         batch = [int(user_id) for user_id in user_ids[:LEARNING_WORKER_MAX_USERS_PER_TICK]]

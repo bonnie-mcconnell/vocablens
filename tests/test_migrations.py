@@ -66,6 +66,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "user_mutation_queue" in tables
     assert "learning_state_cursors" in tables
     assert "user_queue_seq" in tables
+    assert "user_queue_progress" in tables
     assert "user_execution_mode" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
@@ -124,6 +125,13 @@ def test_upgrade_downgrade_upgrade_round_trip():
 
     outbox_columns = {col["name"] for col in inspector.get_columns("outbox_events")}
     assert {"retry_count", "next_attempt_at", "published_at"} <= outbox_columns
+
+    queue_seq_columns = {col["name"] for col in inspector.get_columns("user_queue_seq")}
+    assert {"user_id", "next_seq", "updated_at"} <= queue_seq_columns
+    assert "last_applied_seq" not in queue_seq_columns
+
+    queue_progress_columns = {col["name"] for col in inspector.get_columns("user_queue_progress")}
+    assert {"user_id", "last_applied_seq", "updated_at"} <= queue_progress_columns
 
     notification_indexes = {idx["name"] for idx in inspector.get_indexes("notification_deliveries")}
     assert "idx_notification_delivery_user" in notification_indexes

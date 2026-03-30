@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from time import monotonic
+from datetime import datetime
+from time import monotonic, perf_counter_ns
+from typing import cast
 
+from vocablens.core.runtime_metrics import runtime_metrics
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.mutations import apply_xp_delta
 
@@ -37,6 +40,27 @@ class HotUserWorker:
 
             rows = sorted(rows, key=lambda row: int(row.seq))
             last_applied_seq = await uow.mutation_queue.get_last_applied_seq(user_id)
+            rows = [row for row in rows if int(row.seq) > int(last_applied_seq)]
+            if not rows:
+                await uow.commit()
+                return 0
+
+            runtime_metrics().observe_queue_depth(component="hot_user_worker", value=len(rows))
+            created_values = [
+                cast(datetime, getattr(row, "created_at"))
+                for row in rows
+                if getattr(row, "created_at", None) is not None
+            ]
+            oldest_created = min(created_values) if created_values else None
+            if oldest_created is not None:
+                from vocablens.core.time import utc_now
+                if getattr(oldest_created, "tzinfo", None) is not None:
+                    oldest_created = oldest_created.replace(tzinfo=None)
+                runtime_metrics().observe_queue_lag_ms(
+                    component="hot_user_worker",
+                    value_ms=max(0.0, (utc_now() - oldest_created).total_seconds() * 1000),
+                )
+
             expected_seq = int(last_applied_seq) + 1
 
             first_seq = int(rows[0].seq)
@@ -55,7 +79,12 @@ class HotUserWorker:
                     )
                     expected_seq = first_seq
 
+            lock_wait_start = perf_counter_ns()
             state = await uow.core_state.get_for_update(user_id)
+            runtime_metrics().observe_lock_wait_ms(
+                component="hot_user_worker",
+                value_ms=(perf_counter_ns() - lock_wait_start) / 1_000_000,
+            )
             processed = 0
             for row in rows:
                 row_seq = int(row.seq)
@@ -84,6 +113,10 @@ class HotUserWorker:
             await uow.core_state.update(user_id, state)
             await uow.mutation_queue.delete_ids([int(row.id) for row in rows])
             if rows:
-                await uow.mutation_queue.set_last_applied_seq(user_id=user_id, seq=int(rows[-1].seq))
+                await uow.mutation_queue.set_last_applied_seq(
+                    user_id=user_id,
+                    seq=max(int(row.seq) for row in rows),
+                )
             await uow.commit()
+            runtime_metrics().observe_worker_throughput(component="hot_user_worker", count=processed)
             return processed

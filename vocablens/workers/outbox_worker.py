@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from collections.abc import Callable
 from typing import Awaitable
 
+from vocablens.core.runtime_metrics import runtime_metrics
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+
+
+@dataclass(frozen=True)
+class EventEnvelope:
+    dedupe_key: str
+    version: int
+    event_type: str
+    payload: dict
 
 
 class OutboxWorker:
@@ -30,7 +40,18 @@ class OutboxWorker:
         failed_ids: list[int] = []
         for event in batch:
             try:
-                await self._publisher(event["event_type"], event["payload"], event["dedupe_key"])
+                envelope = EventEnvelope(
+                    dedupe_key=str(event["dedupe_key"]),
+                    version=int(event["id"]),
+                    event_type=str(event["event_type"]),
+                    payload=dict(event["payload"]),
+                )
+                payload = dict(envelope.payload)
+                payload["event_contract"] = {
+                    "dedupe_key": envelope.dedupe_key,
+                    "version": envelope.version,
+                }
+                await self._publisher(envelope.event_type, payload, envelope.dedupe_key)
                 published_ids.append(int(event["id"]))
             except Exception:
                 failed_ids.append(int(event["id"]))
@@ -39,6 +60,9 @@ class OutboxWorker:
             await uow.outbox_events.mark_published_many(ids=published_ids)
             await uow.outbox_events.increment_retry_many(ids=failed_ids)
             await uow.commit()
+        if failed_ids:
+            runtime_metrics().increment_outbox_retry(component="outbox_worker", count=len(failed_ids))
+        runtime_metrics().observe_worker_throughput(component="outbox_worker", count=len(published_ids))
         return len(batch)
 
     async def run_forever(self, idle_sleep_seconds: float = 0.05) -> None:

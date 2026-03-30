@@ -101,6 +101,14 @@ def upgrade() -> None:
         "user_queue_seq",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("next_seq", sa.BigInteger(), nullable=False, server_default="1"),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id"),
+    )
+
+    op.create_table(
+        "user_queue_progress",
+        sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("last_applied_seq", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
@@ -119,6 +127,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("user_execution_mode")
+    op.drop_table("user_queue_progress")
     op.drop_table("user_queue_seq")
 
     op.drop_table("learning_state_cursors")

@@ -119,20 +119,20 @@ def test_mutator_applies_once_for_same_idempotency_key():
     asyncio.run(_run())
 
 
-def test_core_mutation_guard_enforces_structural_rules():
+def test_core_mutation_guard_enforces_runtime_cpu_budget():
     guard = CoreMutationGuard()
 
-    def forbidden_loop(state: UserCoreState) -> UserCoreState:
+    def too_expensive(state: UserCoreState) -> UserCoreState:
         total = 0
-        for value in [1, 2, 3]:
+        for value in range(500000):
             total += value
-        if total > 0:
-            return state
+        if total < 0:
+            return replace(state, xp=state.xp + 1)
         return state
 
     with pytest.raises(MutationTooSlowError):
         guard.execute(
-            forbidden_loop,
+            too_expensive,
             UserCoreState(
                 user_id=1,
                 xp=0,

@@ -1217,6 +1217,13 @@ class UserQueueSeqORM(Base):
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     next_seq = Column(BigInteger, nullable=False, default=1)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserQueueProgressORM(Base):
+    __tablename__ = "user_queue_progress"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     last_applied_seq = Column(BigInteger, nullable=False, default=0)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 

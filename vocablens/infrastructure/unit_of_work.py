@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
@@ -112,6 +113,7 @@ from vocablens.infrastructure.postgres_outbox_event_repository import PostgresOu
 from vocablens.infrastructure.postgres_user_mutation_queue_repository import PostgresUserMutationQueueRepository
 from vocablens.infrastructure.postgres_learning_state_cursor_repository import PostgresLearningStateCursorRepository
 from vocablens.infrastructure.postgres_user_execution_mode_repository import PostgresUserExecutionModeRepository
+from vocablens.core.contracts import STATEMENT_TIMEOUT_MS
 
 
 class UnitOfWork:
@@ -179,6 +181,13 @@ class UnitOfWork:
 
     async def __aenter__(self):
         self.session = self._session_factory()
+        # Enforce transaction boundaries explicitly in production paths.
+        try:
+            await self.session.execute(text("SET TRANSACTION ISOLATION LEVEL READ COMMITTED"))
+            await self.session.execute(text(f"SET LOCAL statement_timeout = '{int(STATEMENT_TIMEOUT_MS)}ms'"))
+        except Exception:
+            # Non-Postgres backends used in tests may not support these commands.
+            pass
         return self
 
     async def __aexit__(self, exc_type, exc, tb):

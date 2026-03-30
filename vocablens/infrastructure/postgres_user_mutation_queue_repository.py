@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vocablens.core.time import utc_now
 from vocablens.domain.models import UserMutationQueueItem
-from vocablens.infrastructure.db.models import UserMutationQueueORM, UserQueueSeqORM
+from vocablens.infrastructure.db.models import UserMutationQueueORM, UserQueueProgressORM, UserQueueSeqORM
 
 
 def _map_row(row: UserMutationQueueORM) -> UserMutationQueueItem:
@@ -69,8 +69,8 @@ class PostgresUserMutationQueueRepository:
         await self.session.execute(
             text(
                 """
-                INSERT INTO user_queue_seq(user_id, next_seq, last_applied_seq, updated_at)
-                VALUES (:user_id, 1, 0, NOW())
+                INSERT INTO user_queue_seq(user_id, next_seq, updated_at)
+                VALUES (:user_id, 1, NOW())
                 ON CONFLICT (user_id) DO NOTHING
                 """
             ),
@@ -94,15 +94,15 @@ class PostgresUserMutationQueueRepository:
         await self.session.execute(
             text(
                 """
-                INSERT INTO user_queue_seq(user_id, next_seq, last_applied_seq, updated_at)
-                VALUES (:user_id, 1, 0, NOW())
+                INSERT INTO user_queue_progress(user_id, last_applied_seq, updated_at)
+                VALUES (:user_id, 0, NOW())
                 ON CONFLICT (user_id) DO NOTHING
                 """
             ),
             {"user_id": int(user_id)},
         )
         result = await self.session.execute(
-            select(UserQueueSeqORM.last_applied_seq).where(UserQueueSeqORM.user_id == int(user_id))
+            select(UserQueueProgressORM.last_applied_seq).where(UserQueueProgressORM.user_id == int(user_id))
         )
         return int(result.scalar_one())
 
@@ -110,16 +110,16 @@ class PostgresUserMutationQueueRepository:
         await self.session.execute(
             text(
                 """
-                INSERT INTO user_queue_seq(user_id, next_seq, last_applied_seq, updated_at)
-                VALUES (:user_id, 1, 0, NOW())
+                INSERT INTO user_queue_progress(user_id, last_applied_seq, updated_at)
+                VALUES (:user_id, 0, NOW())
                 ON CONFLICT (user_id) DO NOTHING
                 """
             ),
             {"user_id": int(user_id)},
         )
         await self.session.execute(
-            update(UserQueueSeqORM)
-            .where(UserQueueSeqORM.user_id == int(user_id))
+            update(UserQueueProgressORM)
+            .where(UserQueueProgressORM.user_id == int(user_id))
             .values(last_applied_seq=int(seq), updated_at=utc_now())
         )
 
@@ -136,13 +136,16 @@ class PostgresUserMutationQueueRepository:
         depth = await self.count(int(user_id))
         if depth <= int(depth_threshold):
             return False
-        oldest_result = await self.session.execute(
-            select(func.min(UserMutationQueueORM.created_at)).where(UserMutationQueueORM.user_id == int(user_id))
-        )
-        oldest_created = oldest_result.scalar_one_or_none()
+        oldest_created = await self.oldest_created_at(user_id=int(user_id))
         if oldest_created is None:
             return False
         return oldest_created <= (utc_now() - timedelta(seconds=int(sustained_seconds)))
+
+    async def oldest_created_at(self, *, user_id: int):
+        oldest_result = await self.session.execute(
+            select(func.min(UserMutationQueueORM.created_at)).where(UserMutationQueueORM.user_id == int(user_id))
+        )
+        return oldest_result.scalar_one_or_none()
 
     async def coalesce_latest_xp_delta(self, *, user_id: int, xp_delta: int) -> bool:
         latest_result = await self.session.execute(

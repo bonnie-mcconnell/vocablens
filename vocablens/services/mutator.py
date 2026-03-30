@@ -2,57 +2,28 @@ from __future__ import annotations
 
 import hashlib
 import json
-import dis
+import time
 from dataclasses import replace
 from collections.abc import Callable
 from typing import Any
 
+from vocablens.core.contracts import LOCK_WAIT_FAILFAST_MS, MUTATION_CPU_BUDGET_MS
+from vocablens.core.runtime_metrics import runtime_metrics
 from vocablens.core.errors import MutationTooSlowError
 from vocablens.domain.models import UserCoreState
 
 
 class CoreMutationGuard:
-    """Hard structural guard for core-state mutations.
-
-    Rules:
-    - No iteration opcodes
-    - No async/yield opcodes
-    - No db/session/uow/query references
-    """
-
-    _FORBIDDEN_OPS = {
-        "FOR_ITER",
-        "GET_ITER",
-        "GET_AITER",
-        "GET_ANEXT",
-        "YIELD_VALUE",
-        "YIELD_FROM",
-        "SEND",
-    }
-    _FORBIDDEN_NAME_TOKENS = (
-        "uow",
-        "session",
-        "db",
-        "query",
-        "execute",
-        "select",
-        "insert",
-        "update",
-        "delete",
-    )
+    """Runtime CPU budget guard for mutation functions."""
 
     def execute(self, fn: Callable[[UserCoreState], UserCoreState], state: UserCoreState) -> UserCoreState:
-        instructions = list(dis.get_instructions(fn))
-        for ins in instructions:
-            if ins.opname in self._FORBIDDEN_OPS:
-                raise MutationTooSlowError(f"Forbidden opcode in mutation_fn: {ins.opname}")
-
-        for name in fn.__code__.co_names:
-            lowered = name.lower()
-            if any(token in lowered for token in self._FORBIDDEN_NAME_TOKENS):
-                raise MutationTooSlowError(f"Forbidden external reference in mutation_fn: {name}")
-
+        start_cpu_ns = time.process_time_ns()
         result = fn(state)
+        elapsed_ms = (time.process_time_ns() - start_cpu_ns) / 1_000_000
+        if elapsed_ms > float(MUTATION_CPU_BUDGET_MS):
+            raise MutationTooSlowError(
+                f"mutation_fn CPU budget exceeded: {elapsed_ms:.3f}ms > {float(MUTATION_CPU_BUDGET_MS):.3f}ms"
+            )
         return result
 
 
@@ -73,7 +44,14 @@ class Mutator:
         reference_id: str | None = None,
     ) -> UserCoreState:
         async with self._uow_factory() as uow:
+            lock_wait_start = time.perf_counter_ns()
             state = await uow.core_state.get_for_update(user_id)
+            lock_wait_ms = (time.perf_counter_ns() - lock_wait_start) / 1_000_000
+            runtime_metrics().observe_lock_wait_ms(component="mutator", value_ms=lock_wait_ms)
+            if lock_wait_ms > float(LOCK_WAIT_FAILFAST_MS):
+                raise MutationTooSlowError(
+                    f"lock wait exceeded threshold: {lock_wait_ms:.3f}ms > {float(LOCK_WAIT_FAILFAST_MS):.3f}ms"
+                )
 
             existing = await uow.mutation_ledger.get(user_id=user_id, idempotency_key=idempotency_key)
             if existing is not None:

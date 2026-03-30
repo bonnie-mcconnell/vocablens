@@ -8,7 +8,7 @@ from vocablens.api.dependencies_interaction_api import (
 )
 from vocablens.api.schemas import APIResponse, StateMutateRequest
 from vocablens.domain.user import User
-from vocablens.services.hot_user_service import HotUserService
+from vocablens.services.hot_user_service import HotUserService, MutationType
 from vocablens.services.mutations import apply_xp_delta
 from vocablens.services.mutator import Mutator
 
@@ -46,7 +46,7 @@ def create_state_router() -> APIRouter:
         if mode == "hot":
             queued = await hot_service.enqueue(
                 user_id=user.id,
-                payload={"xp_delta": int(request.xp_delta)},
+                payload={"mutation_type": MutationType.ADD_XP.value, "xp_delta": int(request.xp_delta)},
                 idempotency_key=request.idempotency_key,
             )
             return APIResponse(
@@ -80,20 +80,17 @@ def create_state_router() -> APIRouter:
         after_command_id: str | None = Query(default=None),
         user: User = Depends(get_current_user),
         uow_factory=Depends(get_uow_factory),
-        hot_service: HotUserService = Depends(get_hot_user_service),
     ):
         async with uow_factory() as uow:
             state = await uow.core_state.get_or_create(user.id)
+            mode = await uow.execution_mode.get_or_create(user.id)
             await uow.commit()
 
-        mode = "cold"
+        mode = str(mode)
         consistent = after_command_id is None
-        if after_command_id:
-            cached_state = hot_service.get_cached_command_state(user_id=user.id, command_id=after_command_id)
-            if cached_state is not None:
-                state = cached_state
-                mode = "hot"
-                consistent = True
+        if after_command_id and mode == "hot":
+            # In-memory caches are disabled for multi-node safety.
+            consistent = False
 
         return APIResponse(
             data={"state": _state_payload(state)},

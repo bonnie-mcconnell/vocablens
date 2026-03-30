@@ -15,6 +15,7 @@ class _Row:
         self.seq = int(seq)
         self.idempotency_key = str(idempotency_key)
         self.payload = dict(payload)
+        self.created_at = datetime.now(timezone.utc)
 
 
 class _CoreRepo:
@@ -50,8 +51,11 @@ class _LedgerRepo:
 
 class _QueueRepo:
     def __init__(self):
-        self.rows = [_Row(11, 2, "cmd-2", {"xp_delta": 5})]
-        self.last_applied = 0
+        self.rows = [
+            _Row(10, 1, "cmd-1", {"xp_delta": 99}),
+            _Row(11, 2, "cmd-2", {"xp_delta": 5}),
+        ]
+        self.last_applied = 1
 
     async def claim_batch(self, *, user_id: int, limit: int):
         return list(self.rows)

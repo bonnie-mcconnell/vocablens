@@ -86,6 +86,12 @@ class _FakeQueueRepo:
             return False
         return oldest <= datetime.now(timezone.utc) - timedelta(seconds=int(sustained_seconds))
 
+    async def oldest_created_at(self, *, user_id: int):
+        created_values = [
+            cast(datetime, item["created_at"]) for item in self._shared.queue if item.get("created_at") is not None
+        ]
+        return min(created_values) if created_values else None
+
     async def coalesce_latest_xp_delta(self, *, user_id: int, xp_delta: int) -> bool:
         if not self._shared.queue:
             return False
@@ -216,14 +222,15 @@ def test_state_api_supports_after_command_id_read_your_writes_hot_mode():
 
     read_first = client.get("/state/core", params={"after_command_id": "cmd-hot-1"})
     assert read_first.status_code == 200
-    assert read_first.json()["data"]["state"]["xp"] == 13
+    assert read_first.json()["data"]["state"]["xp"] == 0
+    assert read_first.json()["meta"]["consistent"] is False
 
     read_second = client.get("/state/core", params={"after_command_id": "cmd-hot-2"})
     assert read_second.status_code == 200
     payload = read_second.json()
     assert payload["meta"]["mode"] == "hot"
-    assert payload["meta"]["consistent"] is True
-    assert payload["data"]["state"]["xp"] == 20
+    assert payload["meta"]["consistent"] is False
+    assert payload["data"]["state"]["xp"] == 0
 
 
 def test_hot_queue_overload_coalesces_similar_mutations():
@@ -235,7 +242,7 @@ def test_hot_queue_overload_coalesces_similar_mutations():
                 "user_id": 1,
                 "seq": seq,
                 "idempotency_key": f"existing-{seq}",
-                "payload": {"xp_delta": 1},
+                "payload": {"mutation_type": "ADD_XP", "xp_delta": 1},
                 "created_at": now - timedelta(seconds=31),
             }
         )
@@ -248,11 +255,49 @@ def test_hot_queue_overload_coalesces_similar_mutations():
 
     async def _run():
         before_len = len(shared.queue)
-        result = await service.enqueue(user_id=1, payload={"xp_delta": 5}, idempotency_key="coalesce-1")
+        result = await service.enqueue(
+            user_id=1,
+            payload={"mutation_type": "ADD_XP", "xp_delta": 5},
+            idempotency_key="coalesce-1",
+        )
         assert result["mode"] == "hot"
         assert int(result["seq"]) == 0
         assert len(shared.queue) == before_len
         latest = sorted(shared.queue, key=lambda row: int(row["seq"]))[-1]
         assert int((latest.get("payload") or {}).get("xp_delta", 0)) == 6
+
+    asyncio.run(_run())
+
+
+def test_hot_queue_overload_does_not_coalesce_non_additive_mutations():
+    shared = _Shared()
+    now = datetime.now(timezone.utc)
+    for seq in range(1, 405):
+        shared.queue.append(
+            {
+                "user_id": 1,
+                "seq": seq,
+                "idempotency_key": f"existing-{seq}",
+                "payload": {"mutation_type": "SET_STREAK", "streak": 1},
+                "created_at": now - timedelta(seconds=31),
+            }
+        )
+    shared.next_seq = 405
+
+    def _uow_factory():
+        return _FakeUow(shared)
+
+    service = HotUserService(_uow_factory, max_queue=1000)  # type: ignore[arg-type]
+
+    async def _run():
+        before_len = len(shared.queue)
+        result = await service.enqueue(
+            user_id=1,
+            payload={"mutation_type": "SET_STREAK", "streak": 2},
+            idempotency_key="set-streak-1",
+        )
+        assert result["mode"] == "hot"
+        assert int(result["seq"]) == 405
+        assert len(shared.queue) == before_len + 1
 
     asyncio.run(_run())
