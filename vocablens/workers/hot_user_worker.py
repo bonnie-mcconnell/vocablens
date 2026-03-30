@@ -20,6 +20,14 @@ class HotUserWorker:
                 await uow.commit()
                 return 0
 
+            rows = sorted(rows, key=lambda row: int(row.seq))
+            prev_seq = None
+            for row in rows:
+                seq = int(row.seq)
+                if prev_seq is not None and seq != prev_seq + 1:
+                    raise RuntimeError(f"Hot queue gap detected for user {user_id}: {prev_seq} -> {seq}")
+                prev_seq = seq
+
             state = await uow.core_state.get_for_update(user_id)
             for row in rows:
                 xp_delta = int((row.payload or {}).get("xp_delta", 0))

@@ -2,28 +2,57 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
+import dis
 from dataclasses import replace
 from collections.abc import Callable
 from typing import Any
 
-from vocablens.core.contracts import MAX_MUTATION_MS
 from vocablens.core.errors import MutationTooSlowError
 from vocablens.domain.models import UserCoreState
-from vocablens.services.idempotency import deterministic_dedupe_key
 
 
 class CoreMutationGuard:
-    """Hard runtime budget guard for core-state mutations."""
+    """Hard structural guard for core-state mutations.
 
-    MAX_DURATION_MS = MAX_MUTATION_MS
+    Rules:
+    - No iteration opcodes
+    - No async/yield opcodes
+    - No db/session/uow/query references
+    """
+
+    _FORBIDDEN_OPS = {
+        "FOR_ITER",
+        "GET_ITER",
+        "GET_AITER",
+        "GET_ANEXT",
+        "YIELD_VALUE",
+        "YIELD_FROM",
+        "SEND",
+    }
+    _FORBIDDEN_NAME_TOKENS = (
+        "uow",
+        "session",
+        "db",
+        "query",
+        "execute",
+        "select",
+        "insert",
+        "update",
+        "delete",
+    )
 
     def execute(self, fn: Callable[[UserCoreState], UserCoreState], state: UserCoreState) -> UserCoreState:
-        start_ns = time.perf_counter_ns()
+        instructions = list(dis.get_instructions(fn))
+        for ins in instructions:
+            if ins.opname in self._FORBIDDEN_OPS:
+                raise MutationTooSlowError(f"Forbidden opcode in mutation_fn: {ins.opname}")
+
+        for name in fn.__code__.co_names:
+            lowered = name.lower()
+            if any(token in lowered for token in self._FORBIDDEN_NAME_TOKENS):
+                raise MutationTooSlowError(f"Forbidden external reference in mutation_fn: {name}")
+
         result = fn(state)
-        duration_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
-        if duration_ms > self.MAX_DURATION_MS:
-            raise MutationTooSlowError(f"Mutation too slow: {duration_ms:.3f}ms")
         return result
 
 
@@ -67,11 +96,7 @@ class Mutator:
 
             await uow.outbox_events.insert(
                 user_id=user_id,
-                dedupe_key=deterministic_dedupe_key(
-                    user_id=user_id,
-                    source=source,
-                    reference_id=reference_id,
-                ),
+                dedupe_key=f"{user_id}:{idempotency_key}",
                 event_type=source,
                 payload={"delta": self._delta(state, updated)},
             )

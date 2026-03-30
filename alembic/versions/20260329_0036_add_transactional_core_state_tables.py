@@ -77,14 +77,16 @@ def upgrade() -> None:
         "user_mutation_queue",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("seq", sa.BigInteger(), nullable=False),
         sa.Column("idempotency_key", sa.String(), nullable=False),
         sa.Column("payload", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", "seq", name="uq_user_mutation_queue_seq"),
         sa.UniqueConstraint("user_id", "idempotency_key", name="uq_user_mutation_queue_idempotency"),
     )
-    op.create_index("idx_user_queue_user", "user_mutation_queue", ["user_id", "id"], unique=False)
+    op.create_index("idx_user_queue_user", "user_mutation_queue", ["user_id", "seq"], unique=False)
 
     op.create_table(
         "learning_state_cursors",

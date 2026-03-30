@@ -1198,12 +1198,14 @@ class OutboxEventORM(Base):
 class UserMutationQueueORM(Base):
     __tablename__ = "user_mutation_queue"
     __table_args__ = (
+        UniqueConstraint("user_id", "seq", name="uq_user_mutation_queue_seq"),
         UniqueConstraint("user_id", "idempotency_key", name="uq_user_mutation_queue_idempotency"),
-        Index("idx_user_queue_user", "user_id", "id"),
+        Index("idx_user_queue_user", "user_id", "seq"),
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    seq = Column(BigInteger, nullable=False)
     idempotency_key = Column(String, nullable=False)
     payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=utc_now, nullable=False)

@@ -43,8 +43,13 @@ from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.scenario_service import ScenarioService
 from vocablens.services.speech_conversation_service import SpeechConversationService
+from vocablens.services.hot_user_service import HotUserService
+from vocablens.services.mutator import Mutator
 from vocablens.services.streaming_tutor_service import StreamingTutorService
 from vocablens.services.vocabulary_service import VocabularyService
+
+
+_HOT_USER_SERVICE: HotUserService | None = None
 
 
 async def get_vocabulary_service(
@@ -195,3 +200,14 @@ def get_frontend_service(
         onboarding_service,
         entitlement_policy_service,
     )
+
+
+def get_mutator(uow_factory=Depends(get_uow_factory)) -> Mutator:
+    return Mutator(uow_factory)
+
+
+def get_hot_user_service(uow_factory=Depends(get_uow_factory)) -> HotUserService:
+    global _HOT_USER_SERVICE
+    if _HOT_USER_SERVICE is None:
+        _HOT_USER_SERVICE = HotUserService(uow_factory)
+    return _HOT_USER_SERVICE

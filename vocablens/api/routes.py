@@ -9,6 +9,7 @@ from vocablens.api.routers.lesson_router import create_lesson_router
 from vocablens.api.routers.onboarding_router import create_onboarding_router
 from vocablens.api.routers.scenario_router import create_scenario_router
 from vocablens.api.routers.session_router import create_session_router
+from vocablens.api.routers.state_router import create_state_router
 from vocablens.api.routers.translation_router import create_translation_router
 from vocablens.api.routers.vocabulary_router import create_vocabulary_router
 
@@ -26,6 +27,7 @@ def create_routes() -> APIRouter:
     router.include_router(create_scenario_router())
     router.include_router(create_learning_router())
     router.include_router(create_session_router())
+    router.include_router(create_state_router())
     router.include_router(create_frontend_router())
     router.include_router(create_onboarding_router())
 

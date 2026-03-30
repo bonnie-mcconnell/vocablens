@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
-from vocablens.core.contracts import LEARNING_WORKER_CONCURRENCY
+from vocablens.core.contracts import LEARNING_WORKER_CONCURRENCY, LEARNING_WORKER_MAX_USERS_PER_TICK
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 
 
@@ -35,4 +35,5 @@ class LearningWorker:
                 await uow.commit()
 
     async def run_batch(self, user_ids: list[int]) -> None:
-        await asyncio.gather(*(self._advance_user_cursor(user_id) for user_id in user_ids))
+        batch = [int(user_id) for user_id in user_ids[:LEARNING_WORKER_MAX_USERS_PER_TICK]]
+        await asyncio.gather(*(self._advance_user_cursor(user_id) for user_id in batch))

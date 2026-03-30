@@ -65,6 +65,12 @@ class ReviewRequest(BaseModel):
     rating: Literal["again", "hard", "good", "easy"]
 
 
+class StateMutateRequest(BaseModel):
+    xp_delta: int = Field(..., ge=0, le=10000)
+    idempotency_key: str = Field(..., min_length=1, max_length=128)
+    mode: Literal["cold", "hot"] = "cold"
+
+
 class APIResponse(BaseModel):
     data: Any
     meta: dict[str, Any] = Field(default_factory=dict)

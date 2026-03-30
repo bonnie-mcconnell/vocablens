@@ -12,6 +12,7 @@ def _map_row(row: UserMutationQueueORM) -> UserMutationQueueItem:
     return UserMutationQueueItem(
         id=int(row.id),
         user_id=int(row.user_id),
+        seq=int(row.seq),
         idempotency_key=str(row.idempotency_key),
         payload=dict(row.payload or {}),
         created_at=row.created_at,
@@ -29,8 +30,10 @@ class PostgresUserMutationQueueRepository:
         return int(result.scalar_one())
 
     async def insert(self, *, user_id: int, idempotency_key: str, payload: dict) -> UserMutationQueueItem:
+        next_seq = await self.next_seq(user_id)
         row = UserMutationQueueORM(
             user_id=user_id,
+            seq=next_seq,
             idempotency_key=idempotency_key,
             payload=payload,
             created_at=utc_now(),
@@ -39,11 +42,36 @@ class PostgresUserMutationQueueRepository:
         await self.session.flush()
         return _map_row(row)
 
+    async def insert_with_seq(
+        self,
+        *,
+        user_id: int,
+        seq: int,
+        idempotency_key: str,
+        payload: dict,
+    ) -> UserMutationQueueItem:
+        row = UserMutationQueueORM(
+            user_id=user_id,
+            seq=int(seq),
+            idempotency_key=idempotency_key,
+            payload=payload,
+            created_at=utc_now(),
+        )
+        self.session.add(row)
+        await self.session.flush()
+        return _map_row(row)
+
+    async def next_seq(self, user_id: int) -> int:
+        result = await self.session.execute(
+            select(func.coalesce(func.max(UserMutationQueueORM.seq), 0)).where(UserMutationQueueORM.user_id == user_id)
+        )
+        return int(result.scalar_one()) + 1
+
     async def claim_batch(self, *, user_id: int, limit: int) -> list[UserMutationQueueItem]:
         result = await self.session.execute(
             select(UserMutationQueueORM)
             .where(UserMutationQueueORM.user_id == user_id)
-            .order_by(UserMutationQueueORM.id)
+            .order_by(UserMutationQueueORM.seq.asc())
             .limit(limit)
             .with_for_update(skip_locked=True)
         )

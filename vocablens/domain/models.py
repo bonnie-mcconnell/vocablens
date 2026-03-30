@@ -99,6 +99,7 @@ class MutationLedgerEntry:
 class UserMutationQueueItem:
     id: int
     user_id: int
+    seq: int
     idempotency_key: str
     payload: dict
     created_at: datetime
